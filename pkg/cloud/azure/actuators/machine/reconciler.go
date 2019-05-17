@@ -60,6 +60,10 @@ type Reconciler struct {
 	virtualMachinesSvc    azure.Service
 	virtualMachinesExtSvc azure.Service
 	disksSvc              azure.Service
+
+	// NOTE(jchaloup): openshift actuators manage node role machines only.
+	// Set to true outside of the fake reconciler.
+	alwaysFallbackToNodeRole bool
 }
 
 // NewReconciler populates all the services based on input scope
@@ -71,6 +75,10 @@ func NewReconciler(scope *actuators.MachineScope) *Reconciler {
 		virtualMachinesSvc:    virtualmachines.NewService(scope.Scope),
 		virtualMachinesExtSvc: virtualmachineextensions.NewService(scope.Scope),
 		disksSvc:              disks.NewService(scope.Scope),
+
+		// NOTE(jchaloup): openshift actuators manage node role machines only.
+		// Set to true outside of the fake reconciler.
+		alwaysFallbackToNodeRole: true,
 	}
 }
 
@@ -249,7 +257,12 @@ func (s *Reconciler) isNodeJoin() (bool, error) {
 		return false, errors.Wrapf(err, "failed to retrieve machines in cluster")
 	}
 
-	switch set := s.scope.Machine.ObjectMeta.Labels[v1alpha1.MachineRoleLabel]; set {
+	// NOTE(jchaloup): openshift actuators manage node role machines only.
+	set := v1alpha1.Node
+	if !s.alwaysFallbackToNodeRole {
+		set = s.scope.Machine.ObjectMeta.Labels[v1alpha1.MachineRoleLabel]
+	}
+	switch set {
 	case v1alpha1.Node:
 		return true, nil
 	case v1alpha1.ControlPlane:
@@ -449,7 +462,12 @@ func (s *Reconciler) createNetworkInterface(ctx context.Context, nicName string)
 		Name:     nicName,
 		VnetName: azure.GenerateVnetName(s.scope.Cluster.Name),
 	}
-	switch set := s.scope.Machine.ObjectMeta.Labels[v1alpha1.MachineRoleLabel]; set {
+	// NOTE(jchaloup): openshift actuators manage node role machines only.
+	set := v1alpha1.Node
+	if !s.alwaysFallbackToNodeRole {
+		set = s.scope.Machine.ObjectMeta.Labels[v1alpha1.MachineRoleLabel]
+	}
+	switch set {
 	case v1alpha1.Node:
 		networkInterfaceSpec.SubnetName = azure.GenerateNodeSubnetName(s.scope.Cluster.Name)
 	case v1alpha1.ControlPlane:

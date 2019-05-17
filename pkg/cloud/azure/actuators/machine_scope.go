@@ -120,7 +120,8 @@ func (m *MachineScope) Namespace() string {
 
 // Role returns the machine role from the labels.
 func (m *MachineScope) Role() string {
-	return m.Machine.Labels[v1alpha1.MachineRoleLabel]
+	// NOTE(jchaloup): openshift actuators manage node role machines only.
+	return v1alpha1.Node
 }
 
 // Location returns the machine location.

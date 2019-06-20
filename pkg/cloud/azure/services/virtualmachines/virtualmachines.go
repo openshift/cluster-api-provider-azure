@@ -198,7 +198,9 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 		return err
 	}
 
-	klog.V(2).Infof("successfully created vm %s ", vmSpec.Name)
+	if err == nil {
+		klog.V(2).Infof("successfully created vm %s ", vmSpec.Name)
+	}
 	return err
 }
 
@@ -222,7 +224,9 @@ func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
 	// so the call to Delete actuator operation is async.
 	_, err = future.Result(s.Client)
 
-	klog.V(2).Infof("successfully deleted vm %s ", vmSpec.Name)
+	if err == nil {
+		klog.V(2).Infof("successfully deleted vm %s ", vmSpec.Name)
+	}
 	return err
 }
 

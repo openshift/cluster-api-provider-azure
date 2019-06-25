@@ -658,9 +658,14 @@ func (s *Reconciler) createVirtualMachine(ctx context.Context, nicName string) e
 
 	vmInterface, err := s.virtualMachinesSvc.Get(ctx, vmSpec)
 	if err != nil && vmInterface == nil {
-		vmZone, zoneErr := s.getVirtualMachineZone(ctx)
-		if zoneErr != nil {
-			return errors.Wrap(zoneErr, "failed to get availability zone")
+		var vmZone string
+		if s.scope.MachineConfig.Zone == nil {
+			vmZone, err = s.getVirtualMachineZone(ctx)
+			if err != nil {
+				return errors.Wrap(err, "failed to get availability zone")
+			}
+		} else {
+			vmZone = *s.scope.MachineConfig.Zone
 		}
 
 		var managedIdentity string

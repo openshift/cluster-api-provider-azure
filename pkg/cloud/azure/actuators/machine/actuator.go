@@ -93,7 +93,7 @@ func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machi
 	klog.Infof("Creating machine %v", machine.Name)
 
 	scope, err := actuators.NewMachineScope(actuators.MachineScopeParams{
-		Machine:    machine,
+		Machine:    machine.DeepCopy(),
 		Cluster:    nil,
 		Client:     a.client,
 		CoreClient: a.coreClient,
@@ -105,7 +105,7 @@ func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machi
 	err = a.reconcilerBuilder(scope).Create(context.Background())
 	if err != nil {
 		// We still want to persist on failure to update MachineStatus
-		if err := scope.Persist(); err != nil {
+		if err := scope.PersistIfNeeded(machine); err != nil {
 			klog.Errorf("Error storing machine info: %v", err)
 		}
 		a.handleMachineError(machine, apierrors.CreateMachine("failed to reconcile machine %qs: %v", machine.Name, err), createEventAction)
@@ -114,7 +114,7 @@ func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machi
 		}
 	}
 
-	if err := scope.Persist(); err != nil {
+	if err := scope.PersistIfNeeded(machine); err != nil {
 		return fmt.Errorf("error storing machine info: %v", err)
 	}
 
@@ -128,7 +128,7 @@ func (a *Actuator) Delete(ctx context.Context, cluster *clusterv1.Cluster, machi
 	klog.Infof("Deleting machine %v", machine.Name)
 
 	scope, err := actuators.NewMachineScope(actuators.MachineScopeParams{
-		Machine:    machine,
+		Machine:    machine.DeepCopy(),
 		Cluster:    nil,
 		Client:     a.client,
 		CoreClient: a.coreClient,
@@ -140,7 +140,7 @@ func (a *Actuator) Delete(ctx context.Context, cluster *clusterv1.Cluster, machi
 	err = a.reconcilerBuilder(scope).Delete(context.Background())
 	if err != nil {
 		// We still want to persist on failure to update MachineStatus
-		if err := scope.Persist(); err != nil {
+		if err := scope.PersistIfNeeded(machine); err != nil {
 			klog.Errorf("Error storing machine info: %v", err)
 		}
 		a.handleMachineError(machine, apierrors.DeleteMachine("failed to delete machine %q: %v", machine.Name, err), deleteEventAction)
@@ -149,7 +149,7 @@ func (a *Actuator) Delete(ctx context.Context, cluster *clusterv1.Cluster, machi
 		}
 	}
 
-	if err := scope.Persist(); err != nil {
+	if err := scope.PersistIfNeeded(machine); err != nil {
 		return fmt.Errorf("error storing machine info: %v", err)
 	}
 
@@ -165,7 +165,7 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 	klog.Infof("Updating machine %v", machine.Name)
 
 	scope, err := actuators.NewMachineScope(actuators.MachineScopeParams{
-		Machine:    machine,
+		Machine:    machine.DeepCopy(),
 		Cluster:    nil,
 		Client:     a.client,
 		CoreClient: a.coreClient,
@@ -177,7 +177,7 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 	err = a.reconcilerBuilder(scope).Update(context.Background())
 	if err != nil {
 		// We still want to persist on failure to update MachineStatus
-		if err := scope.Persist(); err != nil {
+		if err := scope.PersistIfNeeded(machine); err != nil {
 			klog.Errorf("Error storing machine info: %v", err)
 		}
 		a.handleMachineError(machine, apierrors.UpdateMachine("failed to update machine %q: %v", machine.Name, err), updateEventAction)
@@ -186,7 +186,7 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 		}
 	}
 
-	if err := scope.Persist(); err != nil {
+	if err := scope.PersistIfNeeded(machine); err != nil {
 		return fmt.Errorf("error storing machine info: %v", err)
 	}
 

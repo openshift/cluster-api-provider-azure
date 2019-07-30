@@ -29,6 +29,7 @@ import (
 	"github.com/pkg/errors"
 	apicorev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog"
@@ -156,6 +157,8 @@ func (s *MachineScope) storeMachineStatus() (*machinev1.Machine, error) {
 		return nil, err
 	}
 
+	time := metav1.Now()
+	s.Machine.Status.LastUpdated = &time
 	s.Machine.Status.ProviderStatus = ext
 	return s.MachineClient.UpdateStatus(s.Machine)
 }

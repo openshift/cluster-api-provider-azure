@@ -187,7 +187,10 @@ func TestPersistIfNeeded(t *testing.T) {
 	modifiedProviderStatus.VMID = pointer.StringPtr("modified")
 
 	// create current and modified status
-	currentStatus := &machinev1.MachineStatus{}
+	var originalTime = metav1.Now()
+	currentStatus := &machinev1.MachineStatus{
+		LastUpdated: &originalTime,
+	}
 	currentStatus.ProviderStatus = rawExtCurrentProviderStatus
 	modifiedStatus := currentStatus.DeepCopy()
 	modifiedStatus.NodeRef = &corev1.ObjectReference{
@@ -207,6 +210,7 @@ func TestPersistIfNeeded(t *testing.T) {
 		modifiedProviderSpec   *machineproviderv1.AzureMachineProviderSpec
 		modifiedProviderStatus *machineproviderv1.AzureMachineProviderStatus
 		updateCount            int
+		updateStatus           bool
 	}{
 		{
 			desc:                   "nothing modified",
@@ -231,6 +235,7 @@ func TestPersistIfNeeded(t *testing.T) {
 			modifiedStatus:         modifiedStatus.DeepCopy(),
 			modifiedProviderStatus: currentProviderStatus.DeepCopy(),
 			updateCount:            2,
+			updateStatus:           true,
 		},
 		{
 			desc:            "modified machine providerSpec",
@@ -249,6 +254,7 @@ func TestPersistIfNeeded(t *testing.T) {
 			modifiedStatus:         currentStatus.DeepCopy(),
 			modifiedProviderStatus: modifiedProviderStatus.DeepCopy(),
 			updateCount:            1,
+			updateStatus:           true,
 		},
 	}
 
@@ -323,6 +329,15 @@ func TestPersistIfNeeded(t *testing.T) {
 			t.Errorf("Expected: %+v, got: %+v", s.Machine, gotMachine)
 		}
 
+		if tc.updateStatus {
+			if originalTime.Equal(gotMachine.Status.LastUpdated) {
+				t.Errorf("Expected %v, got: %v", originalTime, gotMachine.Status.LastUpdated)
+			}
+		} else {
+			if !originalTime.Equal(gotMachine.Status.LastUpdated) {
+				t.Errorf("Expected %v, got: %v", originalTime, gotMachine.Status.LastUpdated)
+			}
+		}
 		if updateCount != tc.updateCount {
 			t.Errorf("Expected: %v, got: %v", tc.updateCount, updateCount)
 		}

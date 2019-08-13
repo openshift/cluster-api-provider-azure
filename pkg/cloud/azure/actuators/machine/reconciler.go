@@ -86,60 +86,43 @@ func NewReconciler(scope *actuators.MachineScope) *Reconciler {
 }
 
 // Create creates machine if and only if machine exists, handled by cluster-api
-func (s *Reconciler) Create(ctx context.Context) error {
-	if err := s.CreateMachine(ctx); err != nil {
-		s.scope.MachineStatus.Conditions = setMachineProviderCondition(s.scope.MachineStatus.Conditions, v1beta1.AzureMachineProviderCondition{
-			Type:    v1beta1.MachineCreated,
-			Status:  apicorev1.ConditionTrue,
-			Reason:  machineCreationFailedReason,
-			Message: err.Error(),
-		})
-		return err
-	}
-	return nil
-}
-
-// CreateMachine creates machine if and only if machine exists, handled by cluster-api
-func (s *Reconciler) CreateMachine(ctx context.Context) error {
+func (s *Reconciler) Create(ctx context.Context) (*compute.VirtualMachine, error) {
 	// TODO: update once machine controllers have a way to indicate a machine has been provisoned. https://github.com/kubernetes-sigs/cluster-api/issues/253
 	// Seeing a node cannot be purely relied upon because the provisioned control plane will not be registering with
 	// the stack that provisions it.
-	if s.scope.Machine.Annotations == nil {
-		s.scope.Machine.Annotations = map[string]string{}
-	}
-
 	nicName := azure.GenerateNetworkInterfaceName(s.scope.Machine.Name)
 	if err := s.createNetworkInterface(ctx, nicName); err != nil {
-		return errors.Wrapf(err, "failed to create nic %s for machine %s", nicName, s.scope.Machine.Name)
+		return nil, errors.Wrapf(err, "failed to create nic %s for machine %s", nicName, s.scope.Machine.Name)
 	}
 
-	if err := s.createVirtualMachine(ctx, nicName); err != nil {
-		return errors.Wrapf(err, "failed to create vm %s ", s.scope.Machine.Name)
+	vm, err := s.createVirtualMachine(ctx, nicName)
+	if err != nil {
+		return vm, fmt.Errorf("failed to create vm %s: %v", s.scope.Machine.Name, err)
 	}
 
-	return nil
+	return vm, nil
 }
 
 // Update updates machine if and only if machine exists, handled by cluster-api
-func (s *Reconciler) Update(ctx context.Context) error {
+func (s *Reconciler) Update(ctx context.Context) (*compute.VirtualMachine, error) {
 	vmSpec := &virtualmachines.Spec{
 		Name: s.scope.Machine.Name,
 	}
 	vmInterface, err := s.virtualMachinesSvc.Get(ctx, vmSpec)
 	if err != nil {
-		return errors.Errorf("failed to get vm: %+v", err)
+		return nil, errors.Errorf("failed to get vm: %+v", err)
 	}
 
 	vm, ok := vmInterface.(compute.VirtualMachine)
 	if !ok {
-		return errors.New("returned incorrect vm interface")
+		return nil, errors.New("returned incorrect vm interface")
 	}
 
 	// We can now compare the various Azure state to the state we were passed.
 	// We will check immutable state first, in order to fail quickly before
 	// moving on to state that we can mutate.
 	if isMachineOutdated(s.scope.MachineConfig, converters.SDKToVM(vm)) {
-		return errors.Errorf("found attempt to change immutable state")
+		return nil, errors.Errorf("found attempt to change immutable state")
 	}
 
 	// TODO: Uncomment after implementing tagging.
@@ -151,127 +134,7 @@ func (s *Reconciler) Update(ctx context.Context) error {
 		}
 	*/
 
-	networkAddresses := []apicorev1.NodeAddress{}
-
-	// The computer name for a VM instance is the hostname of the VM
-	// TODO(jchaloup): find a way how to propagete the hostname change in case
-	// someone/something changes the hostname inside the VM
-	if vm.OsProfile != nil && vm.OsProfile.ComputerName != nil {
-		networkAddresses = append(networkAddresses, apicorev1.NodeAddress{
-			Type:    apicorev1.NodeHostName,
-			Address: *vm.OsProfile.ComputerName,
-		})
-
-		// csr approved requires node internal dns name to be equal to a node name
-		networkAddresses = append(networkAddresses, apicorev1.NodeAddress{
-			Type:    apicorev1.NodeInternalDNS,
-			Address: *vm.OsProfile.ComputerName,
-		})
-	}
-
-	if vm.NetworkProfile != nil && vm.NetworkProfile.NetworkInterfaces != nil {
-		if s.scope.MachineConfig.Vnet == "" {
-			return errors.Errorf("MachineConfig vnet is missing on machine %s", s.scope.Machine.Name)
-		}
-
-		for _, iface := range *vm.NetworkProfile.NetworkInterfaces {
-			// Get iface name from the ID
-			ifaceName := path.Base(*iface.ID)
-			networkIface, err := s.networkInterfacesSvc.Get(ctx, &networkinterfaces.Spec{
-				Name:     ifaceName,
-				VnetName: s.scope.MachineConfig.Vnet,
-			})
-			if err != nil {
-				klog.Errorf("Unable to get %q network interface: %v", ifaceName, err)
-				continue
-			}
-
-			niface, ok := networkIface.(network.Interface)
-			if !ok {
-				klog.Errorf("Network interfaces get returned invalid network interface, getting %T instead", networkIface)
-				continue
-			}
-
-			// Internal dns name consists of a hostname and internal dns suffix
-			if niface.InterfacePropertiesFormat.DNSSettings != nil && niface.InterfacePropertiesFormat.DNSSettings.InternalDomainNameSuffix != nil && vm.OsProfile != nil && vm.OsProfile.ComputerName != nil {
-				networkAddresses = append(networkAddresses, apicorev1.NodeAddress{
-					Type:    apicorev1.NodeInternalDNS,
-					Address: fmt.Sprintf("%s.%s", *vm.OsProfile.ComputerName, *niface.InterfacePropertiesFormat.DNSSettings.InternalDomainNameSuffix),
-				})
-			}
-
-			if niface.InterfacePropertiesFormat.IPConfigurations == nil {
-				continue
-			}
-
-			for _, ipConfig := range *niface.InterfacePropertiesFormat.IPConfigurations {
-				if ipConfig.PrivateIPAddress != nil {
-					networkAddresses = append(networkAddresses, apicorev1.NodeAddress{
-						Type:    apicorev1.NodeInternalIP,
-						Address: *ipConfig.PrivateIPAddress,
-					})
-				}
-
-				if ipConfig.PublicIPAddress != nil && ipConfig.PublicIPAddress.ID != nil {
-					publicIPInterface, publicIPErr := s.publicIPSvc.Get(ctx, &publicips.Spec{Name: path.Base(*ipConfig.PublicIPAddress.ID)})
-					if publicIPErr != nil {
-						klog.Errorf("Unable to get %q public IP: %v", path.Base(*ipConfig.PublicIPAddress.ID), publicIPErr)
-						continue
-					}
-
-					ip, ok := publicIPInterface.(network.PublicIPAddress)
-					if !ok {
-						klog.Errorf("Public ip get returned invalid network interface, getting %T instead", publicIPInterface)
-						continue
-					}
-
-					if ip.IPAddress != nil {
-						networkAddresses = append(networkAddresses, apicorev1.NodeAddress{
-							Type:    apicorev1.NodeExternalIP,
-							Address: *ip.IPAddress,
-						})
-					}
-
-					if ip.DNSSettings != nil && ip.DNSSettings.Fqdn != nil {
-						networkAddresses = append(networkAddresses, apicorev1.NodeAddress{
-							Type:    apicorev1.NodeExternalDNS,
-							Address: *ip.DNSSettings.Fqdn,
-						})
-					}
-				}
-			}
-		}
-	}
-
-	s.scope.Machine.Status.Addresses = networkAddresses
-
-	// Set provider ID
-	if vm.OsProfile != nil && vm.OsProfile.ComputerName != nil {
-		providerID := azure.GenerateMachineProviderID(
-			s.scope.SubscriptionID,
-			s.scope.ClusterConfig.ResourceGroup,
-			*vm.OsProfile.ComputerName)
-		s.scope.Machine.Spec.ProviderID = &providerID
-	} else {
-		klog.Warningf("Unable to set providerID, not able to get vm.OsProfile.ComputerName. Setting ProviderID to nil.")
-		s.scope.Machine.Spec.ProviderID = nil
-	}
-
-	// Set instance conditions
-	s.scope.MachineStatus.Conditions = setMachineProviderCondition(s.scope.MachineStatus.Conditions, v1beta1.AzureMachineProviderCondition{
-		Type:    v1beta1.MachineCreated,
-		Status:  apicorev1.ConditionTrue,
-		Reason:  machineCreationSucceedReason,
-		Message: machineCreationSucceedMessage,
-	})
-
-	vmState := getVMState(vm)
-	s.scope.MachineStatus.VMID = vm.ID
-	s.scope.MachineStatus.VMState = &vmState
-
-	s.setMachineCloudProviderSpecifics(vm)
-
-	return nil
+	return &vm, nil
 }
 
 func getVMState(vm compute.VirtualMachine) v1beta1.VMState {
@@ -392,14 +255,6 @@ func (s *Reconciler) Delete(ctx context.Context) error {
 		Name: s.scope.Machine.Name,
 	}
 
-	// Getting a vm object does not work here so let's assume
-	// an instance is really being deleted
-	if s.scope.Machine.Annotations == nil {
-		s.scope.Machine.Annotations = make(map[string]string)
-	}
-	s.scope.Machine.Annotations[MachineInstanceStateAnnotationName] = string(v1beta1.VMStateDeleting)
-	s.scope.MachineStatus.VMState = &v1beta1.VMStateDeleting
-
 	err := s.virtualMachinesSvc.Delete(ctx, vmSpec)
 	if err != nil {
 		return errors.Wrapf(err, "failed to delete machine")
@@ -511,7 +366,7 @@ func (s *Reconciler) createNetworkInterface(ctx context.Context, nicName string)
 	return err
 }
 
-func (s *Reconciler) createVirtualMachine(ctx context.Context, nicName string) error {
+func (s *Reconciler) createVirtualMachine(ctx context.Context, nicName string) (*compute.VirtualMachine, error) {
 	decoded, err := base64.StdEncoding.DecodeString(s.scope.MachineConfig.SSHPublicKey)
 	if err != nil {
 		errors.Wrapf(err, "failed to decode ssh public key")
@@ -525,11 +380,11 @@ func (s *Reconciler) createVirtualMachine(ctx context.Context, nicName string) e
 	if err != nil && vmInterface == nil {
 		zone, err := s.getZone(ctx)
 		if err != nil {
-			return errors.Wrapf(err, "failed to get zone")
+			return nil, errors.Wrapf(err, "failed to get zone")
 		}
 
 		if s.scope.MachineConfig.ManagedIdentity == "" {
-			return errors.Errorf("MachineConfig managedIdentity is missing on machine %s", s.scope.Machine.Name)
+			return nil, errors.Errorf("MachineConfig managedIdentity is missing on machine %s", s.scope.Machine.Name)
 		}
 
 		vmSpec = &virtualmachines.Spec{
@@ -546,47 +401,41 @@ func (s *Reconciler) createVirtualMachine(ctx context.Context, nicName string) e
 
 		userData, userDataErr := s.getCustomUserData()
 		if userDataErr != nil {
-			return errors.Wrapf(userDataErr, "failed to get custom script data")
+			return nil, errors.Wrapf(userDataErr, "failed to get custom script data")
 		}
 
 		if userData != "" {
 			vmSpec.CustomData = userData
 		}
 
+		// This always returns and it's always nil
 		err = s.virtualMachinesSvc.CreateOrUpdate(ctx, vmSpec)
 		if err != nil {
-			return errors.Wrapf(err, "failed to create or get machine")
+			return nil, errors.Wrapf(err, "failed to create or get machine")
 		}
+		return nil, nil
 	} else if err != nil {
-		return errors.Wrap(err, "failed to get vm")
+		return nil, errors.Wrap(err, "failed to get vm")
 	} else {
 		vm, ok := vmInterface.(compute.VirtualMachine)
 		if !ok {
-			return errors.New("returned incorrect vm interface")
+			return nil, errors.New("returned incorrect vm interface")
 		}
 		if vm.ProvisioningState == nil {
-			return errors.Errorf("vm %s is nil provisioning state, reconcile", s.scope.Machine.Name)
+			return nil, errors.Errorf("vm %s is nil provisioning state, reconcile", s.scope.Machine.Name)
 		}
-
-		vmState := getVMState(vm)
-		s.scope.MachineStatus.VMID = vm.ID
-		s.scope.MachineStatus.VMState = &vmState
-
-		s.setMachineCloudProviderSpecifics(vm)
 
 		if *vm.ProvisioningState == "Failed" {
 			// If VM failed provisioning, delete it so it can be recreated
 			err = s.Delete(ctx)
 			if err != nil {
-				return errors.Wrapf(err, "failed to delete machine")
+				return nil, errors.Wrapf(err, "failed to delete machine")
 			}
-			return errors.Errorf("vm %s is deleted, retry creating in next reconcile", s.scope.Machine.Name)
-		} else if *vm.ProvisioningState != "Succeeded" {
-			return errors.Errorf("vm %s is still in provisioning state %s, reconcile", s.scope.Machine.Name, *vm.ProvisioningState)
+			return nil, errors.Errorf("vm %s is deleted, retry creating in next reconcile", s.scope.Machine.Name)
 		}
-	}
 
-	return nil
+		return &vm, nil
+	}
 }
 
 func (s *Reconciler) getCustomUserData() (string, error) {

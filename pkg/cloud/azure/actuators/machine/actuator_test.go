@@ -255,11 +255,11 @@ func (s *FakeCountService) Delete(ctx context.Context, spec azure.Spec) error {
 func TestReconcilerSuccess(t *testing.T) {
 	fakeReconciler := newFakeReconciler(t)
 
-	if err := fakeReconciler.Create(context.Background()); err != nil {
+	if _, err := fakeReconciler.Create(context.Background()); err != nil {
 		t.Errorf("failed to create machine: %+v", err)
 	}
 
-	if err := fakeReconciler.Update(context.Background()); err != nil {
+	if _, err := fakeReconciler.Update(context.Background()); err != nil {
 		t.Errorf("failed to update machine: %+v", err)
 	}
 
@@ -279,11 +279,11 @@ func TestReconcileFailure(t *testing.T) {
 	fakeReconciler.virtualMachinesSvc = fakeFailureSvc
 	fakeReconciler.virtualMachinesExtSvc = fakeFailureSvc
 
-	if err := fakeReconciler.Create(context.Background()); err == nil {
+	if _, err := fakeReconciler.Create(context.Background()); err == nil {
 		t.Errorf("expected create to fail")
 	}
 
-	if err := fakeReconciler.Update(context.Background()); err == nil {
+	if _, err := fakeReconciler.Update(context.Background()); err == nil {
 		t.Errorf("expected update to fail")
 	}
 
@@ -309,7 +309,7 @@ func TestReconcileVMFailedState(t *testing.T) {
 	fakeNicService := &FakeCountService{}
 	fakeReconciler.networkInterfacesSvc = fakeNicService
 
-	if err := fakeReconciler.Create(context.Background()); err == nil {
+	if _, err := fakeReconciler.Create(context.Background()); err == nil {
 		t.Errorf("expected create to fail")
 	}
 
@@ -343,7 +343,7 @@ func TestReconcileVMUpdatingState(t *testing.T) {
 	}
 	fakeReconciler.virtualMachinesSvc = fakeVMService
 
-	if err := fakeReconciler.Create(context.Background()); err == nil {
+	if _, err := fakeReconciler.Create(context.Background()); err == nil {
 		t.Errorf("expected create to fail")
 	}
 
@@ -369,7 +369,7 @@ func TestReconcileVMSuceededState(t *testing.T) {
 	}
 	fakeReconciler.virtualMachinesSvc = fakeVMService
 
-	if err := fakeReconciler.Create(context.Background()); err != nil {
+	if _, err := fakeReconciler.Create(context.Background()); err != nil {
 		t.Errorf("failed to create machine: %+v", err)
 	}
 
@@ -448,7 +448,7 @@ func TestAvailabilityZones(t *testing.T) {
 	fakeReconciler.virtualMachinesSvc = &FakeVMCheckZonesService{
 		checkZones: []string{"2"},
 	}
-	if err := fakeReconciler.Create(context.Background()); err != nil {
+	if _, err := fakeReconciler.Create(context.Background()); err != nil {
 		t.Errorf("failed to create machine: %+v", err)
 	}
 
@@ -456,7 +456,7 @@ func TestAvailabilityZones(t *testing.T) {
 	fakeReconciler.virtualMachinesSvc = &FakeVMCheckZonesService{
 		checkZones: []string{""},
 	}
-	if err := fakeReconciler.Create(context.Background()); err != nil {
+	if _, err := fakeReconciler.Create(context.Background()); err != nil {
 		t.Errorf("failed to create machine: %+v", err)
 	}
 
@@ -464,7 +464,7 @@ func TestAvailabilityZones(t *testing.T) {
 	fakeReconciler.virtualMachinesSvc = &FakeVMCheckZonesService{
 		checkZones: []string{"3"},
 	}
-	if err := fakeReconciler.Create(context.Background()); err == nil {
+	if _, err := fakeReconciler.Create(context.Background()); err == nil {
 		t.Errorf("expected create to fail due to zone mismatch")
 	}
 }
@@ -520,7 +520,7 @@ func TestCustomUserData(t *testing.T) {
 	fakeScope.MachineConfig.UserDataSecret = &corev1.SecretReference{Name: "testCustomUserData"}
 	fakeReconciler := newFakeReconcilerWithScope(t, fakeScope)
 	fakeReconciler.virtualMachinesSvc = &FakeVMCheckZonesService{}
-	if err := fakeReconciler.Create(context.Background()); err != nil {
+	if _, err := fakeReconciler.Create(context.Background()); err != nil {
 		t.Errorf("expected create to succeed %v", err)
 	}
 
@@ -551,7 +551,7 @@ func TestCustomDataFailures(t *testing.T) {
 	fakeReconciler.virtualMachinesSvc = &FakeVMCheckZonesService{}
 
 	fakeScope.MachineConfig.UserDataSecret = &corev1.SecretReference{Name: "testFailure"}
-	if err := fakeReconciler.Create(context.Background()); err == nil {
+	if _, err := fakeReconciler.Create(context.Background()); err == nil {
 		t.Errorf("expected create to fail")
 	}
 
@@ -681,6 +681,11 @@ func TestMachineEvents(t *testing.T) {
 		},
 	}
 
+	codec, err := providerspecv1.NewCodec()
+	if err != nil {
+		t.Fatalf("Unable to create codec: %v", err)
+	}
+
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cs := controllerfake.NewFakeClient(tc.credSecret)
@@ -698,6 +703,7 @@ func TestMachineEvents(t *testing.T) {
 			machineActuator := NewActuator(ActuatorParams{
 				Client:     fake.NewSimpleClientset(tc.machine).MachineV1beta1(),
 				CoreClient: cs,
+				Codec:      codec,
 				ReconcilerBuilder: func(scope *actuators.MachineScope) *Reconciler {
 					return &Reconciler{
 						scope:                 scope,

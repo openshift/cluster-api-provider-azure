@@ -45,6 +45,8 @@ const (
 	updateEventAction = "Update"
 	deleteEventAction = "Delete"
 	noEventAction     = ""
+
+	requeueAfterSeconds = 20
 )
 
 //+kubebuilder:rbac:groups=azureprovider.k8s.io,resources=azuremachineproviderconfigs;azuremachineproviderstatuses,verbs=get;list;watch;create;update;patch;delete
@@ -106,20 +108,56 @@ func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machi
 		return a.handleMachineError(machine, apierrors.CreateMachine("failed to create machine %q scope: %v", machine.Name, err), createEventAction)
 	}
 
-	err = a.reconcilerBuilder(scope).Create(context.Background())
-	if err != nil {
-		// We still want to persist on failure to update MachineStatus
-		if err := scope.Persist(); err != nil {
-			klog.Errorf("Error storing machine info: %v", err)
+	vm, err := a.reconcilerBuilder(scope).Create(context.Background())
+	if vm != nil {
+		modMachine, err := a.setMachineCloudProviderSpecifics(machine, *vm)
+		if err != nil {
+			klog.Errorf("%s: error updating machine cloud provider specifics: %v", machine.Name, err)
+		} else {
+			machine = modMachine
 		}
-		a.handleMachineError(machine, apierrors.CreateMachine("failed to reconcile machine %qs: %v", machine.Name, err), createEventAction)
+
+		modMachine, err = a.updateStatus(ctx, machine, a.reconcilerBuilder(scope), *vm)
+		if err != nil {
+			klog.Infof("%s: failed to update status: %v", machine.Name, err)
+			return &controllerError.RequeueAfterError{RequeueAfter: requeueAfterSeconds * time.Second}
+		}
+		machine = modMachine
+
+		modMachine, err = a.updateProviderID(machine, *vm, scope.SubscriptionID, scope.ClusterConfig.ResourceGroup)
+		if err != nil {
+			klog.Infof("%s: failed to set provider ID: %v", machine.Name, err)
+		} else {
+			machine = modMachine
+		}
+
+		// If machine state is still provisioning state, we will return an error to keep the controllers
+		// attempting to update status until it hits a more permanent state.
+		if *vm.ProvisioningState != "Succeeded" {
+			klog.Infof("%s: vm state not yet succeeded, returning an error to requeue", machine.Name)
+			return &controllerError.RequeueAfterError{RequeueAfter: requeueAfterSeconds * time.Second}
+		}
+	}
+
+	if err != nil {
+		modMachine, updateConditionError := a.updateMachineProviderConditions(machine, providerconfig.MachineCreated, machineCreationFailedReason, err.Error())
+		if updateConditionError != nil {
+			klog.Errorf("%s: error updating machine conditions: %v", machine.Name, updateConditionError)
+		} else {
+			machine = modMachine
+		}
+
+		a.handleMachineError(modMachine, apierrors.CreateMachine("failed to reconcile machine %qs: %v", machine.Name, err), createEventAction)
 		return &controllerError.RequeueAfterError{
 			RequeueAfter: time.Minute,
 		}
 	}
 
-	if err := scope.Persist(); err != nil {
-		return fmt.Errorf("error storing machine info: %v", err)
+	modMachine, updateConditionError := a.updateMachineProviderConditions(machine, providerconfig.MachineCreated, machineCreationSucceedReason, machineCreationSucceedMessage)
+	if updateConditionError != nil {
+		klog.Errorf("%s: error updating machine conditions: %v", machine.Name, updateConditionError)
+	} else {
+		machine = modMachine
 	}
 
 	a.eventRecorder.Eventf(machine, corev1.EventTypeNormal, "Created", "Created machine %q", machine.Name)
@@ -130,6 +168,13 @@ func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machi
 // Delete deletes a machine and is invoked by the Machine Controller.
 func (a *Actuator) Delete(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
 	klog.Infof("Deleting machine %v", machine.Name)
+
+	modMachine, err := a.setDeletingState(ctx, machine)
+	if err != nil {
+		klog.Errorf("unable to set machine deleting state: %v", err)
+	} else {
+		machine = modMachine
+	}
 
 	scope, err := actuators.NewMachineScope(actuators.MachineScopeParams{
 		Machine:    machine,
@@ -143,18 +188,10 @@ func (a *Actuator) Delete(ctx context.Context, cluster *clusterv1.Cluster, machi
 
 	err = a.reconcilerBuilder(scope).Delete(context.Background())
 	if err != nil {
-		// We still want to persist on failure to update MachineStatus
-		if err := scope.Persist(); err != nil {
-			klog.Errorf("Error storing machine info: %v", err)
-		}
 		a.handleMachineError(machine, apierrors.DeleteMachine("failed to delete machine %q: %v", machine.Name, err), deleteEventAction)
 		return &controllerError.RequeueAfterError{
 			RequeueAfter: time.Minute,
 		}
-	}
-
-	if err := scope.Persist(); err != nil {
-		return fmt.Errorf("error storing machine info: %v", err)
 	}
 
 	a.eventRecorder.Eventf(machine, corev1.EventTypeNormal, "Deleted", "Deleted machine %q", machine.Name)
@@ -178,20 +215,42 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 		return a.handleMachineError(machine, apierrors.UpdateMachine("failed to create machine %q scope: %v", machine.Name, err), updateEventAction)
 	}
 
-	err = a.reconcilerBuilder(scope).Update(context.Background())
-	if err != nil {
-		// We still want to persist on failure to update MachineStatus
-		if err := scope.Persist(); err != nil {
-			klog.Errorf("Error storing machine info: %v", err)
+	vm, err := a.reconcilerBuilder(scope).Update(context.Background())
+	if vm != nil {
+		modMachine, err := a.setMachineCloudProviderSpecifics(machine, *vm)
+		if err != nil {
+			klog.Errorf("%s: error updating machine cloud provider specifics: %v", machine.Name, err)
+		} else {
+			machine = modMachine
 		}
+
+		modMachine, err = a.updateStatus(ctx, machine, a.reconcilerBuilder(scope), *vm)
+		if err != nil {
+			klog.Infof("%s: failed to update status: %v", machine.Name, err)
+			return &controllerError.RequeueAfterError{RequeueAfter: requeueAfterSeconds * time.Second}
+		}
+		machine = modMachine
+
+		modMachine, err = a.updateProviderID(machine, *vm, scope.SubscriptionID, scope.ClusterConfig.ResourceGroup)
+		if err != nil {
+			klog.Infof("%s: failed to set provider ID: %v", machine.Name, err)
+		} else {
+			machine = modMachine
+		}
+
+		modMachine, updateConditionError := a.updateMachineProviderConditions(machine, providerconfig.MachineCreated, machineCreationSucceedReason, machineCreationSucceedMessage)
+		if updateConditionError != nil {
+			klog.Errorf("%s: error updating machine conditions: %v", machine.Name, updateConditionError)
+		} else {
+			machine = modMachine
+		}
+	}
+
+	if err != nil {
 		a.handleMachineError(machine, apierrors.UpdateMachine("failed to update machine %q: %v", machine.Name, err), updateEventAction)
 		return &controllerError.RequeueAfterError{
 			RequeueAfter: time.Minute,
 		}
-	}
-
-	if err := scope.Persist(); err != nil {
-		return fmt.Errorf("error storing machine info: %v", err)
 	}
 
 	a.eventRecorder.Eventf(machine, corev1.EventTypeNormal, "Updated", "Updated machine %q", machine.Name)
@@ -366,9 +425,12 @@ func (a *Actuator) setDeletingState(ctx context.Context, machine *machinev1.Mach
 
 	modMachine, err := a.updateMachineStatus(machine, azureStatus, nil)
 	if err != nil {
-		return nil, fmt.Errorf("%s: error updating machine status: %v", modMachine.Name, err)
+		return nil, fmt.Errorf("%s: error updating machine status: %v", machine.Name, err)
 	}
 
+	if modMachine.Annotations == nil {
+		modMachine.Annotations = make(map[string]string)
+	}
 	modMachine.Annotations[MachineInstanceStateAnnotationName] = string(providerconfig.VMStateDeleting)
 
 	if err := a.coreClient.Update(ctx, modMachine); err != nil {

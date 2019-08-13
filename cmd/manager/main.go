@@ -24,6 +24,7 @@ import (
 	capimachine "github.com/openshift/cluster-api/pkg/controller/machine"
 	"k8s.io/klog"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/apis"
+	providerspecv1 "sigs.k8s.io/cluster-api-provider-azure/pkg/apis/azureprovider/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure/actuators/machine"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/record"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -61,10 +62,16 @@ func main() {
 	// Initialize event recorder.
 	record.InitFromRecorder(mgr.GetEventRecorderFor("azure-controller"))
 
+	codec, err := providerspecv1.NewCodec()
+	if err != nil {
+		klog.Fatalf("Unable to create codec: %v", err)
+	}
+
 	// Initialize machine actuator.
 	machineActuator := machine.NewActuator(machine.ActuatorParams{
 		Client:            cs.MachineV1beta1(),
 		CoreClient:        mgr.GetClient(),
+		Codec:             codec,
 		ReconcilerBuilder: machine.NewReconciler,
 		EventRecorder:     mgr.GetEventRecorderFor("azure-controller"),
 	})

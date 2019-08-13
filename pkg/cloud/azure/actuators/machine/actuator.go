@@ -19,8 +19,10 @@ package machine
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute"
 	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
 	machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
 	client "github.com/openshift/cluster-api/pkg/client/clientset_generated/clientset/typed/machine/v1beta1"
@@ -28,8 +30,12 @@ import (
 	apierrors "github.com/openshift/cluster-api/pkg/errors"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog"
+	providerconfig "sigs.k8s.io/cluster-api-provider-azure/pkg/apis/azureprovider/v1beta1"
+	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure/actuators"
 	controllerclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -48,10 +54,10 @@ const (
 
 // Actuator is responsible for performing machine reconciliation.
 type Actuator struct {
-	client        client.MachineV1beta1Interface
-	coreClient    controllerclient.Client
-	eventRecorder record.EventRecorder
-
+	client            client.MachineV1beta1Interface
+	coreClient        controllerclient.Client
+	eventRecorder     record.EventRecorder
+	codec             *providerconfig.AzureProviderConfigCodec
 	reconcilerBuilder func(scope *actuators.MachineScope) *Reconciler
 }
 
@@ -60,6 +66,7 @@ type ActuatorParams struct {
 	Client            client.MachineV1beta1Interface
 	CoreClient        controllerclient.Client
 	EventRecorder     record.EventRecorder
+	Codec             *providerconfig.AzureProviderConfigCodec
 	ReconcilerBuilder func(scope *actuators.MachineScope) *Reconciler
 }
 
@@ -69,6 +76,7 @@ func NewActuator(params ActuatorParams) *Actuator {
 		client:            params.Client,
 		coreClient:        params.CoreClient,
 		eventRecorder:     params.EventRecorder,
+		codec:             params.Codec,
 		reconcilerBuilder: params.ReconcilerBuilder,
 	}
 }
@@ -211,4 +219,182 @@ func (a *Actuator) Exists(ctx context.Context, cluster *clusterv1.Cluster, machi
 	}
 
 	return isExists, err
+}
+
+func (a *Actuator) updateMachineProviderConditions(machine *machinev1.Machine, conditionType providerconfig.AzureMachineProviderConditionType, reason string, msg string) (*machinev1.Machine, error) {
+	klog.Infof("%s: updating machine conditions", machine.Name)
+
+	azureStatus := &providerconfig.AzureMachineProviderStatus{}
+	if err := a.codec.DecodeProviderStatus(machine.Status.ProviderStatus, azureStatus); err != nil {
+		klog.Errorf("%s: error decoding machine provider status: %v", machine.Name, err)
+		return nil, err
+	}
+
+	azureStatus.Conditions = setMachineProviderCondition(azureStatus.Conditions, providerconfig.AzureMachineProviderCondition{
+		Type:    conditionType,
+		Status:  corev1.ConditionTrue,
+		Reason:  reason,
+		Message: msg,
+	})
+
+	modMachine, err := a.updateMachineStatus(machine, azureStatus, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return modMachine, nil
+}
+
+func (a *Actuator) updateMachineStatus(machine *machinev1.Machine, azureStatus *providerconfig.AzureMachineProviderStatus, networkAddresses []corev1.NodeAddress) (*machinev1.Machine, error) {
+	azureStatusRaw, err := a.codec.EncodeProviderStatus(azureStatus)
+	if err != nil {
+		klog.Errorf("%s: error encoding AWS provider status: %v", machine.Name, err)
+		return nil, err
+	}
+
+	machineCopy := machine.DeepCopy()
+	machineCopy.Status.ProviderStatus = azureStatusRaw
+	if networkAddresses != nil {
+		machineCopy.Status.Addresses = networkAddresses
+	}
+
+	oldAWSStatus := &providerconfig.AzureMachineProviderStatus{}
+	if err := a.codec.DecodeProviderStatus(machine.Status.ProviderStatus, oldAWSStatus); err != nil {
+		klog.Errorf("%s: error updating machine status: %v", machine.Name, err)
+		return nil, err
+	}
+
+	if !equality.Semantic.DeepEqual(azureStatus, oldAWSStatus) || !equality.Semantic.DeepEqual(machine.Status.Addresses, machineCopy.Status.Addresses) {
+		klog.Infof("%s: machine status has changed, updating", machine.Name)
+		time := metav1.Now()
+		machineCopy.Status.LastUpdated = &time
+
+		if err := a.coreClient.Status().Update(context.Background(), machineCopy); err != nil {
+			klog.Errorf("%s: error updating machine status: %v", machine.Name, err)
+			return nil, err
+		}
+		return machineCopy, nil
+	}
+
+	klog.Infof("%s: status unchanged", machine.Name)
+	return machine, nil
+}
+
+// providerConfigFromMachine gets the machine provider config MachineSetSpec from the
+// specified cluster-api MachineSpec.
+func providerConfigFromMachine(machine *machinev1.Machine, codec *providerconfig.AzureProviderConfigCodec) (*providerconfig.AzureMachineProviderSpec, error) {
+	if machine.Spec.ProviderSpec.Value == nil {
+		return nil, fmt.Errorf("unable to find machine provider config: Spec.ProviderSpec.Value is not set")
+	}
+
+	var config providerconfig.AzureMachineProviderSpec
+	if err := codec.DecodeProviderSpec(&machine.Spec.ProviderSpec, &config); err != nil {
+		return nil, err
+	}
+	return &config, nil
+}
+
+func (a *Actuator) setMachineCloudProviderSpecifics(machine *machinev1.Machine, vm compute.VirtualMachine) (*machinev1.Machine, error) {
+	machineCopy := machine.DeepCopy()
+
+	if machineCopy.Labels == nil {
+		machineCopy.Labels = make(map[string]string)
+	}
+
+	if machineCopy.Annotations == nil {
+		machineCopy.Annotations = make(map[string]string)
+	}
+
+	machineCopy.Annotations[MachineInstanceStateAnnotationName] = string(getVMState(vm))
+
+	if vm.HardwareProfile != nil {
+		machineCopy.Labels[MachineInstanceTypeLabelName] = string(vm.HardwareProfile.VMSize)
+	}
+	if vm.Location != nil {
+		machineCopy.Labels[MachineRegionLabelName] = *vm.Location
+	}
+	if vm.Zones != nil {
+		machineCopy.Labels[MachineAZLabelName] = strings.Join(*vm.Zones, ",")
+	}
+
+	if err := a.coreClient.Update(context.Background(), machineCopy); err != nil {
+		return nil, fmt.Errorf("%s: error updating machine spec: %v", machine.Name, err)
+	}
+
+	return machineCopy, nil
+}
+
+// updateStatus calculates the new machine status, checks if anything has changed, and updates if so.
+func (a *Actuator) updateStatus(ctx context.Context, machine *machinev1.Machine, reconciler *Reconciler, vm compute.VirtualMachine) (*machinev1.Machine, error) {
+	klog.Infof("%s: Updating status", machine.Name)
+
+	azureStatus := &providerconfig.AzureMachineProviderStatus{}
+	if err := a.codec.DecodeProviderStatus(machine.Status.ProviderStatus, azureStatus); err != nil {
+		klog.Errorf("%s: Error decoding machine provider status: %v", machine.Name, err)
+		return nil, err
+	}
+
+	networkAddresses, err := reconciler.getNetworkAddresses(ctx, vm)
+	if err != nil {
+		return nil, err
+	}
+
+	vmState := getVMState(vm)
+	azureStatus.VMID = vm.ID
+	azureStatus.VMState = &vmState
+
+	klog.Infof("%s: finished calculating Azure status", machine.Name)
+
+	modMachine, err := a.updateMachineStatus(machine, azureStatus, networkAddresses)
+	if err != nil {
+		return nil, err
+	}
+
+	return modMachine, nil
+}
+
+func (a *Actuator) setDeletingState(ctx context.Context, machine *machinev1.Machine) (*machinev1.Machine, error) {
+	// Getting a vm object does not work here so let's assume
+	// an instance is really being deleted
+	azureStatus := &providerconfig.AzureMachineProviderStatus{}
+	if err := a.codec.DecodeProviderStatus(machine.Status.ProviderStatus, azureStatus); err != nil {
+		klog.Errorf("%s: Error decoding machine provider status: %v", machine.Name, err)
+		return nil, err
+	}
+
+	azureStatus.VMState = &providerconfig.VMStateDeleting
+
+	modMachine, err := a.updateMachineStatus(machine, azureStatus, nil)
+	if err != nil {
+		return nil, fmt.Errorf("%s: error updating machine status: %v", modMachine.Name, err)
+	}
+
+	modMachine.Annotations[MachineInstanceStateAnnotationName] = string(providerconfig.VMStateDeleting)
+
+	if err := a.coreClient.Update(ctx, modMachine); err != nil {
+		return nil, fmt.Errorf("%s: error updating machine spec: %v", modMachine.Name, err)
+	}
+
+	return modMachine, nil
+}
+
+// updateProviderID adds providerID in the machine spec
+func (a *Actuator) updateProviderID(machine *machinev1.Machine, vm compute.VirtualMachine, subscriptionID, resourceGroup string) (*machinev1.Machine, error) {
+	machineCopy := machine.DeepCopy()
+
+	// Set provider ID
+	if vm.OsProfile != nil && vm.OsProfile.ComputerName != nil {
+		providerID := azure.GenerateMachineProviderID(subscriptionID, resourceGroup, *vm.OsProfile.ComputerName)
+		klog.Infof("%s: setting ProviderID %s", machine.Name, providerID)
+		machineCopy.Spec.ProviderID = &providerID
+	} else {
+		klog.Warningf("Unable to set providerID, not able to get vm.OsProfile.ComputerName. Setting ProviderID to nil.")
+		machineCopy.Spec.ProviderID = nil
+	}
+
+	if err := a.coreClient.Update(context.Background(), machineCopy); err != nil {
+		return nil, fmt.Errorf("%s: error updating machine spec ProviderID: %v", machineCopy.Name, err)
+	}
+
+	return machineCopy, nil
 }

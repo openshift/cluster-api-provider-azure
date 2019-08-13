@@ -605,3 +605,99 @@ func (s *Reconciler) getCustomUserData() (string, error) {
 
 	return base64.StdEncoding.EncodeToString(data), nil
 }
+
+func (s *Reconciler) getNetworkAddresses(ctx context.Context, vm compute.VirtualMachine) ([]apicorev1.NodeAddress, error) {
+	networkAddresses := []apicorev1.NodeAddress{}
+
+	// The computer name for a VM instance is the hostname of the VM
+	// TODO(jchaloup): find a way how to propagete the hostname change in case
+	// someone/something changes the hostname inside the VM
+	if vm.OsProfile != nil && vm.OsProfile.ComputerName != nil {
+		networkAddresses = append(networkAddresses, apicorev1.NodeAddress{
+			Type:    apicorev1.NodeHostName,
+			Address: *vm.OsProfile.ComputerName,
+		})
+
+		// csr approved requires node internal dns name to be equal to a node name
+		networkAddresses = append(networkAddresses, apicorev1.NodeAddress{
+			Type:    apicorev1.NodeInternalDNS,
+			Address: *vm.OsProfile.ComputerName,
+		})
+	}
+
+	if vm.NetworkProfile != nil && vm.NetworkProfile.NetworkInterfaces != nil {
+		if s.scope.MachineConfig.Vnet == "" {
+			return nil, errors.Errorf("MachineConfig vnet is missing on machine %s", s.scope.Machine.Name)
+		}
+
+		for _, iface := range *vm.NetworkProfile.NetworkInterfaces {
+			// Get iface name from the ID
+			ifaceName := path.Base(*iface.ID)
+			networkIface, err := s.networkInterfacesSvc.Get(ctx, &networkinterfaces.Spec{
+				Name:     ifaceName,
+				VnetName: s.scope.MachineConfig.Vnet,
+			})
+			if err != nil {
+				klog.Errorf("Unable to get %q network interface: %v", ifaceName, err)
+				continue
+			}
+
+			niface, ok := networkIface.(network.Interface)
+			if !ok {
+				klog.Errorf("Network interfaces get returned invalid network interface, getting %T instead", networkIface)
+				continue
+			}
+
+			// Internal dns name consists of a hostname and internal dns suffix
+			if niface.InterfacePropertiesFormat.DNSSettings != nil && niface.InterfacePropertiesFormat.DNSSettings.InternalDomainNameSuffix != nil && vm.OsProfile != nil && vm.OsProfile.ComputerName != nil {
+				networkAddresses = append(networkAddresses, apicorev1.NodeAddress{
+					Type:    apicorev1.NodeInternalDNS,
+					Address: fmt.Sprintf("%s.%s", *vm.OsProfile.ComputerName, *niface.InterfacePropertiesFormat.DNSSettings.InternalDomainNameSuffix),
+				})
+			}
+
+			if niface.InterfacePropertiesFormat.IPConfigurations == nil {
+				continue
+			}
+
+			for _, ipConfig := range *niface.InterfacePropertiesFormat.IPConfigurations {
+				if ipConfig.PrivateIPAddress != nil {
+					networkAddresses = append(networkAddresses, apicorev1.NodeAddress{
+						Type:    apicorev1.NodeInternalIP,
+						Address: *ipConfig.PrivateIPAddress,
+					})
+				}
+
+				if ipConfig.PublicIPAddress != nil && ipConfig.PublicIPAddress.ID != nil {
+					publicIPInterface, publicIPErr := s.publicIPSvc.Get(ctx, &publicips.Spec{Name: path.Base(*ipConfig.PublicIPAddress.ID)})
+					if publicIPErr != nil {
+						klog.Errorf("Unable to get %q public IP: %v", path.Base(*ipConfig.PublicIPAddress.ID), publicIPErr)
+						continue
+					}
+
+					ip, ok := publicIPInterface.(network.PublicIPAddress)
+					if !ok {
+						klog.Errorf("Public ip get returned invalid network interface, getting %T instead", publicIPInterface)
+						continue
+					}
+
+					if ip.IPAddress != nil {
+						networkAddresses = append(networkAddresses, apicorev1.NodeAddress{
+							Type:    apicorev1.NodeExternalIP,
+							Address: *ip.IPAddress,
+						})
+					}
+
+					if ip.DNSSettings != nil && ip.DNSSettings.Fqdn != nil {
+						networkAddresses = append(networkAddresses, apicorev1.NodeAddress{
+							Type:    apicorev1.NodeExternalDNS,
+							Address: *ip.DNSSettings.Fqdn,
+						})
+					}
+				}
+			}
+		}
+	}
+
+	return networkAddresses, nil
+}

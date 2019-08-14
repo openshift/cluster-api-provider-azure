@@ -60,7 +60,7 @@ type Actuator struct {
 	coreClient        controllerclient.Client
 	eventRecorder     record.EventRecorder
 	codec             *providerconfig.AzureProviderConfigCodec
-	reconcilerBuilder func(scope *actuators.MachineScope) *Reconciler
+	reconcilerBuilder func(scope *actuators.MachineScope, machine *machinev1.Machine, machineConfig *providerconfig.AzureMachineProviderSpec) *Reconciler
 }
 
 // ActuatorParams holds parameter information for Actuator.
@@ -69,7 +69,7 @@ type ActuatorParams struct {
 	CoreClient        controllerclient.Client
 	EventRecorder     record.EventRecorder
 	Codec             *providerconfig.AzureProviderConfigCodec
-	ReconcilerBuilder func(scope *actuators.MachineScope) *Reconciler
+	ReconcilerBuilder func(scope *actuators.MachineScope, machine *machinev1.Machine, machineConfig *providerconfig.AzureMachineProviderSpec) *Reconciler
 }
 
 // NewActuator returns an actuator.
@@ -108,7 +108,13 @@ func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machi
 		return a.handleMachineError(machine, apierrors.CreateMachine("failed to create machine %q scope: %v", machine.Name, err), createEventAction)
 	}
 
-	vm, err := a.reconcilerBuilder(scope).Create(context.Background())
+	machineConfig, err := providerConfigFromMachine(machine, a.codec)
+	if err != nil {
+		return fmt.Errorf("unable to decode machine provider config: %v", err)
+	}
+
+	reconciler := a.reconcilerBuilder(scope, machine, machineConfig)
+	vm, err := reconciler.Create(context.Background())
 	if vm != nil {
 		modMachine, err := a.setMachineCloudProviderSpecifics(machine, *vm)
 		if err != nil {
@@ -117,7 +123,7 @@ func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machi
 			machine = modMachine
 		}
 
-		modMachine, err = a.updateStatus(ctx, machine, a.reconcilerBuilder(scope), *vm)
+		modMachine, err = a.updateStatus(ctx, machine, reconciler, *vm)
 		if err != nil {
 			klog.Infof("%s: failed to update status: %v", machine.Name, err)
 			return &controllerError.RequeueAfterError{RequeueAfter: requeueAfterSeconds * time.Second}
@@ -186,7 +192,12 @@ func (a *Actuator) Delete(ctx context.Context, cluster *clusterv1.Cluster, machi
 		return a.handleMachineError(machine, apierrors.DeleteMachine("failed to create machine %q scope: %v", machine.Name, err), deleteEventAction)
 	}
 
-	err = a.reconcilerBuilder(scope).Delete(context.Background())
+	machineConfig, err := providerConfigFromMachine(machine, a.codec)
+	if err != nil {
+		return fmt.Errorf("unable to decode machine provider config: %v", err)
+	}
+
+	err = a.reconcilerBuilder(scope, machine, machineConfig).Delete(context.Background())
 	if err != nil {
 		a.handleMachineError(machine, apierrors.DeleteMachine("failed to delete machine %q: %v", machine.Name, err), deleteEventAction)
 		return &controllerError.RequeueAfterError{
@@ -215,7 +226,13 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 		return a.handleMachineError(machine, apierrors.UpdateMachine("failed to create machine %q scope: %v", machine.Name, err), updateEventAction)
 	}
 
-	vm, err := a.reconcilerBuilder(scope).Update(context.Background())
+	machineConfig, err := providerConfigFromMachine(machine, a.codec)
+	if err != nil {
+		return fmt.Errorf("unable to decode machine provider config: %v", err)
+	}
+
+	reconciler := a.reconcilerBuilder(scope, machine, machineConfig)
+	vm, err := reconciler.Update(context.Background())
 	if vm != nil {
 		modMachine, err := a.setMachineCloudProviderSpecifics(machine, *vm)
 		if err != nil {
@@ -224,7 +241,7 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 			machine = modMachine
 		}
 
-		modMachine, err = a.updateStatus(ctx, machine, a.reconcilerBuilder(scope), *vm)
+		modMachine, err = a.updateStatus(ctx, machine, reconciler, *vm)
 		if err != nil {
 			klog.Infof("%s: failed to update status: %v", machine.Name, err)
 			return &controllerError.RequeueAfterError{RequeueAfter: requeueAfterSeconds * time.Second}
@@ -272,7 +289,12 @@ func (a *Actuator) Exists(ctx context.Context, cluster *clusterv1.Cluster, machi
 		return false, errors.Errorf("failed to create scope: %+v", err)
 	}
 
-	isExists, err := a.reconcilerBuilder(scope).Exists(context.Background())
+	machineConfig, err := providerConfigFromMachine(machine, a.codec)
+	if err != nil {
+		return false, fmt.Errorf("unable to decode machine provider config: %v", err)
+	}
+
+	isExists, err := a.reconcilerBuilder(scope, machine, machineConfig).Exists(context.Background())
 	if err != nil {
 		klog.Errorf("failed to check machine %s exists: %v", machine.Name, err)
 	}

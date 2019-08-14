@@ -38,7 +38,12 @@ func TestExists(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		r := newFakeReconciler(t)
+		machine, err := stubMachine()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		r := newFakeReconciler(t, machine, stubProviderConfig())
 		r.virtualMachinesSvc = tc.vmService
 		exists, err := r.Exists(context.TODO())
 		if err != nil {

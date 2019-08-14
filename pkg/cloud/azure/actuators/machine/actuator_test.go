@@ -25,21 +25,17 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute"
 	"github.com/Azure/go-autorest/autorest/to"
-	"github.com/ghodss/yaml"
 	"github.com/golang/mock/gomock"
 	clusterapis "github.com/openshift/cluster-api/pkg/apis"
-	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
 	machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
 	"github.com/openshift/cluster-api/pkg/client/clientset_generated/clientset/fake"
 	"github.com/openshift/cluster-api/pkg/controller/machine"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
-	clusterproviderv1 "sigs.k8s.io/cluster-api-provider-azure/pkg/apis/azureprovider/v1alpha1"
 	machineproviderv1 "sigs.k8s.io/cluster-api-provider-azure/pkg/apis/azureprovider/v1beta1"
 	providerspecv1 "sigs.k8s.io/cluster-api-provider-azure/pkg/apis/azureprovider/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
@@ -53,49 +49,6 @@ import (
 var (
 	_ machine.Actuator = (*Actuator)(nil)
 )
-
-func newClusterProviderSpec() clusterproviderv1.AzureClusterProviderSpec {
-	return clusterproviderv1.AzureClusterProviderSpec{
-		ResourceGroup: "resource-group-test",
-		Location:      "southcentralus",
-	}
-}
-
-func providerSpecFromMachine(in *machineproviderv1.AzureMachineProviderSpec) (*machinev1.ProviderSpec, error) {
-	bytes, err := yaml.Marshal(in)
-	if err != nil {
-		return nil, err
-	}
-	return &machinev1.ProviderSpec{
-		Value: &runtime.RawExtension{Raw: bytes},
-	}, nil
-}
-
-func providerSpecFromCluster(in *clusterproviderv1.AzureClusterProviderSpec) (*clusterv1.ProviderSpec, error) {
-	bytes, err := yaml.Marshal(in)
-	if err != nil {
-		return nil, err
-	}
-	return &clusterv1.ProviderSpec{
-		Value: &runtime.RawExtension{Raw: bytes},
-	}, nil
-}
-
-func newMachine(t *testing.T, machineConfig machineproviderv1.AzureMachineProviderSpec, labels map[string]string) *machinev1.Machine {
-	providerSpec, err := providerSpecFromMachine(&machineConfig)
-	if err != nil {
-		t.Fatalf("error encoding provider config: %v", err)
-	}
-	return &machinev1.Machine{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   "machine-test",
-			Labels: labels,
-		},
-		Spec: machinev1.MachineSpec{
-			ProviderSpec: *providerSpec,
-		},
-	}
-}
 
 func newFakeScope(t *testing.T) *actuators.Scope {
 	return &actuators.Scope{

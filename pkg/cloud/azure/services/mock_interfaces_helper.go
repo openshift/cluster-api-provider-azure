@@ -26,9 +26,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2018-05-01/resources"
 	"github.com/Azure/go-autorest/autorest"
 	"github.com/Azure/go-autorest/autorest/to"
-	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
-	clusterproviderv1 "sigs.k8s.io/cluster-api-provider-azure/pkg/apis/azureprovider/v1alpha1"
-	machineproviderv1 "sigs.k8s.io/cluster-api-provider-azure/pkg/apis/azureprovider/v1beta1"
 )
 
 // MockVMExists mocks the VMIfExists success response.
@@ -304,24 +301,6 @@ func MockRgDeleteFutureFailure() MockAzureResourcesClient {
 	}
 }
 
-// MockDeploymentCreateOrUpdateSuccess mocks the DeploymentCreateOrUpdate success response.
-func MockDeploymentCreateOrUpdateSuccess() MockAzureResourcesClient {
-	return MockAzureResourcesClient{
-		MockCreateOrUpdateDeployment: func(machine *clusterv1.Machine, clusterConfig *clusterproviderv1.AzureClusterProviderSpec, machineConfig *machineproviderv1.AzureMachineProviderSpec) (*resources.DeploymentsCreateOrUpdateFuture, error) {
-			return &resources.DeploymentsCreateOrUpdateFuture{}, nil
-		},
-	}
-}
-
-// MockDeploymentCreateOrUpdateFailure mocks the DeploymentCreateOrUpdate failure response.
-func MockDeploymentCreateOrUpdateFailure() MockAzureResourcesClient {
-	return MockAzureResourcesClient{
-		MockCreateOrUpdateDeployment: func(machine *clusterv1.Machine, clusterConfig *clusterproviderv1.AzureClusterProviderSpec, machineConfig *machineproviderv1.AzureMachineProviderSpec) (*resources.DeploymentsCreateOrUpdateFuture, error) {
-			return nil, errors.New("failed to create resource")
-		},
-	}
-}
-
 // MockDeploymentCreateOrUpdateFutureFailure mocks the DeploymentCreateOrUpdate future failure response.
 func MockDeploymentCreateOrUpdateFutureFailure() MockAzureResourcesClient {
 	return MockAzureResourcesClient{
@@ -345,15 +324,6 @@ func MockDeloymentGetResultFailure() MockAzureResourcesClient {
 	return MockAzureResourcesClient{
 		MockGetDeploymentResult: func(future resources.DeploymentsCreateOrUpdateFuture) (resources.DeploymentExtended, error) {
 			return resources.DeploymentExtended{}, errors.New("error getting deployment result")
-		},
-	}
-}
-
-// MockDeploymentValidate mocks the DeploymentValidate error response.
-func MockDeploymentValidate() MockAzureResourcesClient {
-	return MockAzureResourcesClient{
-		MockValidateDeployment: func(machine *clusterv1.Machine, clusterConfig *clusterproviderv1.AzureClusterProviderSpec, machineConfig *machineproviderv1.AzureMachineProviderSpec) error {
-			return errors.New("error validating deployment")
 		},
 	}
 }

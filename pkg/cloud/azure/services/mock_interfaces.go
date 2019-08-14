@@ -21,9 +21,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2018-12-01/network"
 	"github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2018-05-01/resources"
 	"github.com/Azure/go-autorest/autorest"
-	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
-	clusterproviderv1 "sigs.k8s.io/cluster-api-provider-azure/pkg/apis/azureprovider/v1alpha1"
-	machineproviderv1 "sigs.k8s.io/cluster-api-provider-azure/pkg/apis/azureprovider/v1beta1"
 )
 
 // MockAzureComputeClient is a mock implementation of AzureComputeClient.
@@ -61,9 +58,7 @@ type MockAzureResourcesClient struct {
 	MockCheckGroupExistence       func(rgName string) (autorest.Response, error)
 	MockWaitForGroupsDeleteFuture func(future resources.GroupsDeleteFuture) error
 
-	MockCreateOrUpdateDeployment               func(machine *clusterv1.Machine, clusterConfig *clusterproviderv1.AzureClusterProviderSpec, machineConfig *machineproviderv1.AzureMachineProviderSpec) (*resources.DeploymentsCreateOrUpdateFuture, error)
 	MockGetDeploymentResult                    func(future resources.DeploymentsCreateOrUpdateFuture) (de resources.DeploymentExtended, err error)
-	MockValidateDeployment                     func(machine *clusterv1.Machine, clusterConfig *clusterproviderv1.AzureClusterProviderSpec, machineConfig *machineproviderv1.AzureMachineProviderSpec) error
 	MockWaitForDeploymentsCreateOrUpdateFuture func(future resources.DeploymentsCreateOrUpdateFuture) error
 }
 
@@ -233,22 +228,6 @@ func (m *MockAzureResourcesClient) WaitForGroupsDeleteFuture(future resources.Gr
 		return nil
 	}
 	return m.MockWaitForGroupsDeleteFuture(future)
-}
-
-// CreateOrUpdateDeployment creates or updates an ARM deployment.
-func (m *MockAzureResourcesClient) CreateOrUpdateDeployment(machine *clusterv1.Machine, clusterConfig *clusterproviderv1.AzureClusterProviderSpec, machineConfig *machineproviderv1.AzureMachineProviderSpec) (*resources.DeploymentsCreateOrUpdateFuture, error) {
-	if m.MockCreateOrUpdateDeployment == nil {
-		return nil, nil
-	}
-	return m.MockCreateOrUpdateDeployment(machine, clusterConfig, machineConfig)
-}
-
-// ValidateDeployment validates an ARM deployment.
-func (m *MockAzureResourcesClient) ValidateDeployment(machine *clusterv1.Machine, clusterConfig *clusterproviderv1.AzureClusterProviderSpec, machineConfig *machineproviderv1.AzureMachineProviderSpec) error {
-	if m.MockValidateDeployment == nil {
-		return nil
-	}
-	return m.MockValidateDeployment(machine, clusterConfig, machineConfig)
 }
 
 // GetDeploymentResult retrives an existing ARM deployment reference.

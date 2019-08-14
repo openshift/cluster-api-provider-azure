@@ -66,6 +66,7 @@ const (
 type Reconciler struct {
 	machine       *machinev1.Machine
 	machineConfig *v1beta1.AzureMachineProviderSpec
+	client        client.Client
 
 	scope                 *actuators.MachineScope
 	availabilityZonesSvc  azure.Service
@@ -77,9 +78,10 @@ type Reconciler struct {
 }
 
 // NewReconciler populates all the services based on input scope
-func NewReconciler(scope *actuators.MachineScope, machine *machinev1.Machine, machineConfig *v1beta1.AzureMachineProviderSpec) *Reconciler {
+func NewReconciler(scope *actuators.MachineScope, client client.Client, machine *machinev1.Machine, machineConfig *v1beta1.AzureMachineProviderSpec) *Reconciler {
 	return &Reconciler{
 		scope:                 scope,
+		client:                client,
 		machine:               machine,
 		machineConfig:         machineConfig,
 		availabilityZonesSvc:  availabilityzones.NewService(scope.Scope),
@@ -427,12 +429,12 @@ func (s *Reconciler) getCustomUserData() (string, error) {
 		return "", nil
 	}
 	var userDataSecret apicorev1.Secret
-	if err := s.scope.CoreClient.Get(context.Background(), client.ObjectKey{Namespace: s.scope.Namespace(), Name: s.machineConfig.UserDataSecret.Name}, &userDataSecret); err != nil {
-		return "", errors.Wrapf(err, "error getting user data secret %s in namespace %s", s.machineConfig.UserDataSecret.Name, s.scope.Namespace())
+	if err := s.client.Get(context.Background(), client.ObjectKey{Namespace: s.machine.Namespace, Name: s.machineConfig.UserDataSecret.Name}, &userDataSecret); err != nil {
+		return "", errors.Wrapf(err, "error getting user data secret %s in namespace %s", s.machineConfig.UserDataSecret.Name, s.machine.Namespace)
 	}
 	data, exists := userDataSecret.Data["userData"]
 	if !exists {
-		return "", errors.Errorf("Secret %v/%v does not have userData field set. Thus, no user data applied when creating an instance.", s.scope.Namespace(), s.machineConfig.UserDataSecret.Name)
+		return "", errors.Errorf("Secret %v/%v does not have userData field set. Thus, no user data applied when creating an instance.", s.machine.Namespace, s.machineConfig.UserDataSecret.Name)
 	}
 
 	return base64.StdEncoding.EncodeToString(data), nil

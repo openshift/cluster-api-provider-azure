@@ -27,6 +27,7 @@ import (
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/ghodss/yaml"
 	"github.com/golang/mock/gomock"
+	clusterapis "github.com/openshift/cluster-api/pkg/apis"
 	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
 	machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
 	"github.com/openshift/cluster-api/pkg/client/clientset_generated/clientset/fake"
@@ -35,6 +36,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	clusterproviderv1 "sigs.k8s.io/cluster-api-provider-azure/pkg/apis/azureprovider/v1alpha1"
@@ -44,6 +46,7 @@ import (
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure/actuators"
 	mock_azure "sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure/mock"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure/services/virtualmachines"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	controllerfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -156,11 +159,10 @@ func newFakeScope(t *testing.T, label string) *actuators.MachineScope {
 			ManagedIdentity: "dummyIdentity",
 		},
 		MachineStatus: &machineproviderv1.AzureMachineProviderStatus{},
-		CoreClient:    controllerfake.NewFakeClient(),
 	}
 }
 
-func newFakeReconciler(t *testing.T, machine *machinev1.Machine, machineConfig *machineproviderv1.AzureMachineProviderSpec) *Reconciler {
+func newFakeReconciler(t *testing.T, client client.Client, machine *machinev1.Machine, machineConfig *machineproviderv1.AzureMachineProviderSpec) *Reconciler {
 	fakeSuccessSvc := &azure.FakeSuccessService{}
 	fakeVMSuccessSvc := &FakeVMService{
 		Name:              "machine-test",
@@ -169,6 +171,7 @@ func newFakeReconciler(t *testing.T, machine *machinev1.Machine, machineConfig *
 	}
 	return &Reconciler{
 		scope:                 newFakeScope(t, machineproviderv1.ControlPlane),
+		client:                client,
 		machine:               machine,
 		machineConfig:         machineConfig,
 		availabilityZonesSvc:  fakeSuccessSvc,
@@ -180,7 +183,7 @@ func newFakeReconciler(t *testing.T, machine *machinev1.Machine, machineConfig *
 	}
 }
 
-func newFakeReconcilerWithScope(t *testing.T, scope *actuators.MachineScope, machine *machinev1.Machine, machineConfig *machineproviderv1.AzureMachineProviderSpec) *Reconciler {
+func newFakeReconcilerWithScope(t *testing.T, scope *actuators.MachineScope, client client.Client, machine *machinev1.Machine, machineConfig *machineproviderv1.AzureMachineProviderSpec) *Reconciler {
 	fakeSuccessSvc := &azure.FakeSuccessService{}
 	fakeVMSuccessSvc := &FakeVMService{
 		Name:              "machine-test",
@@ -189,6 +192,7 @@ func newFakeReconcilerWithScope(t *testing.T, scope *actuators.MachineScope, mac
 	}
 	return &Reconciler{
 		scope:                 scope,
+		client:                client,
 		machine:               machine,
 		machineConfig:         machineConfig,
 		availabilityZonesSvc:  fakeSuccessSvc,
@@ -266,7 +270,7 @@ func TestReconcilerSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fakeReconciler := newFakeReconciler(t, machine, stubProviderConfig())
+	fakeReconciler := newFakeReconciler(t, controllerfake.NewFakeClient(), machine, stubProviderConfig())
 
 	if _, err := fakeReconciler.Create(context.Background()); err != nil {
 		t.Errorf("failed to create machine: %+v", err)
@@ -292,7 +296,7 @@ func TestReconcileFailure(t *testing.T) {
 	}
 
 	fakeFailureSvc := &azure.FakeFailureService{}
-	fakeReconciler := newFakeReconciler(t, machine, stubProviderConfig())
+	fakeReconciler := newFakeReconciler(t, controllerfake.NewFakeClient(), machine, stubProviderConfig())
 	fakeReconciler.networkInterfacesSvc = fakeFailureSvc
 	fakeReconciler.virtualMachinesSvc = fakeFailureSvc
 	fakeReconciler.virtualMachinesExtSvc = fakeFailureSvc
@@ -320,7 +324,7 @@ func TestReconcileVMFailedState(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fakeReconciler := newFakeReconciler(t, machine, stubProviderConfig())
+	fakeReconciler := newFakeReconciler(t, controllerfake.NewFakeClient(), machine, stubProviderConfig())
 	fakeVMService := &FakeVMService{
 		Name:              "machine-test",
 		ID:                "machine-test-ID",
@@ -357,44 +361,13 @@ func TestReconcileVMFailedState(t *testing.T) {
 	}
 }
 
-func TestReconcileVMUpdatingState(t *testing.T) {
-	machine, err := stubMachine()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	fakeReconciler := newFakeReconciler(t, machine, stubProviderConfig())
-	fakeVMService := &FakeVMService{
-		Name:              "machine-test",
-		ID:                "machine-test-ID",
-		ProvisioningState: "Updating",
-	}
-	fakeReconciler.virtualMachinesSvc = fakeVMService
-
-	if _, err := fakeReconciler.Create(context.Background()); err == nil {
-		t.Errorf("expected create to fail")
-	}
-
-	if fakeVMService.GetCallCount != 1 {
-		t.Errorf("expected get to be called just once")
-	}
-
-	if fakeVMService.DeleteCallCount != 0 {
-		t.Errorf("expected delete not to be called")
-	}
-
-	if fakeVMService.CreateOrUpdateCallCount != 0 {
-		t.Errorf("expected createorupdate not to be called")
-	}
-}
-
 func TestReconcileVMSuceededState(t *testing.T) {
 	machine, err := stubMachine()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	fakeReconciler := newFakeReconciler(t, machine, stubProviderConfig())
+	fakeReconciler := newFakeReconciler(t, controllerfake.NewFakeClient(), machine, stubProviderConfig())
 	fakeVMService := &FakeVMService{
 		Name:              "machine-test",
 		ID:                "machine-test-ID",
@@ -482,7 +455,7 @@ func TestAvailabilityZones(t *testing.T) {
 	machineConfig := stubProviderConfig()
 	machineConfig.UserDataSecret = nil
 
-	fakeReconciler := newFakeReconcilerWithScope(t, fakeScope, machine, machineConfig)
+	fakeReconciler := newFakeReconcilerWithScope(t, fakeScope, controllerfake.NewFakeClient(), machine, machineConfig)
 
 	machineConfig.Zone = to.StringPtr("2")
 	fakeReconciler.virtualMachinesSvc = &FakeVMCheckZonesService{
@@ -531,8 +504,9 @@ func TestGetZone(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		fakeReconciler := newFakeReconcilerWithScope(t, fakeScope, machine, stubProviderConfig())
-		fakeReconciler.scope.MachineConfig.Zone = tc.inputZone
+		machineConfig := stubProviderConfig()
+		machineConfig.Zone = tc.inputZone
+		fakeReconciler := newFakeReconcilerWithScope(t, fakeScope, controllerfake.NewFakeClient(), machine, machineConfig)
 
 		zones := []string{"1", "2", "3"}
 		fakeReconciler.availabilityZonesSvc = &FakeAvailabilityZonesService{
@@ -552,23 +526,24 @@ func TestGetZone(t *testing.T) {
 
 func TestCustomUserData(t *testing.T) {
 	fakeScope := newFakeScope(t, machineproviderv1.Node)
-	userDataSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "testCustomUserData",
-			Namespace: "dummyNamespace",
-		},
-		Data: map[string][]byte{
-			"userData": []byte("test-userdata"),
-		},
-	}
-	fakeScope.CoreClient = controllerfake.NewFakeClient(userDataSecret)
-	fakeScope.MachineConfig.UserDataSecret = &corev1.SecretReference{Name: "testCustomUserData"}
 	machine, err := stubMachine()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	fakeReconciler := newFakeReconcilerWithScope(t, fakeScope, machine, stubProviderConfig())
+	machineConfig := stubProviderConfig()
+
+	userDataSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      machineConfig.UserDataSecret.Name,
+			Namespace: machine.Namespace,
+		},
+		Data: map[string][]byte{
+			"userData": []byte("test-userdata"),
+		},
+	}
+
+	fakeReconciler := newFakeReconcilerWithScope(t, fakeScope, controllerfake.NewFakeClient(userDataSecret), machine, machineConfig)
 	fakeReconciler.virtualMachinesSvc = &FakeVMCheckZonesService{}
 	if _, err := fakeReconciler.Create(context.Background()); err != nil {
 		t.Errorf("expected create to succeed %v", err)
@@ -595,14 +570,14 @@ func TestCustomDataFailures(t *testing.T) {
 			"userData": []byte("test-userdata"),
 		},
 	}
-	fakeScope.CoreClient = controllerfake.NewFakeClient(userDataSecret)
+
 	fakeScope.MachineConfig.UserDataSecret = &corev1.SecretReference{Name: "testCustomUserData"}
 	machine, err := stubMachine()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	fakeReconciler := newFakeReconcilerWithScope(t, fakeScope, machine, stubProviderConfig())
+	fakeReconciler := newFakeReconcilerWithScope(t, fakeScope, controllerfake.NewFakeClient(userDataSecret), machine, stubProviderConfig())
 	fakeReconciler.virtualMachinesSvc = &FakeVMCheckZonesService{}
 
 	fakeScope.MachineConfig.UserDataSecret = &corev1.SecretReference{Name: "testFailure"}
@@ -617,13 +592,17 @@ func TestCustomDataFailures(t *testing.T) {
 	userDataSecret.Data = map[string][]byte{
 		"notUserData": []byte("test-notuserdata"),
 	}
-	fakeScope.CoreClient = controllerfake.NewFakeClient(userDataSecret)
+
 	if _, err := fakeReconciler.getCustomUserData(); err == nil {
 		t.Errorf("expected get custom data to fail, due to missing userdata")
 	}
 }
 
 func TestMachineEvents(t *testing.T) {
+	if err := clusterapis.AddToScheme(scheme.Scheme); err != nil {
+		t.Fatal(err)
+	}
+
 	machine, err := stubMachine()
 	if err != nil {
 		t.Fatal(err)
@@ -743,7 +722,7 @@ func TestMachineEvents(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cs := controllerfake.NewFakeClient(tc.credSecret)
+			cs := controllerfake.NewFakeClient(tc.credSecret, tc.machine)
 
 			mockCtrl := gomock.NewController(t)
 			azSvc := mock_azure.NewMockService(mockCtrl)
@@ -759,9 +738,10 @@ func TestMachineEvents(t *testing.T) {
 				Client:     fake.NewSimpleClientset(tc.machine).MachineV1beta1(),
 				CoreClient: cs,
 				Codec:      codec,
-				ReconcilerBuilder: func(scope *actuators.MachineScope, machine *machinev1.Machine, machineConfig *providerspecv1.AzureMachineProviderSpec) *Reconciler {
+				ReconcilerBuilder: func(scope *actuators.MachineScope, client client.Client, machine *machinev1.Machine, machineConfig *providerspecv1.AzureMachineProviderSpec) *Reconciler {
 					return &Reconciler{
 						scope:                 scope,
+						client:                client,
 						machine:               machine,
 						machineConfig:         machineConfig,
 						availabilityZonesSvc:  azSvc,

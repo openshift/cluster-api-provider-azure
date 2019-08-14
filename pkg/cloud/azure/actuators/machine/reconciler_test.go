@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/apis/azureprovider/v1beta1"
+	controllerfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestExists(t *testing.T) {
@@ -43,7 +44,7 @@ func TestExists(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		r := newFakeReconciler(t, machine, stubProviderConfig())
+		r := newFakeReconciler(t, controllerfake.NewFakeClient(), machine, stubProviderConfig())
 		r.virtualMachinesSvc = tc.vmService
 		exists, err := r.Exists(context.TODO())
 		if err != nil {

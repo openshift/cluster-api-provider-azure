@@ -60,7 +60,7 @@ type Actuator struct {
 	coreClient        controllerclient.Client
 	eventRecorder     record.EventRecorder
 	codec             *providerconfig.AzureProviderConfigCodec
-	reconcilerBuilder func(scope *actuators.MachineScope, machine *machinev1.Machine, machineConfig *providerconfig.AzureMachineProviderSpec) *Reconciler
+	reconcilerBuilder func(scope *actuators.MachineScope, client controllerclient.Client, machine *machinev1.Machine, machineConfig *providerconfig.AzureMachineProviderSpec) *Reconciler
 }
 
 // ActuatorParams holds parameter information for Actuator.
@@ -69,7 +69,7 @@ type ActuatorParams struct {
 	CoreClient        controllerclient.Client
 	EventRecorder     record.EventRecorder
 	Codec             *providerconfig.AzureProviderConfigCodec
-	ReconcilerBuilder func(scope *actuators.MachineScope, machine *machinev1.Machine, machineConfig *providerconfig.AzureMachineProviderSpec) *Reconciler
+	ReconcilerBuilder func(scope *actuators.MachineScope, client controllerclient.Client, machine *machinev1.Machine, machineConfig *providerconfig.AzureMachineProviderSpec) *Reconciler
 }
 
 // NewActuator returns an actuator.
@@ -113,7 +113,7 @@ func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machi
 		return fmt.Errorf("unable to decode machine provider config: %v", err)
 	}
 
-	reconciler := a.reconcilerBuilder(scope, machine, machineConfig)
+	reconciler := a.reconcilerBuilder(scope, a.coreClient, machine, machineConfig)
 	vm, err := reconciler.Create(context.Background())
 	if vm != nil {
 		modMachine, err := a.setMachineCloudProviderSpecifics(machine, *vm)
@@ -197,7 +197,7 @@ func (a *Actuator) Delete(ctx context.Context, cluster *clusterv1.Cluster, machi
 		return fmt.Errorf("unable to decode machine provider config: %v", err)
 	}
 
-	err = a.reconcilerBuilder(scope, machine, machineConfig).Delete(context.Background())
+	err = a.reconcilerBuilder(scope, a.coreClient, machine, machineConfig).Delete(context.Background())
 	if err != nil {
 		a.handleMachineError(machine, apierrors.DeleteMachine("failed to delete machine %q: %v", machine.Name, err), deleteEventAction)
 		return &controllerError.RequeueAfterError{
@@ -231,7 +231,7 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 		return fmt.Errorf("unable to decode machine provider config: %v", err)
 	}
 
-	reconciler := a.reconcilerBuilder(scope, machine, machineConfig)
+	reconciler := a.reconcilerBuilder(scope, a.coreClient, machine, machineConfig)
 	vm, err := reconciler.Update(context.Background())
 	if vm != nil {
 		modMachine, err := a.setMachineCloudProviderSpecifics(machine, *vm)
@@ -294,7 +294,7 @@ func (a *Actuator) Exists(ctx context.Context, cluster *clusterv1.Cluster, machi
 		return false, fmt.Errorf("unable to decode machine provider config: %v", err)
 	}
 
-	isExists, err := a.reconcilerBuilder(scope, machine, machineConfig).Exists(context.Background())
+	isExists, err := a.reconcilerBuilder(scope, a.coreClient, machine, machineConfig).Exists(context.Background())
 	if err != nil {
 		klog.Errorf("failed to check machine %s exists: %v", machine.Name, err)
 	}

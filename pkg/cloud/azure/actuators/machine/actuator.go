@@ -28,10 +28,10 @@ import (
 	client "github.com/openshift/cluster-api/pkg/client/clientset_generated/clientset/typed/machine/v1beta1"
 	controllerError "github.com/openshift/cluster-api/pkg/controller/error"
 	apierrors "github.com/openshift/cluster-api/pkg/errors"
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog"
 	providerconfig "sigs.k8s.io/cluster-api-provider-azure/pkg/apis/azureprovider/v1beta1"
@@ -60,7 +60,7 @@ type Actuator struct {
 	coreClient        controllerclient.Client
 	eventRecorder     record.EventRecorder
 	codec             *providerconfig.AzureProviderConfigCodec
-	reconcilerBuilder func(scope *actuators.MachineScope, client controllerclient.Client, machine *machinev1.Machine, machineConfig *providerconfig.AzureMachineProviderSpec) *Reconciler
+	reconcilerBuilder func(scope *actuators.Scope, client controllerclient.Client, machine *machinev1.Machine, machineConfig *providerconfig.AzureMachineProviderSpec) *Reconciler
 }
 
 // ActuatorParams holds parameter information for Actuator.
@@ -69,7 +69,7 @@ type ActuatorParams struct {
 	CoreClient        controllerclient.Client
 	EventRecorder     record.EventRecorder
 	Codec             *providerconfig.AzureProviderConfigCodec
-	ReconcilerBuilder func(scope *actuators.MachineScope, client controllerclient.Client, machine *machinev1.Machine, machineConfig *providerconfig.AzureMachineProviderSpec) *Reconciler
+	ReconcilerBuilder func(scope *actuators.Scope, client controllerclient.Client, machine *machinev1.Machine, machineConfig *providerconfig.AzureMachineProviderSpec) *Reconciler
 }
 
 // NewActuator returns an actuator.
@@ -94,23 +94,45 @@ func (a *Actuator) handleMachineError(machine *machinev1.Machine, err *apierrors
 	return err
 }
 
+func (a *Actuator) buildScopeFromMachineConfig(ctx context.Context, machineConfig *providerconfig.AzureMachineProviderSpec) (*actuators.Scope, error) {
+	secretType := types.NamespacedName{Namespace: machineConfig.CredentialsSecret.Namespace, Name: machineConfig.CredentialsSecret.Name}
+	credentialsSecret := &corev1.Secret{}
+	if err := a.coreClient.Get(ctx, secretType, credentialsSecret); err != nil {
+		return nil, err
+	}
+
+	scope, err := actuators.NewScopeFromSecret(ctx, credentialsSecret)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create scope: %v", err)
+	}
+
+	if machineConfig.ResourceGroup != "" {
+		scope.ClusterConfig.ResourceGroup = machineConfig.ResourceGroup
+	}
+
+	if machineConfig.NetworkResourceGroup != "" {
+		scope.ClusterConfig.NetworkResourceGroup = machineConfig.NetworkResourceGroup
+	}
+
+	if machineConfig.Location != "" {
+		scope.ClusterConfig.Location = machineConfig.Location
+	}
+
+	return scope, nil
+}
+
 // Create creates a machine and is invoked by the machine controller.
 func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
 	klog.Infof("Creating machine %v", machine.Name)
 
-	scope, err := actuators.NewMachineScope(actuators.MachineScopeParams{
-		Machine:    machine,
-		Cluster:    nil,
-		Client:     a.client,
-		CoreClient: a.coreClient,
-	})
-	if err != nil {
-		return a.handleMachineError(machine, apierrors.CreateMachine("failed to create machine %q scope: %v", machine.Name, err), createEventAction)
-	}
-
 	machineConfig, err := providerConfigFromMachine(machine, a.codec)
 	if err != nil {
 		return fmt.Errorf("unable to decode machine provider config: %v", err)
+	}
+
+	scope, err := a.buildScopeFromMachineConfig(ctx, machineConfig)
+	if err != nil {
+		return a.handleMachineError(machine, apierrors.CreateMachine("%s: failed to create scope: %v", machine.Name, err), createEventAction)
 	}
 
 	reconciler := a.reconcilerBuilder(scope, a.coreClient, machine, machineConfig)
@@ -153,7 +175,7 @@ func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machi
 			machine = modMachine
 		}
 
-		a.handleMachineError(modMachine, apierrors.CreateMachine("failed to reconcile machine %qs: %v", machine.Name, err), createEventAction)
+		a.handleMachineError(machine, apierrors.CreateMachine("failed to reconcile machine %qs: %v", machine.Name, err), createEventAction)
 		return &controllerError.RequeueAfterError{
 			RequeueAfter: time.Minute,
 		}
@@ -182,19 +204,14 @@ func (a *Actuator) Delete(ctx context.Context, cluster *clusterv1.Cluster, machi
 		machine = modMachine
 	}
 
-	scope, err := actuators.NewMachineScope(actuators.MachineScopeParams{
-		Machine:    machine,
-		Cluster:    nil,
-		Client:     a.client,
-		CoreClient: a.coreClient,
-	})
-	if err != nil {
-		return a.handleMachineError(machine, apierrors.DeleteMachine("failed to create machine %q scope: %v", machine.Name, err), deleteEventAction)
-	}
-
 	machineConfig, err := providerConfigFromMachine(machine, a.codec)
 	if err != nil {
 		return fmt.Errorf("unable to decode machine provider config: %v", err)
+	}
+
+	scope, err := a.buildScopeFromMachineConfig(ctx, machineConfig)
+	if err != nil {
+		return a.handleMachineError(machine, apierrors.DeleteMachine("%s: failed to create scope: %v", machine.Name, err), deleteEventAction)
 	}
 
 	err = a.reconcilerBuilder(scope, a.coreClient, machine, machineConfig).Delete(context.Background())
@@ -216,19 +233,14 @@ func (a *Actuator) Delete(ctx context.Context, cluster *clusterv1.Cluster, machi
 func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
 	klog.Infof("Updating machine %v", machine.Name)
 
-	scope, err := actuators.NewMachineScope(actuators.MachineScopeParams{
-		Machine:    machine,
-		Cluster:    nil,
-		Client:     a.client,
-		CoreClient: a.coreClient,
-	})
-	if err != nil {
-		return a.handleMachineError(machine, apierrors.UpdateMachine("failed to create machine %q scope: %v", machine.Name, err), updateEventAction)
-	}
-
 	machineConfig, err := providerConfigFromMachine(machine, a.codec)
 	if err != nil {
 		return fmt.Errorf("unable to decode machine provider config: %v", err)
+	}
+
+	scope, err := a.buildScopeFromMachineConfig(ctx, machineConfig)
+	if err != nil {
+		return a.handleMachineError(machine, apierrors.UpdateMachine("%s: failed to create scope: %v", machine.Name, err), updateEventAction)
 	}
 
 	reconciler := a.reconcilerBuilder(scope, a.coreClient, machine, machineConfig)
@@ -279,19 +291,14 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 func (a *Actuator) Exists(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) (bool, error) {
 	klog.Infof("Checking if machine %v exists", machine.Name)
 
-	scope, err := actuators.NewMachineScope(actuators.MachineScopeParams{
-		Machine:    machine,
-		Cluster:    nil,
-		Client:     a.client,
-		CoreClient: a.coreClient,
-	})
-	if err != nil {
-		return false, errors.Errorf("failed to create scope: %+v", err)
-	}
-
 	machineConfig, err := providerConfigFromMachine(machine, a.codec)
 	if err != nil {
 		return false, fmt.Errorf("unable to decode machine provider config: %v", err)
+	}
+
+	scope, err := a.buildScopeFromMachineConfig(ctx, machineConfig)
+	if err != nil {
+		return false, fmt.Errorf("%s: failed to create scope: %v", machine.Name, err)
 	}
 
 	isExists, err := a.reconcilerBuilder(scope, a.coreClient, machine, machineConfig).Exists(context.Background())

@@ -128,37 +128,15 @@ func newCluster(t *testing.T) *clusterv1.Cluster {
 		},
 	}
 }
-func newFakeScope(t *testing.T, label string) *actuators.MachineScope {
-	scope := &actuators.Scope{
-		Context: context.Background(),
+func newFakeScope(t *testing.T) *actuators.Scope {
+	return &actuators.Scope{
 		Cluster: newCluster(t),
 		ClusterConfig: &clusterproviderv1.AzureClusterProviderSpec{
-			ResourceGroup:       "dummyResourceGroup",
-			Location:            "dummyLocation",
-			CAKeyPair:           clusterproviderv1.KeyPair{Cert: []byte("cert"), Key: []byte("key")},
-			EtcdCAKeyPair:       clusterproviderv1.KeyPair{Cert: []byte("cert"), Key: []byte("key")},
-			FrontProxyCAKeyPair: clusterproviderv1.KeyPair{Cert: []byte("cert"), Key: []byte("key")},
-			SAKeyPair:           clusterproviderv1.KeyPair{Cert: []byte("cert"), Key: []byte("key")},
-			DiscoveryHashes:     []string{"discoveryhash0"},
+			ResourceGroup:        "dummyResourceGroup",
+			NetworkResourceGroup: "dummyResourceGroup",
+			Location:             "dummyLocation",
 		},
 		ClusterStatus: &clusterproviderv1.AzureClusterProviderStatus{},
-	}
-	scope.Network().APIServerIP.DNSName = "DummyDNSName"
-	labels := make(map[string]string)
-	labels[machineproviderv1.MachineRoleLabel] = label
-	machineConfig := machineproviderv1.AzureMachineProviderSpec{}
-	m := newMachine(t, machineConfig, labels)
-	c := fake.NewSimpleClientset(m).MachineV1beta1()
-	return &actuators.MachineScope{
-		Scope:         scope,
-		Machine:       m,
-		MachineClient: c.Machines("dummyNamespace"),
-		MachineConfig: &machineproviderv1.AzureMachineProviderSpec{
-			Subnet:          "dummySubnet",
-			Vnet:            "dummyVnet",
-			ManagedIdentity: "dummyIdentity",
-		},
-		MachineStatus: &machineproviderv1.AzureMachineProviderStatus{},
 	}
 }
 
@@ -170,7 +148,7 @@ func newFakeReconciler(t *testing.T, client client.Client, machine *machinev1.Ma
 		ProvisioningState: "Succeeded",
 	}
 	return &Reconciler{
-		scope:                 newFakeScope(t, machineproviderv1.ControlPlane),
+		scope:                 newFakeScope(t),
 		client:                client,
 		machine:               machine,
 		machineConfig:         machineConfig,
@@ -183,7 +161,7 @@ func newFakeReconciler(t *testing.T, client client.Client, machine *machinev1.Ma
 	}
 }
 
-func newFakeReconcilerWithScope(t *testing.T, scope *actuators.MachineScope, client client.Client, machine *machinev1.Machine, machineConfig *machineproviderv1.AzureMachineProviderSpec) *Reconciler {
+func newFakeReconcilerWithScope(t *testing.T, scope *actuators.Scope, client client.Client, machine *machinev1.Machine, machineConfig *machineproviderv1.AzureMachineProviderSpec) *Reconciler {
 	fakeSuccessSvc := &azure.FakeSuccessService{}
 	fakeVMSuccessSvc := &FakeVMService{
 		Name:              "machine-test",
@@ -447,7 +425,7 @@ func (s *FakeAvailabilityZonesService) Delete(ctx context.Context, spec azure.Sp
 }
 
 func TestAvailabilityZones(t *testing.T) {
-	fakeScope := newFakeScope(t, machineproviderv1.ControlPlane)
+	fakeScope := newFakeScope(t)
 	machine, err := stubMachine()
 	if err != nil {
 		t.Fatal(err)
@@ -498,7 +476,7 @@ func TestGetZone(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		fakeScope := newFakeScope(t, machineproviderv1.ControlPlane)
+		fakeScope := newFakeScope(t)
 		machine, err := stubMachine()
 		if err != nil {
 			t.Fatal(err)
@@ -525,7 +503,7 @@ func TestGetZone(t *testing.T) {
 }
 
 func TestCustomUserData(t *testing.T) {
-	fakeScope := newFakeScope(t, machineproviderv1.Node)
+	fakeScope := newFakeScope(t)
 	machine, err := stubMachine()
 	if err != nil {
 		t.Fatal(err)
@@ -560,7 +538,7 @@ func TestCustomUserData(t *testing.T) {
 }
 
 func TestCustomDataFailures(t *testing.T) {
-	fakeScope := newFakeScope(t, machineproviderv1.Node)
+	fakeScope := newFakeScope(t)
 	userDataSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testCustomUserData",
@@ -571,7 +549,6 @@ func TestCustomDataFailures(t *testing.T) {
 		},
 	}
 
-	fakeScope.MachineConfig.UserDataSecret = &corev1.SecretReference{Name: "testCustomUserData"}
 	machine, err := stubMachine()
 	if err != nil {
 		t.Fatal(err)
@@ -580,7 +557,6 @@ func TestCustomDataFailures(t *testing.T) {
 	fakeReconciler := newFakeReconcilerWithScope(t, fakeScope, controllerfake.NewFakeClient(userDataSecret), machine, stubProviderConfig())
 	fakeReconciler.virtualMachinesSvc = &FakeVMCheckZonesService{}
 
-	fakeScope.MachineConfig.UserDataSecret = &corev1.SecretReference{Name: "testFailure"}
 	if _, err := fakeReconciler.Create(context.Background()); err == nil {
 		t.Errorf("expected create to fail")
 	}
@@ -639,7 +615,7 @@ func TestMachineEvents(t *testing.T) {
 			operation: func(actuator *Actuator, machine *machinev1.Machine) {
 				actuator.Create(context.TODO(), nil, machine)
 			},
-			event: "Warning FailedCreate CreateError: failed to create machine \"azure-actuator-testing-machine\" scope: failed to update cluster: Azure client id /azure-credentials-secret did not contain key azure_client_id",
+			event: "Warning FailedCreate CreateError: azure-actuator-testing-machine: failed to create scope: failed to create scope: Azure client id default/azure-credentials-secret did not contain key azure_client_id",
 		},
 		{
 			name:       "Create machine event failed (reconciler)",
@@ -666,7 +642,7 @@ func TestMachineEvents(t *testing.T) {
 			operation: func(actuator *Actuator, machine *machinev1.Machine) {
 				actuator.Update(context.TODO(), nil, machine)
 			},
-			event: "Warning FailedUpdate UpdateError: failed to create machine \"azure-actuator-testing-machine\" scope: failed to update cluster: Azure client id /azure-credentials-secret did not contain key azure_client_id",
+			event: "Warning FailedUpdate UpdateError: azure-actuator-testing-machine: failed to create scope: failed to create scope: Azure client id default/azure-credentials-secret did not contain key azure_client_id",
 		},
 		{
 			name:       "Update machine event failed (reconciler)",
@@ -693,7 +669,7 @@ func TestMachineEvents(t *testing.T) {
 			operation: func(actuator *Actuator, machine *machinev1.Machine) {
 				actuator.Delete(context.TODO(), nil, machine)
 			},
-			event: "Warning FailedDelete DeleteError: failed to create machine \"azure-actuator-testing-machine\" scope: failed to update cluster: Azure client id /azure-credentials-secret did not contain key azure_client_id",
+			event: "Warning FailedDelete DeleteError: azure-actuator-testing-machine: failed to create scope: failed to create scope: Azure client id default/azure-credentials-secret did not contain key azure_client_id",
 		},
 		{
 			name:       "Delete machine event failed (reconciler)",
@@ -738,7 +714,7 @@ func TestMachineEvents(t *testing.T) {
 				Client:     fake.NewSimpleClientset(tc.machine).MachineV1beta1(),
 				CoreClient: cs,
 				Codec:      codec,
-				ReconcilerBuilder: func(scope *actuators.MachineScope, client client.Client, machine *machinev1.Machine, machineConfig *providerspecv1.AzureMachineProviderSpec) *Reconciler {
+				ReconcilerBuilder: func(scope *actuators.Scope, client client.Client, machine *machinev1.Machine, machineConfig *providerspecv1.AzureMachineProviderSpec) *Reconciler {
 					return &Reconciler{
 						scope:                 scope,
 						client:                client,

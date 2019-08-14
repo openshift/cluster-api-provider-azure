@@ -21,13 +21,98 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/Azure/go-autorest/autorest/azure/auth"
 	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
 	client "github.com/openshift/cluster-api/pkg/client/clientset_generated/clientset/typed/cluster/v1alpha1"
 	"github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/apis/azureprovider/v1alpha1"
 )
+
+const (
+	// AzureCredsSubscriptionIDKey subcription ID
+	AzureCredsSubscriptionIDKey = "azure_subscription_id"
+	// AzureCredsClientIDKey client id
+	AzureCredsClientIDKey = "azure_client_id"
+	// AzureCredsClientSecretKey client secret
+	AzureCredsClientSecretKey = "azure_client_secret"
+	// AzureCredsTenantIDKey tenant ID
+	AzureCredsTenantIDKey = "azure_tenant_id"
+	// AzureCredsResourceGroupKey resource group
+	AzureCredsResourceGroupKey = "azure_resourcegroup"
+	// AzureCredsRegionKey region
+	AzureCredsRegionKey = "azure_region"
+	// AzureResourcePrefix resource prefix for created azure resources
+	AzureResourcePrefix = "azure_resource_prefix"
+)
+
+func NewScopeFromSecret(ctx context.Context, secret *corev1.Secret) (*Scope, error) {
+	secretType := types.NamespacedName{Namespace: secret.Namespace, Name: secret.Name}
+
+	subscriptionID, ok := secret.Data[AzureCredsSubscriptionIDKey]
+	if !ok {
+		return nil, errors.Errorf("Azure subscription id %v did not contain key %v",
+			secretType.String(), AzureCredsSubscriptionIDKey)
+	}
+	clientID, ok := secret.Data[AzureCredsClientIDKey]
+	if !ok {
+		return nil, errors.Errorf("Azure client id %v did not contain key %v",
+			secretType.String(), AzureCredsClientIDKey)
+	}
+	clientSecret, ok := secret.Data[AzureCredsClientSecretKey]
+	if !ok {
+		return nil, errors.Errorf("Azure client secret %v did not contain key %v",
+			secretType.String(), AzureCredsClientSecretKey)
+	}
+	tenantID, ok := secret.Data[AzureCredsTenantIDKey]
+	if !ok {
+		return nil, errors.Errorf("Azure tenant id %v did not contain key %v",
+			secretType.String(), AzureCredsTenantIDKey)
+	}
+	resourceGroup, ok := secret.Data[AzureCredsResourceGroupKey]
+	if !ok {
+		return nil, errors.Errorf("Azure resource group %v did not contain key %v",
+			secretType.String(), AzureCredsResourceGroupKey)
+	}
+	region, ok := secret.Data[AzureCredsRegionKey]
+	if !ok {
+		return nil, errors.Errorf("Azure region %v did not contain key %v",
+			secretType.String(), AzureCredsRegionKey)
+	}
+	clusterName, ok := secret.Data[AzureResourcePrefix]
+	if !ok {
+		return nil, errors.Errorf("Azure resource prefix %v did not contain key %v",
+			secretType.String(), AzureResourcePrefix)
+	}
+
+	config := auth.NewClientCredentialsConfig(string(clientID), string(clientSecret), string(tenantID))
+	config.Resource = azure.PublicCloud.ResourceManagerEndpoint
+	authorizer, err := config.Authorizer()
+	if err != nil {
+		return nil, errors.Errorf("failed to create azure session: %v", err)
+	}
+
+	return &Scope{
+		Cluster: &clusterv1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: string(clusterName),
+			},
+		},
+		AzureClients: AzureClients{
+			Authorizer:     authorizer,
+			SubscriptionID: string(subscriptionID),
+		},
+		ClusterConfig: &v1alpha1.AzureClusterProviderSpec{
+			Location:             string(region),
+			ResourceGroup:        string(resourceGroup),
+			NetworkResourceGroup: string(resourceGroup),
+		},
+	}, nil
+}
 
 // ScopeParams defines the input parameters used to create a new Scope.
 type ScopeParams struct {

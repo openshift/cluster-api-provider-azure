@@ -68,7 +68,7 @@ type Reconciler struct {
 	machineConfig *v1beta1.AzureMachineProviderSpec
 	client        client.Client
 
-	scope                 *actuators.MachineScope
+	scope                 *actuators.Scope
 	availabilityZonesSvc  azure.Service
 	networkInterfacesSvc  azure.Service
 	publicIPSvc           azure.Service
@@ -78,18 +78,18 @@ type Reconciler struct {
 }
 
 // NewReconciler populates all the services based on input scope
-func NewReconciler(scope *actuators.MachineScope, client client.Client, machine *machinev1.Machine, machineConfig *v1beta1.AzureMachineProviderSpec) *Reconciler {
+func NewReconciler(scope *actuators.Scope, client client.Client, machine *machinev1.Machine, machineConfig *v1beta1.AzureMachineProviderSpec) *Reconciler {
 	return &Reconciler{
 		scope:                 scope,
 		client:                client,
 		machine:               machine,
 		machineConfig:         machineConfig,
-		availabilityZonesSvc:  availabilityzones.NewService(scope.Scope),
-		networkInterfacesSvc:  networkinterfaces.NewService(scope.Scope),
-		virtualMachinesSvc:    virtualmachines.NewService(scope.Scope),
-		virtualMachinesExtSvc: virtualmachineextensions.NewService(scope.Scope),
-		publicIPSvc:           publicips.NewService(scope.Scope),
-		disksSvc:              disks.NewService(scope.Scope),
+		availabilityZonesSvc:  availabilityzones.NewService(scope),
+		networkInterfacesSvc:  networkinterfaces.NewService(scope),
+		virtualMachinesSvc:    virtualmachines.NewService(scope),
+		virtualMachinesExtSvc: virtualmachineextensions.NewService(scope),
+		publicIPSvc:           publicips.NewService(scope),
+		disksSvc:              disks.NewService(scope),
 	}
 }
 

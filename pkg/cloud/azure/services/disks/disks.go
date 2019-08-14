@@ -47,13 +47,13 @@ func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
 		return errors.New("Invalid disk specification")
 	}
 	klog.V(2).Infof("deleting disk %s", diskSpec.Name)
-	future, err := s.Client.Delete(ctx, s.Scope.ClusterConfig.ResourceGroup, diskSpec.Name)
+	future, err := s.Client.Delete(ctx, s.Scope.ResourceGroup, diskSpec.Name)
 	if err != nil && azure.ResourceNotFound(err) {
 		// already deleted
 		return nil
 	}
 	if err != nil {
-		return errors.Wrapf(err, "failed to delete disk %s in resource group %s", diskSpec.Name, s.Scope.ClusterConfig.ResourceGroup)
+		return errors.Wrapf(err, "failed to delete disk %s in resource group %s", diskSpec.Name, s.Scope.ResourceGroup)
 	}
 
 	// Do not wait until the operation completes. Just check the result

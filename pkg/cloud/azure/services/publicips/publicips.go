@@ -38,7 +38,7 @@ func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error)
 	if !ok {
 		return network.PublicIPAddress{}, errors.New("Invalid PublicIP Specification")
 	}
-	publicIP, err := s.Client.Get(ctx, s.Scope.ClusterConfig.ResourceGroup, publicIPSpec.Name, "")
+	publicIP, err := s.Client.Get(ctx, s.Scope.ResourceGroup, publicIPSpec.Name, "")
 	if err != nil && azure.ResourceNotFound(err) {
 		return nil, errors.Wrapf(err, "publicip %s not found", publicIPSpec.Name)
 	} else if err != nil {
@@ -59,18 +59,18 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 	// https://docs.microsoft.com/en-us/azure/load-balancer/load-balancer-standard-availability-zones#zone-redundant-by-default
 	f, err := s.Client.CreateOrUpdate(
 		ctx,
-		s.Scope.ClusterConfig.ResourceGroup,
+		s.Scope.ResourceGroup,
 		ipName,
 		network.PublicIPAddress{
 			Sku:      &network.PublicIPAddressSku{Name: network.PublicIPAddressSkuNameStandard},
 			Name:     to.StringPtr(ipName),
-			Location: to.StringPtr(s.Scope.ClusterConfig.Location),
+			Location: to.StringPtr(s.Scope.Location),
 			PublicIPAddressPropertiesFormat: &network.PublicIPAddressPropertiesFormat{
 				PublicIPAddressVersion:   network.IPv4,
 				PublicIPAllocationMethod: network.Static,
 				DNSSettings: &network.PublicIPAddressDNSSettings{
 					DomainNameLabel: to.StringPtr(strings.ToLower(ipName)),
-					Fqdn:            to.StringPtr(s.Scope.Network().APIServerIP.DNSName),
+					Fqdn:            to.StringPtr(""),
 				},
 			},
 		},
@@ -100,13 +100,13 @@ func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
 		return errors.New("Invalid PublicIP Specification")
 	}
 	klog.V(2).Infof("deleting public ip %s", publicIPSpec.Name)
-	f, err := s.Client.Delete(ctx, s.Scope.ClusterConfig.ResourceGroup, publicIPSpec.Name)
+	f, err := s.Client.Delete(ctx, s.Scope.ResourceGroup, publicIPSpec.Name)
 	if err != nil && azure.ResourceNotFound(err) {
 		// already deleted
 		return nil
 	}
 	if err != nil {
-		return errors.Wrapf(err, "failed to delete public ip %s in resource group %s", publicIPSpec.Name, s.Scope.ClusterConfig.ResourceGroup)
+		return errors.Wrapf(err, "failed to delete public ip %s in resource group %s", publicIPSpec.Name, s.Scope.ResourceGroup)
 	}
 
 	err = f.WaitForCompletionRef(ctx, s.Client.Client)

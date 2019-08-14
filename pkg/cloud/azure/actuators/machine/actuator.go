@@ -107,15 +107,15 @@ func (a *Actuator) buildScopeFromMachineConfig(ctx context.Context, machineConfi
 	}
 
 	if machineConfig.ResourceGroup != "" {
-		scope.ClusterConfig.ResourceGroup = machineConfig.ResourceGroup
+		scope.ResourceGroup = machineConfig.ResourceGroup
 	}
 
 	if machineConfig.NetworkResourceGroup != "" {
-		scope.ClusterConfig.NetworkResourceGroup = machineConfig.NetworkResourceGroup
+		scope.NetworkResourceGroup = machineConfig.NetworkResourceGroup
 	}
 
 	if machineConfig.Location != "" {
-		scope.ClusterConfig.Location = machineConfig.Location
+		scope.Location = machineConfig.Location
 	}
 
 	return scope, nil
@@ -152,7 +152,7 @@ func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machi
 		}
 		machine = modMachine
 
-		modMachine, err = a.updateProviderID(machine, *vm, scope.SubscriptionID, scope.ClusterConfig.ResourceGroup)
+		modMachine, err = a.updateProviderID(machine, *vm, scope.SubscriptionID, scope.ResourceGroup)
 		if err != nil {
 			klog.Infof("%s: failed to set provider ID: %v", machine.Name, err)
 		} else {
@@ -260,7 +260,7 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 		}
 		machine = modMachine
 
-		modMachine, err = a.updateProviderID(machine, *vm, scope.SubscriptionID, scope.ClusterConfig.ResourceGroup)
+		modMachine, err = a.updateProviderID(machine, *vm, scope.SubscriptionID, scope.ResourceGroup)
 		if err != nil {
 			klog.Infof("%s: failed to set provider ID: %v", machine.Name, err)
 		} else {

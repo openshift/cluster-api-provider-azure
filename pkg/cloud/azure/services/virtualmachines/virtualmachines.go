@@ -54,7 +54,7 @@ func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error)
 	if !ok {
 		return compute.VirtualMachine{}, errors.New("invalid vm specification")
 	}
-	vm, err := s.Client.Get(ctx, s.Scope.ClusterConfig.ResourceGroup, vmSpec.Name, compute.InstanceView)
+	vm, err := s.Client.Get(ctx, s.Scope.ResourceGroup, vmSpec.Name, compute.InstanceView)
 	if err != nil && azure.ResourceNotFound(err) {
 		return nil, errors.Wrapf(err, "vm %s not found", vmSpec.Name)
 	} else if err != nil {
@@ -138,7 +138,7 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 	}
 
 	virtualMachine := compute.VirtualMachine{
-		Location: to.StringPtr(s.Scope.ClusterConfig.Location),
+		Location: to.StringPtr(s.Scope.Location),
 		Tags:     getTagListFromSpec(vmSpec),
 		VirtualMachineProperties: &compute.VirtualMachineProperties{
 			HardwareProfile: &compute.HardwareProfile{
@@ -186,7 +186,7 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 
 	future, err := s.Client.CreateOrUpdate(
 		ctx,
-		s.Scope.ClusterConfig.ResourceGroup,
+		s.Scope.ResourceGroup,
 		vmSpec.Name,
 		virtualMachine)
 	if err != nil {
@@ -223,13 +223,13 @@ func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
 		return errors.New("invalid vm Specification")
 	}
 	klog.V(2).Infof("deleting vm %s ", vmSpec.Name)
-	future, err := s.Client.Delete(ctx, s.Scope.ClusterConfig.ResourceGroup, vmSpec.Name)
+	future, err := s.Client.Delete(ctx, s.Scope.ResourceGroup, vmSpec.Name)
 	if err != nil && azure.ResourceNotFound(err) {
 		// already deleted
 		return nil
 	}
 	if err != nil {
-		return errors.Wrapf(err, "failed to delete vm %s in resource group %s", vmSpec.Name, s.Scope.ClusterConfig.ResourceGroup)
+		return errors.Wrapf(err, "failed to delete vm %s in resource group %s", vmSpec.Name, s.Scope.ResourceGroup)
 	}
 
 	// Do not wait until the operation completes. Just check the result

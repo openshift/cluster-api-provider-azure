@@ -37,7 +37,7 @@ func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error)
 	if !ok {
 		return network.RouteTable{}, errors.New("Invalid Route Table Specification")
 	}
-	routeTable, err := s.Client.Get(ctx, s.Scope.ClusterConfig.ResourceGroup, routeTableSpec.Name, "")
+	routeTable, err := s.Client.Get(ctx, s.Scope.ResourceGroup, routeTableSpec.Name, "")
 	if err != nil && azure.ResourceNotFound(err) {
 		return nil, errors.Wrapf(err, "route table %s not found", routeTableSpec.Name)
 	} else if err != nil {
@@ -55,15 +55,15 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 	klog.V(2).Infof("creating route table %s", routeTableSpec.Name)
 	f, err := s.Client.CreateOrUpdate(
 		ctx,
-		s.Scope.ClusterConfig.ResourceGroup,
+		s.Scope.ResourceGroup,
 		routeTableSpec.Name,
 		network.RouteTable{
-			Location:                   to.StringPtr(s.Scope.ClusterConfig.Location),
+			Location:                   to.StringPtr(s.Scope.Location),
 			RouteTablePropertiesFormat: &network.RouteTablePropertiesFormat{},
 		},
 	)
 	if err != nil {
-		return errors.Wrapf(err, "failed to create route table %s in resource group %s", routeTableSpec.Name, s.Scope.ClusterConfig.ResourceGroup)
+		return errors.Wrapf(err, "failed to create route table %s in resource group %s", routeTableSpec.Name, s.Scope.ResourceGroup)
 	}
 
 	err = f.WaitForCompletionRef(ctx, s.Client.Client)
@@ -86,13 +86,13 @@ func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
 		return errors.New("Invalid Route Table Specification")
 	}
 	klog.V(2).Infof("deleting route table %s", routeTableSpec.Name)
-	f, err := s.Client.Delete(ctx, s.Scope.ClusterConfig.ResourceGroup, routeTableSpec.Name)
+	f, err := s.Client.Delete(ctx, s.Scope.ResourceGroup, routeTableSpec.Name)
 	if err != nil && azure.ResourceNotFound(err) {
 		// already deleted
 		return nil
 	}
 	if err != nil {
-		return errors.Wrapf(err, "failed to delete route table %s in resource group %s", routeTableSpec.Name, s.Scope.ClusterConfig.ResourceGroup)
+		return errors.Wrapf(err, "failed to delete route table %s in resource group %s", routeTableSpec.Name, s.Scope.ResourceGroup)
 	}
 
 	err = f.WaitForCompletionRef(ctx, s.Client.Client)

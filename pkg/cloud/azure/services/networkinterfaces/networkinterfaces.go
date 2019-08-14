@@ -48,7 +48,7 @@ func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error)
 	if !ok {
 		return network.Interface{}, errors.New("invalid network interface specification")
 	}
-	nic, err := s.Client.Get(ctx, s.Scope.ClusterConfig.ResourceGroup, nicSpec.Name, "")
+	nic, err := s.Client.Get(ctx, s.Scope.ResourceGroup, nicSpec.Name, "")
 	if err != nil && azure.ResourceNotFound(err) {
 		return nil, errors.Wrapf(err, "network interface %s not found", nicSpec.Name)
 	} else if err != nil {
@@ -138,14 +138,14 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 	nicConfig.LoadBalancerBackendAddressPools = &backendAddressPools
 
 	f, err := s.Client.CreateOrUpdate(ctx,
-		s.Scope.ClusterConfig.ResourceGroup,
+		s.Scope.ResourceGroup,
 		nicSpec.Name,
 		network.Interface{
-			Location: to.StringPtr(s.Scope.ClusterConfig.Location),
+			Location: to.StringPtr(s.Scope.Location),
 			InterfacePropertiesFormat: &network.InterfacePropertiesFormat{
 				IPConfigurations: &[]network.InterfaceIPConfiguration{
 					{
-						Name:                                     to.StringPtr("pipConfig"),
+						Name: to.StringPtr("pipConfig"),
 						InterfaceIPConfigurationPropertiesFormat: nicConfig,
 					},
 				},
@@ -153,7 +153,7 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 		})
 
 	if err != nil {
-		return errors.Wrapf(err, "failed to create network interface %s in resource group %s", nicSpec.Name, s.Scope.ClusterConfig.ResourceGroup)
+		return errors.Wrapf(err, "failed to create network interface %s in resource group %s", nicSpec.Name, s.Scope.ResourceGroup)
 	}
 
 	err = f.WaitForCompletionRef(ctx, s.Client.Client)
@@ -176,13 +176,13 @@ func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
 		return errors.New("invalid network interface Specification")
 	}
 	klog.V(2).Infof("deleting nic %s", nicSpec.Name)
-	f, err := s.Client.Delete(ctx, s.Scope.ClusterConfig.ResourceGroup, nicSpec.Name)
+	f, err := s.Client.Delete(ctx, s.Scope.ResourceGroup, nicSpec.Name)
 	if err != nil && azure.ResourceNotFound(err) {
 		// already deleted
 		return nil
 	}
 	if err != nil {
-		return errors.Wrapf(err, "failed to delete network interface %s in resource group %s", nicSpec.Name, s.Scope.ClusterConfig.ResourceGroup)
+		return errors.Wrapf(err, "failed to delete network interface %s in resource group %s", nicSpec.Name, s.Scope.ResourceGroup)
 	}
 
 	err = f.WaitForCompletionRef(ctx, s.Client.Client)

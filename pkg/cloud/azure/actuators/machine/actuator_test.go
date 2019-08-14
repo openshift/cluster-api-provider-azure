@@ -97,46 +97,12 @@ func newMachine(t *testing.T, machineConfig machineproviderv1.AzureMachineProvid
 	}
 }
 
-func newCluster(t *testing.T) *clusterv1.Cluster {
-	clusterProviderSpec := newClusterProviderSpec()
-	providerSpec, err := providerSpecFromCluster(&clusterProviderSpec)
-	if err != nil {
-		t.Fatalf("error encoding provider config: %v", err)
-	}
-
-	return &clusterv1.Cluster{
-		TypeMeta: metav1.TypeMeta{
-			Kind: "Cluster",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "cluster-test",
-		},
-		Spec: clusterv1.ClusterSpec{
-			ClusterNetwork: clusterv1.ClusterNetworkingConfig{
-				Services: clusterv1.NetworkRanges{
-					CIDRBlocks: []string{
-						"10.96.0.0/12",
-					},
-				},
-				Pods: clusterv1.NetworkRanges{
-					CIDRBlocks: []string{
-						"192.168.0.0/16",
-					},
-				},
-			},
-			ProviderSpec: *providerSpec,
-		},
-	}
-}
 func newFakeScope(t *testing.T) *actuators.Scope {
 	return &actuators.Scope{
-		Cluster: newCluster(t),
-		ClusterConfig: &clusterproviderv1.AzureClusterProviderSpec{
-			ResourceGroup:        "dummyResourceGroup",
-			NetworkResourceGroup: "dummyResourceGroup",
-			Location:             "dummyLocation",
-		},
-		ClusterStatus: &clusterproviderv1.AzureClusterProviderStatus{},
+		ClusterName:          "cluster-test",
+		ResourceGroup:        "dummyResourceGroup",
+		NetworkResourceGroup: "dummyResourceGroup",
+		Location:             "dummyLocation",
 	}
 }
 

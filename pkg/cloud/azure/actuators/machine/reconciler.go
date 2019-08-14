@@ -269,7 +269,7 @@ func (s *Reconciler) Delete(ctx context.Context) error {
 	}
 
 	if s.machineConfig.PublicIP {
-		publicIPName, err := azure.GenerateMachinePublicIPName(s.scope.Cluster.Name, s.machine.Name)
+		publicIPName, err := azure.GenerateMachinePublicIPName(s.scope.ClusterName, s.machine.Name)
 		if err != nil {
 			return errors.Wrap(err, "unable to create Public IP")
 		}
@@ -333,7 +333,7 @@ func (s *Reconciler) createNetworkInterface(ctx context.Context, nicName string)
 	}
 
 	if s.machineConfig.PublicIP {
-		publicIPName, err := azure.GenerateMachinePublicIPName(s.scope.Cluster.Name, s.machine.Name)
+		publicIPName, err := azure.GenerateMachinePublicIPName(s.scope.ClusterName, s.machine.Name)
 		if err != nil {
 			return errors.Wrap(err, "unable to create Public IP")
 		}
@@ -382,7 +382,7 @@ func (s *Reconciler) createVirtualMachine(ctx context.Context, nicName string) (
 			Image:           s.machineConfig.Image,
 			Zone:            zone,
 			Tags:            s.machineConfig.Tags,
-			ManagedIdentity: azure.GenerateManagedIdentityName(s.scope.SubscriptionID, s.scope.ClusterConfig.ResourceGroup, s.machineConfig.ManagedIdentity),
+			ManagedIdentity: azure.GenerateManagedIdentityName(s.scope.SubscriptionID, s.scope.ResourceGroup, s.machineConfig.ManagedIdentity),
 		}
 
 		userData, userDataErr := s.getCustomUserData()

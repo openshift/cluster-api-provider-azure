@@ -38,14 +38,27 @@ HOSTOS := $(shell go env GOHOSTOS)
 HOSTARCH := $(shell go env GOARCH)
 BINARYPATHPATTERN :=${HOSTOS}_${HOSTARCH}_*
 
+GO111MODULE = on
+export GO111MODULE
+GOFLAGS += -mod=vendor
+export GOFLAGS
+GOPROXY ?=
+export GOPROXY
+
 .PHONY: all
-all: check-install test manager clusterctl #clusterazureadm
+all: test manager clusterctl #clusterazureadm
+
+.PHONY: vendor
+vendor:
+	go mod tidy
+	go mod vendor
+	go mod verify
 
 help:  ## Display this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
 .PHONY: dep-ensure
-dep-ensure: check-install ## Ensure dependencies are up to date
+dep-ensure: ## Ensure dependencies are up to date
 	@echo Checking status of dependencies
 	@${DEP} status 2>&1 > /dev/null || make dep-install
 	@echo Finished verifying dependencies
@@ -58,10 +71,6 @@ dep-install: ## Force install go dependencies
 .PHONY: gazelle
 gazelle: ## Run Bazel Gazelle
 	bazel run //:gazelle $(BAZEL_ARGS)
-
-.PHONY: check-install
-check-install: ## Checks that you've installed this repository correctly
-	@./scripts/check-install.sh
 
 .PHONY: manager
 manager: generate ## Build manager binary.
@@ -235,15 +244,6 @@ endif
 ## Old make targets
 # TODO: Migrate old make targets
 
-vendor:
-	dep version || go get -u github.com/golang/dep/cmd/dep
-	dep ensure -v
-vendor-update:
-	dep version || go get -u github.com/golang/dep/cmd/dep
-	dep ensure -v -update
-vendor-validate:
-	dep check
-
 machine-unit-tests:
 	go test ./pkg/cloud/azure/actuators/machine -coverprofile machine-actuator-cover.out
 
@@ -278,7 +278,7 @@ vet:
 verify-boilerplate:
 	./hack/verify-boilerplate.sh
 
-check: verify-boilerplate bootstrap vendor-validate lint
+check: verify-boilerplate bootstrap lint
 
 .PHONY: test-e2e
 test-e2e:

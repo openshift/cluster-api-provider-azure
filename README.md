@@ -20,7 +20,7 @@ stabilizes within the community.
 1. **Configure RBAC rules so the actuator can CRUD resources**
 
     ```sh
-    $ az role definition update --role-definition azure-role.json
+    $ az role definition update --role-definition config/azure-role.json
     ```
 
 ## Deploy machine API plane with minikube

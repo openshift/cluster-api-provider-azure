@@ -25,12 +25,9 @@ import (
 	"github.com/Azure/go-autorest/autorest/azure"
 	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
 	machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
-	machineclient "github.com/openshift/cluster-api/pkg/client/clientset_generated/clientset/typed/machine/v1beta1"
 	apierrors "github.com/openshift/cluster-api/pkg/errors"
 	"github.com/pkg/errors"
 	apicorev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog"
@@ -61,7 +58,6 @@ type MachineScopeParams struct {
 	AzureClients
 	Cluster    *clusterv1.Cluster
 	Machine    *machinev1.Machine
-	Client     machineclient.MachineV1beta1Interface
 	CoreClient controllerclient.Client
 }
 
@@ -73,7 +69,7 @@ func NewMachineScope(params MachineScopeParams) (*MachineScope, error) {
 		return nil, err
 	}
 
-	machineConfig, err := MachineConfigFromProviderSpec(params.Client, params.Machine.Spec.ProviderSpec)
+	machineConfig, err := MachineConfigFromProviderSpec(params.Machine.Spec.ProviderSpec)
 	if err != nil {
 		return nil, apierrors.InvalidMachineConfiguration(err.Error(), "failed to get machine config")
 	}
@@ -82,8 +78,6 @@ func NewMachineScope(params MachineScopeParams) (*MachineScope, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get machine provider status")
 	}
-
-	machineClient := params.Client.Machines(params.Machine.Namespace)
 
 	if machineConfig.CredentialsSecret != nil {
 		if err = updateScope(params.CoreClient, machineConfig.CredentialsSecret, scope); err != nil {
@@ -109,15 +103,10 @@ func NewMachineScope(params MachineScopeParams) (*MachineScope, error) {
 		Scope: scope,
 		// Deep copy the machine since it's change outside of the machine scope
 		// by consumers of the machine scope (e.g. reconciler).
-		Machine:       params.Machine.DeepCopy(),
-		MachineClient: machineClient,
+		Machine:       params.Machine,
 		CoreClient:    params.CoreClient,
 		MachineConfig: machineConfig,
 		MachineStatus: machineStatus,
-		// Once set, they can not be changed. Otherwise, status change computation
-		// might be invalid and result in skipping the status update.
-		origMachine:       params.Machine.DeepCopy(),
-		origMachineStatus: machineStatus.DeepCopy(),
 	}, nil
 }
 
@@ -126,17 +115,9 @@ type MachineScope struct {
 	*Scope
 
 	Machine       *machinev1.Machine
-	MachineClient machineclient.MachineInterface
 	CoreClient    controllerclient.Client
 	MachineConfig *v1beta1.AzureMachineProviderSpec
 	MachineStatus *v1beta1.AzureMachineProviderStatus
-
-	// origMachine captures original value of machine before it is updated (to
-	// skip object updated if nothing is changed)
-	origMachine *machinev1.Machine
-	// origMachineStatus captures original value of machine provider status
-	// before it is updated (to skip object updated if nothing is changed)
-	origMachineStatus *v1beta1.AzureMachineProviderStatus
 }
 
 // Name returns the machine name.
@@ -159,77 +140,41 @@ func (m *MachineScope) Location() string {
 	return m.Scope.Location()
 }
 
-func (m *MachineScope) storeMachineSpec() error {
-	ext, err := v1beta1.EncodeMachineSpec(m.MachineConfig)
+func (m *MachineScope) setMachineSpec() error {
+	rawMachineConfig, err := v1beta1.EncodeMachineSpec(m.MachineConfig)
 	if err != nil {
 		return err
 	}
 
-	m.Machine.Spec.ProviderSpec.Value = ext
-	latestMachine, err := m.MachineClient.Update(m.Machine)
-	if err != nil {
-		return err
-	}
-
-	m.Machine = latestMachine
+	m.Machine.Spec.ProviderSpec.Value = rawMachineConfig
 	return nil
 }
 
-func (m *MachineScope) storeMachineStatus() error {
-	if equality.Semantic.DeepEqual(m.MachineStatus, m.origMachineStatus) && equality.Semantic.DeepEqual(m.Machine.Status.Addresses, m.origMachine.Status.Addresses) {
-		klog.Infof("%s: status unchanged", m.Machine.Name)
-		return nil
-	}
-
-	klog.V(4).Infof("Storing machine status for %q, resourceVersion: %v, generation: %v", m.Machine.Name, m.Machine.ResourceVersion, m.Machine.Generation)
-	ext, err := v1beta1.EncodeMachineStatus(m.MachineStatus)
+func (m *MachineScope) setMachineStatus() error {
+	klog.V(4).Infof("Setting machine status for %q, resourceVersion: %v, generation: %v", m.Machine.Name, m.Machine.ResourceVersion, m.Machine.Generation)
+	rawStatus, err := v1beta1.EncodeMachineStatus(m.MachineStatus)
 	if err != nil {
 		return err
 	}
-
-	m.Machine.Status.ProviderStatus = ext
-
-	time := metav1.Now()
-	m.Machine.Status.LastUpdated = &time
-	latestMachine, err := m.MachineClient.UpdateStatus(m.Machine)
-	if err != nil {
-		return err
-	}
-	m.Machine = latestMachine
-	return err
+	m.Machine.Status.ProviderStatus = rawStatus
+	return nil
 }
 
 // Persist the machine spec and machine status.
-func (m *MachineScope) Persist() error {
-	if m.MachineClient == nil {
-		return fmt.Errorf("machine client is empty")
+func (m *MachineScope) Set() error {
+	if err := m.setMachineStatus(); err != nil {
+		return fmt.Errorf("[machinescope] failed to set provider status for machine %q in namespace %q: %v", m.Machine.Name, m.Machine.Namespace, err)
 	}
 
-	// The machine status needs to be updated first since
-	// the next call to storeMachineSpec updates entire machine
-	// object. If done in the reverse order, the machine status
-	// could be updated without setting the LastUpdated field
-	// in the machine status. The following might occur:
-	// 1. machine object is updated (including its status)
-	// 2. the machine object is updated by different component/user meantime
-	// 3. storeMachineStatus is called but fails since the machine object
-	//    is outdated. The operation is reconciled but given the status
-	//    was already set in the previous call, the status is no longer updated
-	//    since the status updated condition is already false. Thus,
-	//    the LastUpdated is not set/updated properly.
-	if err := m.storeMachineStatus(); err != nil {
-		return fmt.Errorf("[machinescope] failed to store provider status for machine %q in namespace %q: %v", m.Machine.Name, m.Machine.Namespace, err)
-	}
-
-	if err := m.storeMachineSpec(); err != nil {
-		return fmt.Errorf("[machinescope] failed to update machine %q in namespace %q: %v", m.Machine.Name, m.Machine.Namespace, err)
+	if err := m.setMachineSpec(); err != nil {
+		return fmt.Errorf("[machinescope] failed to set machine %q in namespace %q: %v", m.Machine.Name, m.Machine.Namespace, err)
 	}
 
 	return nil
 }
 
 // MachineConfigFromProviderSpec tries to decode the JSON-encoded spec, falling back on getting a MachineClass if the value is absent.
-func MachineConfigFromProviderSpec(clusterClient machineclient.MachineClassesGetter, providerConfig machinev1.ProviderSpec) (*v1beta1.AzureMachineProviderSpec, error) {
+func MachineConfigFromProviderSpec(providerConfig machinev1.ProviderSpec) (*v1beta1.AzureMachineProviderSpec, error) {
 	var config v1beta1.AzureMachineProviderSpec
 	if providerConfig.Value != nil {
 		klog.V(4).Info("Decoding ProviderConfig from Value")

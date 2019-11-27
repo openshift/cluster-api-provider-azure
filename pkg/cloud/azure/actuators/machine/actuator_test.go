@@ -30,7 +30,6 @@ import (
 	"github.com/golang/mock/gomock"
 	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
 	machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
-	"github.com/openshift/cluster-api/pkg/client/clientset_generated/clientset/fake"
 	controllerError "github.com/openshift/cluster-api/pkg/controller/error"
 	"github.com/openshift/cluster-api/pkg/controller/machine"
 	"github.com/pkg/errors"
@@ -148,11 +147,9 @@ func newFakeScope(t *testing.T, label string) *actuators.MachineScope {
 	labels[machinev1.MachineClusterIDLabel] = "clusterID"
 	machineConfig := machineproviderv1.AzureMachineProviderSpec{}
 	m := newMachine(t, machineConfig, labels)
-	c := fake.NewSimpleClientset(m).MachineV1beta1()
 	return &actuators.MachineScope{
-		Scope:         scope,
-		Machine:       m,
-		MachineClient: c.Machines("dummyNamespace"),
+		Scope:   scope,
+		Machine: m,
 		MachineConfig: &machineproviderv1.AzureMachineProviderSpec{
 			Subnet:          "dummySubnet",
 			Vnet:            "dummyVnet",
@@ -699,7 +696,6 @@ func TestMachineEvents(t *testing.T) {
 			eventsChannel := make(chan string, 1)
 
 			machineActuator := NewActuator(ActuatorParams{
-				Client:     fake.NewSimpleClientset(tc.machine).MachineV1beta1(),
 				CoreClient: cs,
 				ReconcilerBuilder: func(scope *actuators.MachineScope) *Reconciler {
 					return &Reconciler{
@@ -797,7 +793,6 @@ func TestStatusCodeBasedCreationErrors(t *testing.T) {
 			eventsChannel := make(chan string, 1)
 
 			machineActuator := NewActuator(ActuatorParams{
-				Client:     fake.NewSimpleClientset(machine).MachineV1beta1(),
 				CoreClient: cs,
 				ReconcilerBuilder: func(scope *actuators.MachineScope) *Reconciler {
 					return &Reconciler{

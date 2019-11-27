@@ -22,9 +22,7 @@ import (
 	"github.com/ghodss/yaml"
 	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
 	machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
-	"github.com/openshift/cluster-api/pkg/client/clientset_generated/clientset/fake"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -67,7 +65,6 @@ func TestNilClusterScope(t *testing.T) {
 		Cluster:      nil,
 		CoreClient:   nil,
 		Machine:      m,
-		Client:       fake.NewSimpleClientset(m).MachineV1beta1(),
 	}
 	_, err := NewMachineScope(params)
 	if err != nil {
@@ -221,13 +218,12 @@ func testMachine(t *testing.T) *machinev1.Machine {
 	return testMachineWithProviderSpec(t, testProviderSpec())
 }
 
-func TestPersistMachineScope(t *testing.T) {
+func TestSet(t *testing.T) {
 	machine := testMachine(t)
 
 	params := MachineScopeParams{
 		Machine:    machine,
 		Cluster:    nil,
-		Client:     fake.NewSimpleClientset(machine).MachineV1beta1(),
 		CoreClient: controllerfake.NewFakeClientWithScheme(scheme.Scheme, testCredentialSecret()),
 	}
 
@@ -248,24 +244,11 @@ func TestPersistMachineScope(t *testing.T) {
 	scope.Machine.Status.Addresses = make([]corev1.NodeAddress, len(nodeAddresses))
 	copy(nodeAddresses, scope.Machine.Status.Addresses)
 
-	if err = scope.Persist(); err != nil {
+	if err = scope.Set(); err != nil {
 		t.Errorf("Expected MachineScope.Persist to success, got error: %v", err)
 	}
 
-	updatedMachine, err := params.Client.Machines(params.Machine.Namespace).Get(params.Machine.Name, metav1.GetOptions{})
-	if err != nil {
-		t.Errorf("Unable to get updated machine: %v", err)
-	}
-
-	if !equality.Semantic.DeepEqual(updatedMachine.Status.Addresses, nodeAddresses) {
-		t.Errorf("Expected node addresses to equal, updated addresses %#v, expected addresses: %#v", updatedMachine.Status.Addresses, nodeAddresses)
-	}
-
-	if updatedMachine.Annotations["test"] != "testValue" {
-		t.Errorf("Expected annotation 'test' to equal 'testValue', got %q instead", updatedMachine.Annotations["test"])
-	}
-
-	machineStatus, err := machineproviderv1.MachineStatusFromProviderStatus(updatedMachine.Status.ProviderStatus)
+	machineStatus, err := machineproviderv1.MachineStatusFromProviderStatus(scope.Machine.Status.ProviderStatus)
 	if err != nil {
 		t.Errorf("failed to get machine provider status: %v", err)
 	}
@@ -306,7 +289,6 @@ func TestNewMachineScope(t *testing.T) {
 		scope, err := NewMachineScope(MachineScopeParams{
 			Machine:    tc.machine,
 			Cluster:    nil,
-			Client:     fake.NewSimpleClientset(tc.machine).MachineV1beta1(),
 			CoreClient: controllerfake.NewFakeClientWithScheme(scheme.Scheme, tc.secret),
 		})
 		if err != nil {

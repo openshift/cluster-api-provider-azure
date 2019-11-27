@@ -24,7 +24,6 @@ import (
 	"github.com/Azure/go-autorest/autorest"
 	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
 	machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
-	client "github.com/openshift/cluster-api/pkg/client/clientset_generated/clientset/typed/machine/v1beta1"
 	controllerError "github.com/openshift/cluster-api/pkg/controller/error"
 	apierrors "github.com/openshift/cluster-api/pkg/errors"
 	"github.com/pkg/errors"
@@ -49,7 +48,6 @@ const (
 
 // Actuator is responsible for performing machine reconciliation.
 type Actuator struct {
-	client        client.MachineV1beta1Interface
 	coreClient    controllerclient.Client
 	eventRecorder record.EventRecorder
 
@@ -58,7 +56,6 @@ type Actuator struct {
 
 // ActuatorParams holds parameter information for Actuator.
 type ActuatorParams struct {
-	Client            client.MachineV1beta1Interface
 	CoreClient        controllerclient.Client
 	EventRecorder     record.EventRecorder
 	ReconcilerBuilder func(scope *actuators.MachineScope) *Reconciler
@@ -67,7 +64,6 @@ type ActuatorParams struct {
 // NewActuator returns an actuator.
 func NewActuator(params ActuatorParams) *Actuator {
 	return &Actuator{
-		client:            params.Client,
 		coreClient:        params.CoreClient,
 		eventRecorder:     params.EventRecorder,
 		reconcilerBuilder: params.ReconcilerBuilder,
@@ -92,7 +88,6 @@ func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machi
 	scope, err := actuators.NewMachineScope(actuators.MachineScopeParams{
 		Machine:    machine,
 		Cluster:    nil,
-		Client:     a.client,
 		CoreClient: a.coreClient,
 	})
 	if err != nil {
@@ -103,7 +98,7 @@ func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machi
 	err = a.reconcilerBuilder(scope).Create(context.Background())
 	if err != nil {
 		// We still want to persist on failure to update MachineStatus
-		if err := scope.Persist(); err != nil {
+		if err := scope.Set(); err != nil {
 			klog.Errorf("Error storing machine info: %v", err)
 		}
 
@@ -121,7 +116,7 @@ func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machi
 		}
 	}
 
-	if err := scope.Persist(); err != nil {
+	if err := scope.Set(); err != nil {
 		return fmt.Errorf("error storing machine info: %v", err)
 	}
 
@@ -137,7 +132,6 @@ func (a *Actuator) Delete(ctx context.Context, cluster *clusterv1.Cluster, machi
 	scope, err := actuators.NewMachineScope(actuators.MachineScopeParams{
 		Machine:    machine,
 		Cluster:    nil,
-		Client:     a.client,
 		CoreClient: a.coreClient,
 	})
 	if err != nil {
@@ -147,7 +141,7 @@ func (a *Actuator) Delete(ctx context.Context, cluster *clusterv1.Cluster, machi
 	err = a.reconcilerBuilder(scope).Delete(context.Background())
 	if err != nil {
 		// We still want to persist on failure to update MachineStatus
-		if err := scope.Persist(); err != nil {
+		if err := scope.Set(); err != nil {
 			klog.Errorf("Error storing machine info: %v", err)
 		}
 		a.handleMachineError(machine, apierrors.DeleteMachine("failed to delete machine %q: %v", machine.Name, err), deleteEventAction)
@@ -156,7 +150,7 @@ func (a *Actuator) Delete(ctx context.Context, cluster *clusterv1.Cluster, machi
 		}
 	}
 
-	if err := scope.Persist(); err != nil {
+	if err := scope.Set(); err != nil {
 		return fmt.Errorf("error storing machine info: %v", err)
 	}
 
@@ -174,7 +168,6 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 	scope, err := actuators.NewMachineScope(actuators.MachineScopeParams{
 		Machine:    machine,
 		Cluster:    nil,
-		Client:     a.client,
 		CoreClient: a.coreClient,
 	})
 	if err != nil {
@@ -184,7 +177,7 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 	err = a.reconcilerBuilder(scope).Update(context.Background())
 	if err != nil {
 		// We still want to persist on failure to update MachineStatus
-		if err := scope.Persist(); err != nil {
+		if err := scope.Set(); err != nil {
 			klog.Errorf("Error storing machine info: %v", err)
 		}
 		a.handleMachineError(machine, apierrors.UpdateMachine("failed to update machine %q: %v", machine.Name, err), updateEventAction)
@@ -193,7 +186,7 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 		}
 	}
 
-	if err := scope.Persist(); err != nil {
+	if err := scope.Set(); err != nil {
 		return fmt.Errorf("error storing machine info: %v", err)
 	}
 
@@ -209,7 +202,6 @@ func (a *Actuator) Exists(ctx context.Context, cluster *clusterv1.Cluster, machi
 	scope, err := actuators.NewMachineScope(actuators.MachineScopeParams{
 		Machine:    machine,
 		Cluster:    nil,
-		Client:     a.client,
 		CoreClient: a.coreClient,
 	})
 	if err != nil {

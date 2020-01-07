@@ -53,6 +53,8 @@ const (
 	AzureCredsRegionKey = "azure_region"
 	// AzureResourcePrefix resource prefix for created azure resources
 	AzureResourcePrefix = "azure_resource_prefix"
+	// Azure Environment
+	AzureEnvironmentKey = "azure_env"
 )
 
 // MachineScopeParams defines the input parameters used to create a new MachineScope.
@@ -297,11 +299,19 @@ func updateScope(coreClient controllerclient.Client, credentialsSecret *apicorev
 		return errors.Errorf("Azure resource prefix %v did not contain key %v",
 			secretType.String(), AzureResourcePrefix)
 	}
+	envName := []byte("")
+	envName, ok = secret.Data[AzureEnvironmentKey]
+	if !ok {
+		envName = []byte("AzurePublicCloud")
+		return errors.Errorf("Azure Envrionment %v did not contain key %v",
+			secretType.String(), AzureEnvironmentKey)
+	}
 
-	env, err := azure.EnvironmentFromName("AzurePublicCloud")
+	env, err := azure.EnvironmentFromName(string(envName))
 	if err != nil {
 		return err
 	}
+
 	oauthConfig, err := adal.NewOAuthConfig(
 		env.ActiveDirectoryEndpoint, string(tenantID))
 	if err != nil {

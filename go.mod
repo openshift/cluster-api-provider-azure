@@ -13,7 +13,7 @@ require (
 	github.com/openshift/machine-api-operator v0.2.1-0.20200212112539-a9085e24cf62
 	github.com/pkg/errors v0.8.1
 	github.com/spf13/cobra v0.0.5
-	golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550
+	golang.org/x/crypto v0.0.0-20200220183623-bac4c82f6975
 	k8s.io/api v0.17.2
 	k8s.io/apiextensions-apiserver v0.0.0-20191121021419-88daf26ec3b8 // indirect
 	k8s.io/apimachinery v0.17.2

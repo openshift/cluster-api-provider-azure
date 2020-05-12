@@ -350,8 +350,6 @@ func (s *Reconciler) Exists(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("returned incorrect vm interface: %T", vmInterface)
 	}
 
-	klog.Infof("Found vm for machine %s", s.scope.Name())
-
 	if s.scope.MachineConfig.UserDataSecret == nil {
 		vmExtSpec := &virtualmachineextensions.Spec{
 			Name:   "startupScript",
@@ -374,8 +372,11 @@ func (s *Reconciler) Exists(ctx context.Context) (bool, error) {
 	case v1beta1.VMStateUpdating:
 		klog.Infof("Machine %v is updating", to.String(vm.VMID))
 	default:
+		klog.Infof("Not found vm for machine %s", s.scope.Machine.GetName())
 		return false, nil
 	}
+
+	klog.Infof("Found vm for machine %s", s.scope.Machine.GetName())
 
 	return true, nil
 }

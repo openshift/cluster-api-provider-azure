@@ -45,3 +45,6 @@ bin/
 
 # vscode
 .vscode
+
+# generated tools
+/tools/bin

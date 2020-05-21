@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2018-12-01/network"
+	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2019-12-01/network"
 	"github.com/Azure/go-autorest/autorest/to"
 	"k8s.io/klog"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
@@ -49,12 +49,12 @@ type Spec struct {
 }
 
 // Get provides information about a network interface.
-func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error) {
+func (s *Service) Get(ctx context.Context, spec interface{}) (interface{}, error) {
 	nicSpec, ok := spec.(*Spec)
 	if !ok {
 		return network.Interface{}, errors.New("invalid network interface specification")
 	}
-	nic, err := s.Client.Get(ctx, s.Scope.MachineConfig.ResourceGroup, nicSpec.Name, "")
+	nic, err := s.Client.Get(ctx, s.Scope.MachineConfig.ResourceGroup, nicSpec.Name)
 	if err != nil && azure.ResourceNotFound(err) {
 		return nil, fmt.Errorf("network interface %s not found: %w", nicSpec.Name, err)
 	} else if err != nil {
@@ -64,7 +64,7 @@ func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error)
 }
 
 // CreateOrUpdate creates or updates a network interface.
-func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
+func (s *Service) CreateOrUpdate(ctx context.Context, spec interface{}) error {
 	nicSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("invalid network interface specification")
@@ -202,7 +202,7 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 		nicProp.IPConfigurations = &ipConfigs
 	}
 
-	f, err := s.Client.CreateOrUpdate(ctx,
+	err = s.Client.CreateOrUpdate(ctx,
 		s.Scope.MachineConfig.ResourceGroup,
 		nicSpec.Name,
 		network.Interface{
@@ -214,27 +214,18 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 		return fmt.Errorf("failed to create network interface %s in resource group %s: %w", nicSpec.Name, s.Scope.MachineConfig.ResourceGroup, err)
 	}
 
-	err = f.WaitForCompletionRef(ctx, s.Client.Client)
-	if err != nil {
-		return fmt.Errorf("cannot create, future response: %w", err)
-	}
-
-	_, err = f.Result(s.Client)
-	if err != nil {
-		return fmt.Errorf("result error: %w", err)
-	}
 	klog.V(2).Infof("successfully created network interface %s", nicSpec.Name)
 	return err
 }
 
 // Delete deletes the network interface with the provided name.
-func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
+func (s *Service) Delete(ctx context.Context, spec interface{}) error {
 	nicSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("invalid network interface Specification")
 	}
 	klog.V(2).Infof("deleting nic %s", nicSpec.Name)
-	f, err := s.Client.Delete(ctx, s.Scope.MachineConfig.ResourceGroup, nicSpec.Name)
+	err := s.Client.Delete(ctx, s.Scope.MachineConfig.ResourceGroup, nicSpec.Name)
 	if err != nil && azure.ResourceNotFound(err) {
 		// already deleted
 		return nil
@@ -243,15 +234,6 @@ func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
 		return fmt.Errorf("failed to delete network interface %s in resource group %s: %w", nicSpec.Name, s.Scope.MachineConfig.ResourceGroup, err)
 	}
 
-	err = f.WaitForCompletionRef(ctx, s.Client.Client)
-	if err != nil {
-		return fmt.Errorf("cannot create, future response: %w", err)
-	}
-
-	_, err = f.Result(s.Client)
-	if err != nil {
-		return fmt.Errorf("result error: %w", err)
-	}
 	klog.V(2).Infof("successfully deleted nic %s", nicSpec.Name)
 	return err
 }

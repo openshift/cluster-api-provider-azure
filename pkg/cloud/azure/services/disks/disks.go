@@ -21,7 +21,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute"
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2019-12-01/compute"
 	"k8s.io/klog"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
 )
@@ -32,23 +32,23 @@ type Spec struct {
 }
 
 // Get on disk is currently no-op. OS disks should only be deleted and will create with the VM automatically.
-func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error) {
+func (s *Service) Get(ctx context.Context, spec interface{}) (interface{}, error) {
 	return compute.Disk{}, nil
 }
 
 // CreateOrUpdate on disk is currently no-op. OS disks should only be deleted and will create with the VM automatically.
-func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
+func (s *Service) CreateOrUpdate(ctx context.Context, spec interface{}) error {
 	return nil
 }
 
 // Delete deletes the disk associated with a VM.
-func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
+func (s *Service) Delete(ctx context.Context, spec interface{}) error {
 	diskSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("Invalid disk specification")
 	}
 	klog.V(2).Infof("deleting disk %s", diskSpec.Name)
-	future, err := s.Client.Delete(ctx, s.Scope.MachineConfig.ResourceGroup, diskSpec.Name)
+	err := s.Client.Delete(ctx, s.Scope.MachineConfig.ResourceGroup, diskSpec.Name)
 	if err != nil && azure.ResourceNotFound(err) {
 		// already deleted
 		return nil
@@ -57,12 +57,6 @@ func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
 		return fmt.Errorf("failed to delete disk %s in resource group %s: %w", diskSpec.Name, s.Scope.MachineConfig.ResourceGroup, err)
 	}
 
-	// Do not wait until the operation completes. Just check the result
-	// so the call to Delete actuator operation is async.
-	_, err = future.Result(s.Client)
-	if err != nil {
-		return fmt.Errorf("result error: %w", err)
-	}
 	klog.V(2).Infof("successfully deleted disk %s", diskSpec.Name)
 	return err
 }

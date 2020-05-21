@@ -17,30 +17,19 @@ limitations under the License.
 package availabilityzones
 
 import (
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute"
-	"github.com/Azure/go-autorest/autorest"
-	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure/actuators"
 )
 
 // Service provides operations on availability zones
 type Service struct {
-	Client compute.ResourceSkusClient
-	Scope  *actuators.MachineScope
-}
-
-// getResourceSkusClient creates a new availability zones client from subscriptionid.
-func getResourceSkusClient(subscriptionID string, authorizer autorest.Authorizer) compute.ResourceSkusClient {
-	skusClient := compute.NewResourceSkusClient(subscriptionID)
-	skusClient.Authorizer = authorizer
-	skusClient.AddToUserAgent(azure.UserAgent)
-	return skusClient
+	Client
+	Scope *actuators.MachineScope
 }
 
 // NewService creates a new availability zones service.
-func NewService(scope *actuators.MachineScope) azure.Service {
+func NewService(scope *actuators.MachineScope) *Service {
 	return &Service{
-		Client: getResourceSkusClient(scope.SubscriptionID, scope.Authorizer),
+		Client: NewClient(scope.SubscriptionID, scope.Authorizer),
 		Scope:  scope,
 	}
 }

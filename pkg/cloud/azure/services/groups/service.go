@@ -17,30 +17,19 @@ limitations under the License.
 package groups
 
 import (
-	"github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2018-05-01/resources"
-	"github.com/Azure/go-autorest/autorest"
-	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure/actuators"
 )
 
 // Service provides operations on resource groups
 type Service struct {
-	Client resources.GroupsClient
-	Scope  *actuators.MachineScope
-}
-
-// getGroupsClient creates a new groups client from subscriptionid.
-func getGroupsClient(subscriptionID string, authorizer autorest.Authorizer) resources.GroupsClient {
-	groupsClient := resources.NewGroupsClient(subscriptionID)
-	groupsClient.Authorizer = authorizer
-	groupsClient.AddToUserAgent(azure.UserAgent)
-	return groupsClient
+	Client
+	Scope *actuators.MachineScope
 }
 
 // NewService creates a new groups service.
-func NewService(scope *actuators.MachineScope) azure.Service {
+func NewService(scope *actuators.MachineScope) *Service {
 	return &Service{
-		Client: getGroupsClient(scope.SubscriptionID, scope.Authorizer),
+		Client: NewClient(scope.SubscriptionID, scope.Authorizer),
 		Scope:  scope,
 	}
 }

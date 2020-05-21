@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2018-12-01/network"
+	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2019-12-01/network"
 	"github.com/Azure/go-autorest/autorest/to"
 	"k8s.io/klog"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
@@ -34,12 +34,12 @@ type Spec struct {
 }
 
 // Get provides information about a route table.
-func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error) {
+func (s *Service) Get(ctx context.Context, spec interface{}) (interface{}, error) {
 	publicIPSpec, ok := spec.(*Spec)
 	if !ok {
 		return network.PublicIPAddress{}, errors.New("Invalid PublicIP Specification")
 	}
-	publicIP, err := s.Client.Get(ctx, s.Scope.MachineConfig.ResourceGroup, publicIPSpec.Name, "")
+	publicIP, err := s.Client.Get(ctx, s.Scope.MachineConfig.ResourceGroup, publicIPSpec.Name)
 	if err != nil && azure.ResourceNotFound(err) {
 		return nil, fmt.Errorf("publicip %s not found: %w", publicIPSpec.Name, err)
 	} else if err != nil {
@@ -49,7 +49,7 @@ func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error)
 }
 
 // CreateOrUpdate creates or updates a public ip
-func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
+func (s *Service) CreateOrUpdate(ctx context.Context, spec interface{}) error {
 	publicIPSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("Invalid PublicIP Specification")
@@ -58,7 +58,7 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 	klog.V(2).Infof("creating public ip %s", ipName)
 
 	// https://docs.microsoft.com/en-us/azure/load-balancer/load-balancer-standard-availability-zones#zone-redundant-by-default
-	f, err := s.Client.CreateOrUpdate(
+	err := s.Client.CreateOrUpdate(
 		ctx,
 		s.Scope.MachineConfig.ResourceGroup,
 		ipName,
@@ -80,27 +80,18 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 		return fmt.Errorf("cannot create public ip: %w", err)
 	}
 
-	err = f.WaitForCompletionRef(ctx, s.Client.Client)
-	if err != nil {
-		return fmt.Errorf("cannot create, future response: %w", err)
-	}
-
-	_, err = f.Result(s.Client)
-	if err != nil {
-		return fmt.Errorf("result error: %w", err)
-	}
 	klog.V(2).Infof("successfully created public ip %s", ipName)
 	return err
 }
 
 // Delete deletes the public ip with the provided scope.
-func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
+func (s *Service) Delete(ctx context.Context, spec interface{}) error {
 	publicIPSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("Invalid PublicIP Specification")
 	}
 	klog.V(2).Infof("deleting public ip %s", publicIPSpec.Name)
-	f, err := s.Client.Delete(ctx, s.Scope.MachineConfig.ResourceGroup, publicIPSpec.Name)
+	err := s.Client.Delete(ctx, s.Scope.MachineConfig.ResourceGroup, publicIPSpec.Name)
 	if err != nil && azure.ResourceNotFound(err) {
 		// already deleted
 		return nil
@@ -109,15 +100,6 @@ func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
 		return fmt.Errorf("failed to delete public ip %s in resource group %s: %w", publicIPSpec.Name, s.Scope.MachineConfig.ResourceGroup, err)
 	}
 
-	err = f.WaitForCompletionRef(ctx, s.Client.Client)
-	if err != nil {
-		return fmt.Errorf("cannot create, future response: %w", err)
-	}
-
-	_, err = f.Result(s.Client)
-	if err != nil {
-		return fmt.Errorf("result error: %w", err)
-	}
 	klog.V(2).Infof("deleted public ip %s", publicIPSpec.Name)
 	return err
 }

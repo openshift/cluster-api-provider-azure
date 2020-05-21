@@ -9,7 +9,6 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
-	azure "sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
 )
 
 // MockSpec is a mock of Spec interface
@@ -59,7 +58,7 @@ func (m *MockService) EXPECT() *MockServiceMockRecorder {
 }
 
 // Get mocks base method
-func (m *MockService) Get(ctx context.Context, spec azure.Spec) (interface{}, error) {
+func (m *MockService) Get(ctx context.Context, spec interface{}) (interface{}, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Get", ctx, spec)
 	ret0, _ := ret[0].(interface{})
@@ -74,7 +73,7 @@ func (mr *MockServiceMockRecorder) Get(ctx, spec interface{}) *gomock.Call {
 }
 
 // CreateOrUpdate mocks base method
-func (m *MockService) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
+func (m *MockService) CreateOrUpdate(ctx context.Context, spec interface{}) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateOrUpdate", ctx, spec)
 	ret0, _ := ret[0].(error)
@@ -88,7 +87,7 @@ func (mr *MockServiceMockRecorder) CreateOrUpdate(ctx, spec interface{}) *gomock
 }
 
 // Delete mocks base method
-func (m *MockService) Delete(ctx context.Context, spec azure.Spec) error {
+func (m *MockService) Delete(ctx context.Context, spec interface{}) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Delete", ctx, spec)
 	ret0, _ := ret[0].(error)

@@ -25,8 +25,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute"
-	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2018-12-01/network"
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2019-12-01/compute"
+	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2019-12-01/network"
 	"github.com/Azure/go-autorest/autorest/to"
 	machinev1 "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	machineapierrors "github.com/openshift/machine-api-operator/pkg/controller/machine"
@@ -65,12 +65,12 @@ const (
 // Reconciler are list of services required by cluster actuator, easy to create a fake
 type Reconciler struct {
 	scope                 *actuators.MachineScope
-	availabilityZonesSvc  azure.Service
-	networkInterfacesSvc  azure.Service
-	publicIPSvc           azure.Service
-	virtualMachinesSvc    azure.Service
-	virtualMachinesExtSvc azure.Service
-	disksSvc              azure.Service
+	availabilityZonesSvc  azure.GetterService
+	networkInterfacesSvc  azure.GetterService
+	publicIPSvc           azure.GetterService
+	virtualMachinesSvc    azure.GetterService
+	virtualMachinesExtSvc azure.GetterService
+	disksSvc              azure.GetterService
 }
 
 // NewReconciler populates all the services based on input scope

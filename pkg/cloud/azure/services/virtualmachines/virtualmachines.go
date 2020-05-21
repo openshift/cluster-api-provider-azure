@@ -24,8 +24,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute"
-	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2018-12-01/network"
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2019-12-01/compute"
+	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2019-12-01/network"
 	"github.com/Azure/go-autorest/autorest/to"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/klog"
@@ -49,12 +49,12 @@ type Spec struct {
 }
 
 // Get provides information about a virtual network.
-func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error) {
+func (s *Service) Get(ctx context.Context, spec interface{}) (interface{}, error) {
 	vmSpec, ok := spec.(*Spec)
 	if !ok {
 		return compute.VirtualMachine{}, errors.New("invalid vm specification")
 	}
-	vm, err := s.Client.Get(ctx, s.Scope.MachineConfig.ResourceGroup, vmSpec.Name, compute.InstanceView)
+	vm, err := s.Client.Get(ctx, s.Scope.MachineConfig.ResourceGroup, vmSpec.Name)
 	if err != nil && azure.ResourceNotFound(err) {
 		return nil, fmt.Errorf("vm %s not found: %w", vmSpec.Name, err)
 	} else if err != nil {
@@ -64,7 +64,7 @@ func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error)
 }
 
 // CreateOrUpdate creates or updates a virtual network.
-func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
+func (s *Service) CreateOrUpdate(ctx context.Context, spec interface{}) error {
 	vmSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("invalid vm specification")
@@ -184,20 +184,13 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 		virtualMachine.Zones = &zones
 	}
 
-	future, err := s.Client.CreateOrUpdate(
+	err = s.Client.CreateOrUpdate(
 		ctx,
 		s.Scope.MachineConfig.ResourceGroup,
 		vmSpec.Name,
 		virtualMachine)
 	if err != nil {
 		return fmt.Errorf("cannot create vm: %w", err)
-	}
-
-	// Do not wait until the operation completes. Just check the result
-	// so the call to Create actuator operation is async.
-	_, err = future.Result(s.Client)
-	if err != nil {
-		return err
 	}
 
 	klog.V(2).Infof("successfully created vm %s ", vmSpec.Name)
@@ -217,26 +210,19 @@ func getTagListFromSpec(spec *Spec) map[string]*string {
 }
 
 // Delete deletes the virtual network with the provided name.
-func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
+func (s *Service) Delete(ctx context.Context, spec interface{}) error {
 	vmSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("invalid vm Specification")
 	}
 	klog.V(2).Infof("deleting vm %s ", vmSpec.Name)
-	future, err := s.Client.Delete(ctx, s.Scope.MachineConfig.ResourceGroup, vmSpec.Name)
+	err := s.Client.Delete(ctx, s.Scope.MachineConfig.ResourceGroup, vmSpec.Name)
 	if err != nil && azure.ResourceNotFound(err) {
 		// already deleted
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("failed to delete vm %s in resource group %s: %w", vmSpec.Name, s.Scope.MachineConfig.ResourceGroup, err)
-	}
-
-	// Do not wait until the operation completes. Just check the result
-	// so the call to Delete actuator operation is async.
-	_, err = future.Result(s.Client)
-	if err != nil {
-		return err
 	}
 
 	klog.V(2).Infof("successfully deleted vm %s ", vmSpec.Name)

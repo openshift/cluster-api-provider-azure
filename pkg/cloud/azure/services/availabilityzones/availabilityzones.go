@@ -20,8 +20,6 @@ import (
 	"context"
 	"errors"
 	"strings"
-
-	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
 )
 
 // Spec input specification for Get/CreateOrUpdate/Delete calls
@@ -30,7 +28,7 @@ type Spec struct {
 }
 
 // Get provides information about a availability zones.
-func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error) {
+func (s *Service) Get(ctx context.Context, spec interface{}) (interface{}, error) {
 	var zones []string
 	skusSpec, ok := spec.(*Spec)
 	if !ok {
@@ -55,13 +53,13 @@ func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error)
 }
 
 // CreateOrUpdate no-op.
-func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
+func (s *Service) CreateOrUpdate(ctx context.Context, spec interface{}) error {
 	// Not implemented since there is nothing to create or update
 	return nil
 }
 
 // Delete no-op.
-func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
+func (s *Service) Delete(ctx context.Context, spec interface{}) error {
 	// Not implemented since there is nothing to delete
 	return nil
 }

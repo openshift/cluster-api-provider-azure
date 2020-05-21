@@ -21,7 +21,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute"
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2019-12-01/compute"
 	"github.com/Azure/go-autorest/autorest/to"
 	"k8s.io/klog"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
@@ -35,12 +35,12 @@ type Spec struct {
 }
 
 // Get provides information about a virtual network.
-func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error) {
+func (s *Service) Get(ctx context.Context, spec interface{}) (interface{}, error) {
 	vmExtSpec, ok := spec.(*Spec)
 	if !ok {
 		return compute.VirtualMachineExtension{}, errors.New("invalid vm specification")
 	}
-	vmExt, err := s.Client.Get(ctx, s.Scope.MachineConfig.ResourceGroup, vmExtSpec.VMName, vmExtSpec.Name, "")
+	vmExt, err := s.Client.Get(ctx, s.Scope.MachineConfig.ResourceGroup, vmExtSpec.VMName, vmExtSpec.Name)
 	if err != nil && azure.ResourceNotFound(err) {
 		return nil, fmt.Errorf("vm extension %s not found: %w", vmExtSpec.Name, err)
 	} else if err != nil {
@@ -50,7 +50,7 @@ func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error)
 }
 
 // CreateOrUpdate creates or updates a virtual network.
-func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
+func (s *Service) CreateOrUpdate(ctx context.Context, spec interface{}) error {
 	vmExtSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("invalid vm specification")
@@ -58,7 +58,7 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 
 	klog.V(2).Infof("creating vm extension %s ", vmExtSpec.Name)
 
-	future, err := s.Client.CreateOrUpdate(
+	err := s.Client.CreateOrUpdate(
 		ctx,
 		s.Scope.MachineConfig.ResourceGroup,
 		vmExtSpec.VMName,
@@ -79,33 +79,18 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 		return fmt.Errorf("cannot create vm extension: %w", err)
 	}
 
-	err = future.WaitForCompletionRef(ctx, s.Client.Client)
-	if err != nil {
-		return fmt.Errorf("cannot get the extension create or update future response: %w", err)
-	}
-
-	_, err = future.Result(s.Client)
-	if err != nil {
-		return fmt.Errorf("cannot create vm: %w", err)
-	}
-
-	// if *vmExt.ProvisioningState != string(compute.ProvisioningStateSucceeded) {
-	// 	// If the script failed delete it so it can be retried
-	// 	s.Delete(ctx, vmExtSpec)
-	// }
-
 	klog.V(2).Infof("successfully created vm extension %s ", vmExtSpec.Name)
 	return err
 }
 
 // Delete deletes the virtual network with the provided name.
-func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
+func (s *Service) Delete(ctx context.Context, spec interface{}) error {
 	vmExtSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("Invalid VNET Specification")
 	}
 	klog.V(2).Infof("deleting vm extension %s ", vmExtSpec.Name)
-	future, err := s.Client.Delete(ctx, s.Scope.MachineConfig.ResourceGroup, vmExtSpec.VMName, vmExtSpec.Name)
+	err := s.Client.Delete(ctx, s.Scope.MachineConfig.ResourceGroup, vmExtSpec.VMName, vmExtSpec.Name)
 	if err != nil && azure.ResourceNotFound(err) {
 		// already deleted
 		return nil
@@ -113,13 +98,6 @@ func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete vm extension %s in resource group %s: %w", vmExtSpec.Name, s.Scope.MachineConfig.ResourceGroup, err)
 	}
-
-	err = future.WaitForCompletionRef(ctx, s.Client.Client)
-	if err != nil {
-		return fmt.Errorf("cannot delete, future response: %w", err)
-	}
-
-	_, err = future.Result(s.Client)
 
 	klog.V(2).Infof("successfully deleted vm %s ", vmExtSpec.Name)
 	return err

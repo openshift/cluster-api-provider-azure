@@ -21,7 +21,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2018-12-01/network"
+	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2019-12-01/network"
 	"github.com/Azure/go-autorest/autorest/to"
 	"k8s.io/klog"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
@@ -37,13 +37,13 @@ type Spec struct {
 }
 
 // Get provides information about a route table.
-func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error) {
+func (s *Service) Get(ctx context.Context, spec interface{}) (interface{}, error) {
 	internalLBSpec, ok := spec.(*Spec)
 	if !ok {
 		return network.LoadBalancer{}, errors.New("invalid internal load balancer specification")
 	}
 	//lbName := fmt.Sprintf("%s-api-internallb", s.Scope.Cluster.Name)
-	lb, err := s.Client.Get(ctx, s.Scope.MachineConfig.ResourceGroup, internalLBSpec.Name, "")
+	lb, err := s.Client.Get(ctx, s.Scope.MachineConfig.ResourceGroup, internalLBSpec.Name)
 	if err != nil && azure.ResourceNotFound(err) {
 		return nil, fmt.Errorf("load balancer %s not found: %w", internalLBSpec.Name, err)
 	} else if err != nil {
@@ -53,7 +53,7 @@ func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error)
 }
 
 // CreateOrUpdate creates or updates a route table.
-func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
+func (s *Service) CreateOrUpdate(ctx context.Context, spec interface{}) error {
 	internalLBSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("invalid internal load balancer specification")
@@ -78,7 +78,7 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 	klog.V(2).Infof("successfully got subnet %s", internalLBSpec.SubnetName)
 
 	// https://docs.microsoft.com/en-us/azure/load-balancer/load-balancer-standard-availability-zones#zone-redundant-by-default
-	future, err := s.Client.CreateOrUpdate(ctx,
+	err = s.Client.CreateOrUpdate(ctx,
 		s.Scope.MachineConfig.ResourceGroup,
 		lbName,
 		network.LoadBalancer{
@@ -140,24 +140,18 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 		return fmt.Errorf("cannot create load balancer: %w", err)
 	}
 
-	err = future.WaitForCompletionRef(ctx, s.Client.Client)
-	if err != nil {
-		return fmt.Errorf("cannot get internal load balancer create or update future response: %w", err)
-	}
-
-	_, err = future.Result(s.Client)
 	klog.V(2).Infof("successfully created internal load balancer %s", internalLBSpec.Name)
 	return err
 }
 
 // Delete deletes the route table with the provided name.
-func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
+func (s *Service) Delete(ctx context.Context, spec interface{}) error {
 	internalLBSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("invalid internal load balancer specification")
 	}
 	klog.V(2).Infof("deleting internal load balancer %s", internalLBSpec.Name)
-	f, err := s.Client.Delete(ctx, s.Scope.MachineConfig.ResourceGroup, internalLBSpec.Name)
+	err := s.Client.Delete(ctx, s.Scope.MachineConfig.ResourceGroup, internalLBSpec.Name)
 	if err != nil && azure.ResourceNotFound(err) {
 		// already deleted
 		return nil
@@ -166,15 +160,6 @@ func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
 		return fmt.Errorf("failed to delete internal load balancer %s in resource group %s: %w", internalLBSpec.Name, s.Scope.MachineConfig.ResourceGroup, err)
 	}
 
-	err = f.WaitForCompletionRef(ctx, s.Client.Client)
-	if err != nil {
-		return fmt.Errorf("cannot create, future response: %w", err)
-	}
-
-	_, err = f.Result(s.Client)
-	if err != nil {
-		return fmt.Errorf("result error: %w", err)
-	}
 	klog.V(2).Infof("successfully deleted internal load balancer %s", internalLBSpec.Name)
 	return err
 }

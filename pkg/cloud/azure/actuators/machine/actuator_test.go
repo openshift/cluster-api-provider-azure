@@ -25,7 +25,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute"
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2019-12-01/compute"
 	"github.com/Azure/go-autorest/autorest"
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/ghodss/yaml"
@@ -149,7 +149,7 @@ type FakeVMService struct {
 }
 
 // Get returns fake success.
-func (s *FakeVMService) Get(ctx context.Context, spec azure.Spec) (interface{}, error) {
+func (s *FakeVMService) Get(ctx context.Context, spec interface{}) (interface{}, error) {
 	s.GetCallCount++
 	return compute.VirtualMachine{
 		ID:   to.StringPtr(s.ID),
@@ -161,13 +161,13 @@ func (s *FakeVMService) Get(ctx context.Context, spec azure.Spec) (interface{}, 
 }
 
 // CreateOrUpdate returns fake success.
-func (s *FakeVMService) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
+func (s *FakeVMService) CreateOrUpdate(ctx context.Context, spec interface{}) error {
 	s.CreateOrUpdateCallCount++
 	return nil
 }
 
 // Delete returns fake success.
-func (s *FakeVMService) Delete(ctx context.Context, spec azure.Spec) error {
+func (s *FakeVMService) Delete(ctx context.Context, spec interface{}) error {
 	s.DeleteCallCount++
 	return nil
 }
@@ -180,19 +180,19 @@ type FakeCountService struct {
 }
 
 // Get returns fake success.
-func (s *FakeCountService) Get(ctx context.Context, spec azure.Spec) (interface{}, error) {
+func (s *FakeCountService) Get(ctx context.Context, spec interface{}) (interface{}, error) {
 	s.GetCallCount++
 	return nil, nil
 }
 
 // CreateOrUpdate returns fake success.
-func (s *FakeCountService) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
+func (s *FakeCountService) CreateOrUpdate(ctx context.Context, spec interface{}) error {
 	s.CreateOrUpdateCallCount++
 	return nil
 }
 
 // Delete returns fake success.
-func (s *FakeCountService) Delete(ctx context.Context, spec azure.Spec) error {
+func (s *FakeCountService) Delete(ctx context.Context, spec interface{}) error {
 	s.DeleteCallCount++
 	return nil
 }
@@ -337,12 +337,12 @@ type FakeVMCheckZonesService struct {
 }
 
 // Get returns fake success.
-func (s *FakeVMCheckZonesService) Get(ctx context.Context, spec azure.Spec) (interface{}, error) {
+func (s *FakeVMCheckZonesService) Get(ctx context.Context, spec interface{}) (interface{}, error) {
 	return nil, errors.New("vm not found")
 }
 
 // CreateOrUpdate returns fake success.
-func (s *FakeVMCheckZonesService) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
+func (s *FakeVMCheckZonesService) CreateOrUpdate(ctx context.Context, spec interface{}) error {
 	vmSpec, ok := spec.(*virtualmachines.Spec)
 	if !ok {
 		return errors.New("invalid vm specification")
@@ -361,7 +361,7 @@ func (s *FakeVMCheckZonesService) CreateOrUpdate(ctx context.Context, spec azure
 }
 
 // Delete returns fake success.
-func (s *FakeVMCheckZonesService) Delete(ctx context.Context, spec azure.Spec) error {
+func (s *FakeVMCheckZonesService) Delete(ctx context.Context, spec interface{}) error {
 	return nil
 }
 
@@ -371,17 +371,17 @@ type FakeAvailabilityZonesService struct {
 }
 
 // Get returns fake success.
-func (s *FakeAvailabilityZonesService) Get(ctx context.Context, spec azure.Spec) (interface{}, error) {
+func (s *FakeAvailabilityZonesService) Get(ctx context.Context, spec interface{}) (interface{}, error) {
 	return s.zonesResponse, nil
 }
 
 // CreateOrUpdate returns fake success.
-func (s *FakeAvailabilityZonesService) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
+func (s *FakeAvailabilityZonesService) CreateOrUpdate(ctx context.Context, spec interface{}) error {
 	return nil
 }
 
 // Delete returns fake success.
-func (s *FakeAvailabilityZonesService) Delete(ctx context.Context, spec azure.Spec) error {
+func (s *FakeAvailabilityZonesService) Delete(ctx context.Context, spec interface{}) error {
 	return nil
 }
 

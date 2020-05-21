@@ -42,6 +42,14 @@ else
   IMAGE_BUILD_CMD = docker build
 endif
 
+TOOLS_DIR := hack/tools
+TOOLS_BIN_DIR := $(TOOLS_DIR)/bin
+BIN_DIR := bin
+MOCKGEN := $(TOOLS_BIN_DIR)/mockgen
+
+$(MOCKGEN): # Build mockgen from tools folder.
+	cd $(TOOLS_DIR); go build -tags=tools -o $(BIN_DIR)/mockgen github.com/golang/mock/mockgen
+
 .DEFAULT_GOAL:=help
 
 help:  ## Display this help
@@ -89,3 +97,7 @@ test: ## Run tests
 .PHONY: unit
 unit: # Run unit test
 	$(DOCKER_CMD) go test -race -cover ./cmd/... ./pkg/...
+
+.PHONY: generate
+generate: $(MOCKGEN)
+	go generate ./...

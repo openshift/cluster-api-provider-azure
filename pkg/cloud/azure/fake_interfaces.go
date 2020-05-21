@@ -36,23 +36,23 @@ type FakeFailureService struct {
 type FakeNotFoundService struct {
 }
 
-// FakeCachedService updates the cache with name whenefver createorupdate is called
+// FakeCachedService updates the cache with name whenever CreateOrUpdate is called
 type FakeCachedService struct {
 	Cache *map[string]int
 }
 
 // Get returns fake success.
-func (s *FakeSuccessService) Get(ctx context.Context, spec Spec) (interface{}, error) {
+func (s *FakeSuccessService) Get(ctx context.Context, spec interface{}) (interface{}, error) {
 	return nil, nil
 }
 
 // CreateOrUpdate returns fake success.
-func (s *FakeSuccessService) CreateOrUpdate(ctx context.Context, spec Spec) error {
+func (s *FakeSuccessService) CreateOrUpdate(ctx context.Context, spec interface{}) error {
 	return nil
 }
 
 // Delete returns fake success.
-func (s *FakeSuccessService) Delete(ctx context.Context, spec Spec) error {
+func (s *FakeSuccessService) Delete(ctx context.Context, spec interface{}) error {
 	return nil
 }
 
@@ -61,42 +61,42 @@ type FakeStruct struct {
 }
 
 // Get returns fake failure.
-func (s *FakeFailureService) Get(ctx context.Context, spec Spec) (interface{}, error) {
+func (s *FakeFailureService) Get(ctx context.Context, spec interface{}) (interface{}, error) {
 	return FakeStruct{}, errors.New("Failed to Get service")
 }
 
 // CreateOrUpdate returns fake failure.
-func (s *FakeFailureService) CreateOrUpdate(ctx context.Context, spec Spec) error {
+func (s *FakeFailureService) CreateOrUpdate(ctx context.Context, spec interface{}) error {
 	return errors.New("Failed to Create")
 }
 
 // Delete returns fake failure.
-func (s *FakeFailureService) Delete(ctx context.Context, spec Spec) error {
+func (s *FakeFailureService) Delete(ctx context.Context, spec interface{}) error {
 	return errors.New("Failed to Delete")
 }
 
 // Get returns fake not found.
-func (s *FakeNotFoundService) Get(ctx context.Context, spec Spec) (interface{}, error) {
+func (s *FakeNotFoundService) Get(ctx context.Context, spec interface{}) (interface{}, error) {
 	return nil, autorest.DetailedError{StatusCode: 404}
 }
 
 // CreateOrUpdate returns fake not found.
-func (s *FakeNotFoundService) CreateOrUpdate(ctx context.Context, spec Spec) error {
+func (s *FakeNotFoundService) CreateOrUpdate(ctx context.Context, spec interface{}) error {
 	return autorest.DetailedError{StatusCode: 404}
 }
 
 // Delete returns fake not found.
-func (s *FakeNotFoundService) Delete(ctx context.Context, spec Spec) error {
+func (s *FakeNotFoundService) Delete(ctx context.Context, spec interface{}) error {
 	return autorest.DetailedError{StatusCode: 404}
 }
 
 // Get returns fake success.
-func (s *FakeCachedService) Get(ctx context.Context, spec Spec) (interface{}, error) {
+func (s *FakeCachedService) Get(ctx context.Context, spec interface{}) (interface{}, error) {
 	return nil, nil
 }
 
 // CreateOrUpdate returns fake success.
-func (s *FakeCachedService) CreateOrUpdate(ctx context.Context, spec Spec) error {
+func (s *FakeCachedService) CreateOrUpdate(ctx context.Context, spec interface{}) error {
 	if spec == nil {
 		return nil
 	}
@@ -106,6 +106,6 @@ func (s *FakeCachedService) CreateOrUpdate(ctx context.Context, spec Spec) error
 }
 
 // Delete returns fake success.
-func (s *FakeCachedService) Delete(ctx context.Context, spec Spec) error {
+func (s *FakeCachedService) Delete(ctx context.Context, spec interface{}) error {
 	return nil
 }

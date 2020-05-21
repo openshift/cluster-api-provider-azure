@@ -21,7 +21,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2018-12-01/network"
+	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2019-12-01/network"
 	"github.com/Azure/go-autorest/autorest/to"
 	"k8s.io/klog"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
@@ -34,12 +34,12 @@ type Spec struct {
 }
 
 // Get provides information about a route table.
-func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error) {
+func (s *Service) Get(ctx context.Context, spec interface{}) (interface{}, error) {
 	nsgSpec, ok := spec.(*Spec)
 	if !ok {
 		return network.SecurityGroup{}, errors.New("invalid security groups specification")
 	}
-	securityGroup, err := s.Client.Get(ctx, s.Scope.MachineConfig.ResourceGroup, nsgSpec.Name, "")
+	securityGroup, err := s.Client.Get(ctx, s.Scope.MachineConfig.ResourceGroup, nsgSpec.Name)
 	if err != nil && azure.ResourceNotFound(err) {
 		return nil, fmt.Errorf("security group %s not found: %w", nsgSpec.Name, err)
 	} else if err != nil {
@@ -49,7 +49,7 @@ func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error)
 }
 
 // CreateOrUpdate creates or updates a route table.
-func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
+func (s *Service) CreateOrUpdate(ctx context.Context, spec interface{}) error {
 	nsgSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("invalid security groups specification")
@@ -90,7 +90,7 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 	}
 
 	klog.V(2).Infof("creating security group %s", nsgSpec.Name)
-	f, err := s.Client.CreateOrUpdate(
+	err := s.Client.CreateOrUpdate(
 		ctx,
 		s.Scope.MachineConfig.ResourceGroup,
 		nsgSpec.Name,
@@ -105,43 +105,24 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 		return fmt.Errorf("failed to create security group %s in resource group %s: %w", nsgSpec.Name, s.Scope.MachineConfig.ResourceGroup, err)
 	}
 
-	err = f.WaitForCompletionRef(ctx, s.Client.Client)
-	if err != nil {
-		return fmt.Errorf("cannot create, future response: %w", err)
-	}
-
-	_, err = f.Result(s.Client)
-	if err != nil {
-		return fmt.Errorf("result error: %w", err)
-	}
 	klog.V(2).Infof("created security group %s", nsgSpec.Name)
 	return err
 }
 
 // Delete deletes the route table with the provided name.
-func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
+func (s *Service) Delete(ctx context.Context, spec interface{}) error {
 	nsgSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("invalid security groups specification")
 	}
 	klog.V(2).Infof("deleting security group %s", nsgSpec.Name)
-	f, err := s.Client.Delete(ctx, s.Scope.MachineConfig.ResourceGroup, nsgSpec.Name)
+	err := s.Client.Delete(ctx, s.Scope.MachineConfig.ResourceGroup, nsgSpec.Name)
 	if err != nil && azure.ResourceNotFound(err) {
 		// already deleted
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("failed to delete security group %s in resource group %s: %w", nsgSpec.Name, s.Scope.MachineConfig.ResourceGroup, err)
-	}
-
-	err = f.WaitForCompletionRef(ctx, s.Client.Client)
-	if err != nil {
-		return fmt.Errorf("cannot create, future response: %w", err)
-	}
-
-	_, err = f.Result(s.Client)
-	if err != nil {
-		return err
 	}
 
 	klog.V(2).Infof("deleted security group %s", nsgSpec.Name)

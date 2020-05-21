@@ -20,19 +20,18 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2018-05-01/resources"
+	"github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2019-05-01/resources"
 	"github.com/Azure/go-autorest/autorest/to"
 	"k8s.io/klog"
-	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
 )
 
 // Get provides information about a resource group.
-func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error) {
+func (s *Service) Get(ctx context.Context, spec interface{}) (interface{}, error) {
 	return s.Client.Get(ctx, s.Scope.MachineConfig.ResourceGroup)
 }
 
 // CreateOrUpdate creates or updates a resource group.
-func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
+func (s *Service) CreateOrUpdate(ctx context.Context, spec interface{}) error {
 	klog.V(2).Infof("creating resource group %s", s.Scope.MachineConfig.ResourceGroup)
 	_, err := s.Client.CreateOrUpdate(ctx, s.Scope.MachineConfig.ResourceGroup, resources.Group{Location: to.StringPtr(s.Scope.MachineConfig.Location)})
 	klog.V(2).Infof("successfully created resource group %s", s.Scope.MachineConfig.ResourceGroup)
@@ -40,19 +39,12 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 }
 
 // Delete deletes the resource group with the provided name.
-func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
+func (s *Service) Delete(ctx context.Context, spec interface{}) error {
 	klog.V(2).Infof("deleting resource group %s", s.Scope.MachineConfig.ResourceGroup)
-	future, err := s.Client.Delete(ctx, s.Scope.MachineConfig.ResourceGroup)
+	err := s.Client.Delete(ctx, s.Scope.MachineConfig.ResourceGroup)
 	if err != nil {
 		return fmt.Errorf("failed to delete resource group %s: %w", s.Scope.MachineConfig.ResourceGroup, err)
 	}
-
-	err = future.WaitForCompletionRef(ctx, s.Client.Client)
-	if err != nil {
-		return fmt.Errorf("cannot delete, future response: %w", err)
-	}
-
-	_, err = future.Result(s.Client)
 
 	klog.V(2).Infof("successfully deleted resource group %s", s.Scope.MachineConfig.ResourceGroup)
 	return err

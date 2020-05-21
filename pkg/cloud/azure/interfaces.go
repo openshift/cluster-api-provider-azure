@@ -25,14 +25,17 @@ const (
 	UserAgent = "cluster-api-azure-services"
 )
 
-// Spec defines a generic interface which all services should conform to
-type Spec interface {
+// Service is a generic interface used by components offering a type of service.
+// Example: virtualnetworks service would offer Reconcile/Delete methods.
+type Service interface {
+	CreateOrUpdate(ctx context.Context, spec interface{}) error
+	Delete(ctx context.Context, spec interface{}) error
 }
 
-// Service is a generic interface used by components offering a type of service.
-// example: Network service would offer get/createorupdate/delete.
-type Service interface {
-	Get(ctx context.Context, spec Spec) (interface{}, error)
-	CreateOrUpdate(ctx context.Context, spec Spec) error
-	Delete(ctx context.Context, spec Spec) error
+// GetterService is a temporary interface used by components which still require Get methods.
+// Once all components move to storing provider information within the relevant
+// Cluster/Machine specs, this interface should be removed.
+type GetterService interface {
+	Service
+	Get(ctx context.Context, spec interface{}) (interface{}, error)
 }

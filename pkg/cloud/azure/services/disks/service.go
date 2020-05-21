@@ -17,32 +17,19 @@ limitations under the License.
 package disks
 
 import (
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute"
-	"github.com/Azure/go-autorest/autorest"
-	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure/actuators"
 )
 
-var _ azure.Service = (*Service)(nil)
-
 // Service provides operations on resource groups
 type Service struct {
-	Client compute.DisksClient
-	Scope  *actuators.MachineScope
-}
-
-// getGroupsClient creates a new groups client from subscriptionid.
-func getDisksClient(subscriptionID string, authorizer autorest.Authorizer) compute.DisksClient {
-	disksClient := compute.NewDisksClient(subscriptionID)
-	disksClient.Authorizer = authorizer
-	disksClient.AddToUserAgent(azure.UserAgent)
-	return disksClient
+	Client
+	Scope *actuators.MachineScope
 }
 
 // NewService creates a new groups service.
 func NewService(scope *actuators.MachineScope) *Service {
 	return &Service{
-		Client: getDisksClient(scope.SubscriptionID, scope.Authorizer),
+		Client: NewClient(scope.SubscriptionID, scope.Authorizer),
 		Scope:  scope,
 	}
 }

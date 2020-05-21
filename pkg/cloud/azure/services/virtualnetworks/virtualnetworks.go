@@ -21,7 +21,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2018-12-01/network"
+	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2019-12-01/network"
 	"github.com/Azure/go-autorest/autorest/to"
 	"k8s.io/klog"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
@@ -34,12 +34,12 @@ type Spec struct {
 }
 
 // Get provides information about a virtual network.
-func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error) {
+func (s *Service) Get(ctx context.Context, spec interface{}) (interface{}, error) {
 	vnetSpec, ok := spec.(*Spec)
 	if !ok {
 		return network.VirtualNetwork{}, errors.New("Invalid VNET Specification")
 	}
-	vnet, err := s.Client.Get(ctx, s.Scope.MachineConfig.NetworkResourceGroup, vnetSpec.Name, "")
+	vnet, err := s.Client.Get(ctx, s.Scope.MachineConfig.NetworkResourceGroup, vnetSpec.Name)
 	if err != nil && azure.ResourceNotFound(err) {
 		return nil, fmt.Errorf("vnet %s not found: %w", vnetSpec.Name, err)
 	} else if err != nil {
@@ -49,7 +49,7 @@ func (s *Service) Get(ctx context.Context, spec azure.Spec) (interface{}, error)
 }
 
 // CreateOrUpdate creates or updates a virtual network.
-func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
+func (s *Service) CreateOrUpdate(ctx context.Context, spec interface{}) error {
 	// Following should be created upstream and provided as an input to NewService
 	// A vnet has following dependencies
 	//    * Vnet Cidr
@@ -69,7 +69,7 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 	}
 
 	klog.V(2).Infof("creating vnet %s ", vnetSpec.Name)
-	f, err := s.Client.CreateOrUpdate(ctx, s.Scope.MachineConfig.NetworkResourceGroup, vnetSpec.Name,
+	err := s.Client.CreateOrUpdate(ctx, s.Scope.MachineConfig.NetworkResourceGroup, vnetSpec.Name,
 		network.VirtualNetwork{
 			Location: to.StringPtr(s.Scope.MachineConfig.Location),
 			VirtualNetworkPropertiesFormat: &network.VirtualNetworkPropertiesFormat{
@@ -82,27 +82,18 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 		return err
 	}
 
-	err = f.WaitForCompletionRef(ctx, s.Client.Client)
-	if err != nil {
-		return err
-	}
-
-	_, err = f.Result(s.Client)
-	if err != nil {
-		return err
-	}
 	klog.V(2).Infof("successfully created vnet %s ", vnetSpec.Name)
 	return err
 }
 
 // Delete deletes the virtual network with the provided name.
-func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
+func (s *Service) Delete(ctx context.Context, spec interface{}) error {
 	vnetSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("Invalid VNET Specification")
 	}
 	klog.V(2).Infof("deleting vnet %s ", vnetSpec.Name)
-	future, err := s.Client.Delete(ctx, s.Scope.MachineConfig.NetworkResourceGroup, vnetSpec.Name)
+	err := s.Client.Delete(ctx, s.Scope.MachineConfig.NetworkResourceGroup, vnetSpec.Name)
 	if err != nil && azure.ResourceNotFound(err) {
 		// already deleted
 		return nil
@@ -110,13 +101,6 @@ func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete vnet %s in resource group %s: %w", vnetSpec.Name, s.Scope.MachineConfig.NetworkResourceGroup, err)
 	}
-
-	err = future.WaitForCompletionRef(ctx, s.Client.Client)
-	if err != nil {
-		return fmt.Errorf("cannot delete, future response: %w", err)
-	}
-
-	_, err = future.Result(s.Client)
 
 	klog.V(2).Infof("successfully deleted vnet %s ", vnetSpec.Name)
 	return err

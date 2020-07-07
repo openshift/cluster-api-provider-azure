@@ -503,16 +503,18 @@
   version = "v1.0.3"
 
 [[projects]]
-  digest = "1:2ae8314c44cd413cfdb5b1df082b350116dd8d2fff973e62c01b285b7affd89e"
+  digest = "1:185df4f9a9bddd48d6b364718d5ca5da9cbaa0d4e32e182718e1441d5d4755b3"
   name = "go.opencensus.io"
   packages = [
     ".",
-    "exemplar",
     "internal",
     "internal/tagencoding",
+    "metric/metricdata",
+    "metric/metricproducer",
     "plugin/ochttp",
     "plugin/ochttp/propagation/b3",
     "plugin/ochttp/propagation/tracecontext",
+    "resource",
     "stats",
     "stats/internal",
     "stats/view",
@@ -523,27 +525,28 @@
     "trace/tracestate",
   ]
   pruneopts = "UT"
-  revision = "b7bf3cdb64150a8c8c53b769fdeb2ba581bd4d4b"
-  version = "v0.18.0"
+  revision = "5fa069b99bc903d713add0295c7e0a55d34ae573"
+  version = "v0.22.4"
 
 [[projects]]
-  branch = "master"
-  digest = "1:a131201d673f8a7703ce8f171ddd4e88478f9229b8c10d31d86d4d57fbd4368a"
+  digest = "1:a9721bcfbc77e33747f967a31c80f3a548dc49234ea7689ba0da26617a767e97"
   name = "golang.org/x/crypto"
   packages = [
+    "blowfish",
+    "chacha20",
     "curve25519",
     "ed25519",
     "ed25519/internal/edwards25519",
-    "internal/chacha20",
     "internal/subtle",
     "pkcs12",
     "pkcs12/internal/rc2",
     "poly1305",
     "ssh",
+    "ssh/internal/bcrypt_pbkdf",
     "ssh/terminal",
   ]
   pruneopts = "UT"
-  revision = "8dd112bcdc25174059e45e07517d9fc663123347"
+  revision = "bac4c82f69751a6dd76e702d54b3ceb88adab236"
 
 [[projects]]
   branch = "master"
@@ -662,6 +665,17 @@
   ]
   pruneopts = "UT"
   revision = "f8c04913dfb7b2339a756441456bdbe0af6eb508"
+
+[[projects]]
+  branch = "master"
+  digest = "1:918a46e4a2fb83df33f668f5a6bd51b2996775d073fce1800d3ec01b0a5ddd2b"
+  name = "golang.org/x/xerrors"
+  packages = [
+    ".",
+    "internal",
+  ]
+  pruneopts = "UT"
+  revision = "9bdfabe68543c54f90421aeb9a60ef8061b5b544"
 
 [[projects]]
   digest = "1:7d4fd782f2a710d08834b2c01742b3bba7fb0248383f9cc6c3dc95b3025689d7"
@@ -1036,7 +1050,7 @@
 
 [[projects]]
   branch = "kube-1.16.0"
-  digest = "1:48eef4c0d56de6b24b03d02d052666f9c68c46558ce6b1b8040766c5f845ea50"
+  digest = "1:81b2cc0c382e0b8852f98f990c15463a604aefba88ca2c0a76fce135e99ddbd3"
   name = "sigs.k8s.io/controller-runtime"
   packages = [
     "pkg/cache",
@@ -1048,6 +1062,7 @@
     "pkg/controller",
     "pkg/event",
     "pkg/handler",
+    "pkg/healthz",
     "pkg/internal/controller",
     "pkg/internal/controller/metrics",
     "pkg/internal/log",
@@ -1072,7 +1087,7 @@
     "pkg/webhook/internal/metrics",
   ]
   pruneopts = "UT"
-  revision = "08ccc576643f5f70dc6038a920a859ed73d2bf13"
+  revision = "b2bc3490f2e3d30e331bff2eaf948e78759ab5c5"
   source = "git@github.com:enxebre/controller-runtime.git"
 
 [[projects]]

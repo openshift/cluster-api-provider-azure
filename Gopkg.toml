@@ -98,6 +98,14 @@ required = [
   source = "https://github.com/fsnotify/fsnotify.git"
   version = "v1.4.7"
 
+[[override]]
+  name = "golang.org/x/crypto"
+  revision = "bac4c82f69751a6dd76e702d54b3ceb88adab236"
+
+[[override]]
+  name = "go.opencensus.io"
+  version = "v0.22.4"
+
 [prune]
   go-tests = true
   unused-packages = true

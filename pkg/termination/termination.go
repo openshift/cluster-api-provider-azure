@@ -95,6 +95,12 @@ func (h *handler) Run(stop <-chan struct{}) error {
 }
 
 func (h *handler) run(ctx context.Context) error {
+	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return fmt.Errorf("expected http.DefaultTransport to be *http.Transport, got: %T", http.DefaultTransport)
+	}
+	defaultTransport.DisableKeepAlives = true
+
 	if err := wait.PollImmediateUntil(h.pollInterval, func() (bool, error) {
 		req, err := http.NewRequest("GET", h.pollURL.String(), nil)
 		if err != nil {

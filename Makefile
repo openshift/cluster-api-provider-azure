@@ -64,6 +64,10 @@ fmt:
     goimports: ## Go fmt your code
 	hack/goimports.sh .
 
+generate:
+	$(DOCKER_CMD) go generate ./pkg/... ./cmd/...
+	hack/goimports.sh .
+
 .PHONY: vet
 vet:
 	go vet -composites=false ./pkg/... ./cmd/...

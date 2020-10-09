@@ -1,5 +1,6 @@
 # Cluster API Provider Azure
 
+
 This repository hosts an implementation of a provider for Azure for the
 OpenShift [machine-api](https://github.com/openshift/cluster-api).
 

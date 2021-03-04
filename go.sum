@@ -447,8 +447,8 @@ github.com/openshift/machine-api-operator v0.2.1-0.20200722104429-f4f9b84df9b7 h
 github.com/openshift/machine-api-operator v0.2.1-0.20200722104429-f4f9b84df9b7/go.mod h1:XDsNRAVEJtkI00e51SAZ/PnqNJl1zv0rHXSdl9L1oOY=
 github.com/openshift/machine-api-operator v0.2.1-0.20200926044412-b7d860f8074c h1:mjdL135+tVttQZ7OusXzV+HlAFAojZCE8oR1KpLci1I=
 github.com/openshift/machine-api-operator v0.2.1-0.20200926044412-b7d860f8074c/go.mod h1:cp/wPVzxHZeLUjOLkNPNqrk4wyyW6HuHd3Kz9+hl5xw=
-github.com/openshift/machine-api-operator v0.2.1-0.20210212025836-cb508cd8777d h1:HPsOufOinE9dt/EtqY20gigk+es+y53GtcQPj4ItRl0=
-github.com/openshift/machine-api-operator v0.2.1-0.20210212025836-cb508cd8777d/go.mod h1:UZK7t/t3dO73RqC9MsXM/BAIMWRsNaE9NEKUXBBY8y8=
+github.com/openshift/machine-api-operator v0.2.1-0.20210304062120-b5fb76b27015 h1:aKUQEIeoqnLg8FYVdqAPYk1yGj5NOE7kJ9NbzIugs3s=
+github.com/openshift/machine-api-operator v0.2.1-0.20210304062120-b5fb76b27015/go.mod h1:UZK7t/t3dO73RqC9MsXM/BAIMWRsNaE9NEKUXBBY8y8=
 github.com/operator-framework/operator-sdk v0.5.1-0.20190301204940-c2efe6f74e7b/go.mod h1:iVyukRkam5JZa8AnjYf+/G3rk7JI1+M6GsU0sq0B9NA=
 github.com/pborman/uuid v1.2.0/go.mod h1:X/NO0urCmaxf9VXbdlT7C2Yzkj2IKimNn4k+gtPdI/k=
 github.com/pelletier/go-toml v1.2.0/go.mod h1:5z9KED0ma1S8pY6P1sdut58dfprrGBbd/94hg7ilaic=

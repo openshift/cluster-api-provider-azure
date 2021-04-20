@@ -32,6 +32,9 @@ export GOFLAGS
 GOPROXY ?=
 export GOPROXY
 
+GOARCH  ?= $(shell go env GOARCH)
+GOOS    ?= $(shell go env GOOS)
+
 NO_DOCKER ?= 0
 
 ifeq ($(shell command -v podman > /dev/null 2>&1 ; echo $$? ), 0)
@@ -50,9 +53,9 @@ endif
 ifeq ($(NO_DOCKER), 1)
   DOCKER_CMD =
   IMAGE_BUILD_CMD = imagebuilder
-  CGO_ENABLED = 1
+  CGO_ENABLED = 0
 else
-  DOCKER_CMD := $(ENGINE)  run --rm -e CGO_ENABLED=1 -v "$(PWD)":/go/src/sigs.k8s.io/cluster-api-provider-azure:Z -w /go/src/sigs.k8s.io/cluster-api-provider-azure openshift/origin-release:golang-1.15
+  DOCKER_CMD := $(ENGINE)  run --rm -e CGO_ENABLED=0 -e GOARCH=$(GOARCH) -e GOOS=$(GOOS) -v "$(PWD)":/go/src/sigs.k8s.io/cluster-api-provider-azure:Z -w /go/src/sigs.k8s.io/cluster-api-provider-azure openshift/origin-release:golang-1.15
   IMAGE_BUILD_CMD = $(ENGINE)  build
 endif
 

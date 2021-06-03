@@ -1,5 +1,5 @@
 /*
-Copyright 2019 The Kubernetes Authors.
+Copyright 2018 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,37 +14,33 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package subnets
+package groups
 
 import (
-	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2020-06-01/network"
+	"github.com/Azure/azure-sdk-for-go/profiles/2019-03-01/resources/mgmt/resources"
 	"github.com/Azure/go-autorest/autorest"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure/actuators"
 )
 
-// Service provides operations on resource groups
-type Service struct {
-	Client network.SubnetsClient
+// StackHubService provides operations on resource groups
+type StackHubService struct {
+	Client resources.GroupsClient
 	Scope  *actuators.MachineScope
 }
 
 // getGroupsClient creates a new groups client from subscriptionid.
-func getSubnetsClient(resourceManagerEndpoint, subscriptionID string, authorizer autorest.Authorizer) network.SubnetsClient {
-	subnetsClient := network.NewSubnetsClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	subnetsClient.Authorizer = authorizer
-	subnetsClient.AddToUserAgent(azure.UserAgent)
-	return subnetsClient
+func getGroupsClientStackHub(resourceManagerEndpoint, subscriptionID string, authorizer autorest.Authorizer) resources.GroupsClient {
+	groupsClient := resources.NewGroupsClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
+	groupsClient.Authorizer = authorizer
+	groupsClient.AddToUserAgent(azure.UserAgent)
+	return groupsClient
 }
 
 // NewService creates a new groups service.
-func NewService(scope *actuators.MachineScope) azure.Service {
-	if scope.IsStackHub() {
-		return NewStackHubService(scope)
-	}
-
-	return &Service{
-		Client: getSubnetsClient(scope.ResourceManagerEndpoint, scope.SubscriptionID, scope.Authorizer),
+func NewStackHubService(scope *actuators.MachineScope) azure.Service {
+	return &StackHubService{
+		Client: getGroupsClientStackHub(scope.ResourceManagerEndpoint, scope.SubscriptionID, scope.Authorizer),
 		Scope:  scope,
 	}
 }

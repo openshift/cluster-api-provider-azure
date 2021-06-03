@@ -17,20 +17,20 @@ limitations under the License.
 package subnets
 
 import (
-	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2020-06-01/network"
+	"github.com/Azure/azure-sdk-for-go/profiles/2019-03-01/network/mgmt/network"
 	"github.com/Azure/go-autorest/autorest"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure/actuators"
 )
 
-// Service provides operations on resource groups
-type Service struct {
+// StackHubService provides operations on resource groups
+type StackHubService struct {
 	Client network.SubnetsClient
 	Scope  *actuators.MachineScope
 }
 
 // getGroupsClient creates a new groups client from subscriptionid.
-func getSubnetsClient(resourceManagerEndpoint, subscriptionID string, authorizer autorest.Authorizer) network.SubnetsClient {
+func getSubnetsClientStackHub(resourceManagerEndpoint, subscriptionID string, authorizer autorest.Authorizer) network.SubnetsClient {
 	subnetsClient := network.NewSubnetsClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
 	subnetsClient.Authorizer = authorizer
 	subnetsClient.AddToUserAgent(azure.UserAgent)
@@ -38,13 +38,9 @@ func getSubnetsClient(resourceManagerEndpoint, subscriptionID string, authorizer
 }
 
 // NewService creates a new groups service.
-func NewService(scope *actuators.MachineScope) azure.Service {
-	if scope.IsStackHub() {
-		return NewStackHubService(scope)
-	}
-
-	return &Service{
-		Client: getSubnetsClient(scope.ResourceManagerEndpoint, scope.SubscriptionID, scope.Authorizer),
+func NewStackHubService(scope *actuators.MachineScope) azure.Service {
+	return &StackHubService{
+		Client: getSubnetsClientStackHub(scope.ResourceManagerEndpoint, scope.SubscriptionID, scope.Authorizer),
 		Scope:  scope,
 	}
 }

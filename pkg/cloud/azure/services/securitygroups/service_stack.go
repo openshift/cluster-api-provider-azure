@@ -14,37 +14,33 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package subnets
+package securitygroups
 
 import (
-	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2020-06-01/network"
+	"github.com/Azure/azure-sdk-for-go/profiles/2019-03-01/network/mgmt/network"
 	"github.com/Azure/go-autorest/autorest"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure/actuators"
 )
 
-// Service provides operations on resource groups
-type Service struct {
-	Client network.SubnetsClient
+// StackHubService provides operations on resource groups
+type StackHubService struct {
+	Client network.SecurityGroupsClient
 	Scope  *actuators.MachineScope
 }
 
 // getGroupsClient creates a new groups client from subscriptionid.
-func getSubnetsClient(resourceManagerEndpoint, subscriptionID string, authorizer autorest.Authorizer) network.SubnetsClient {
-	subnetsClient := network.NewSubnetsClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
-	subnetsClient.Authorizer = authorizer
-	subnetsClient.AddToUserAgent(azure.UserAgent)
-	return subnetsClient
+func getSecurityGroupsClientStackHub(resourceManagerEndpoint, subscriptionID string, authorizer autorest.Authorizer) network.SecurityGroupsClient {
+	securityGroupsClient := network.NewSecurityGroupsClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
+	securityGroupsClient.Authorizer = authorizer
+	securityGroupsClient.AddToUserAgent(azure.UserAgent)
+	return securityGroupsClient
 }
 
 // NewService creates a new groups service.
-func NewService(scope *actuators.MachineScope) azure.Service {
-	if scope.IsStackHub() {
-		return NewStackHubService(scope)
-	}
-
-	return &Service{
-		Client: getSubnetsClient(scope.ResourceManagerEndpoint, scope.SubscriptionID, scope.Authorizer),
+func NewStackHubService(scope *actuators.MachineScope) azure.Service {
+	return &StackHubService{
+		Client: getSecurityGroupsClientStackHub(scope.ResourceManagerEndpoint, scope.SubscriptionID, scope.Authorizer),
 		Scope:  scope,
 	}
 }

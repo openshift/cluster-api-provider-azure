@@ -1,7 +1,13 @@
 # github.com/Azure/azure-sdk-for-go v48.0.0+incompatible
 ## explicit
+github.com/Azure/azure-sdk-for-go/profiles/2019-03-01/compute/mgmt/compute
+github.com/Azure/azure-sdk-for-go/profiles/2019-03-01/network/mgmt/network
+github.com/Azure/azure-sdk-for-go/profiles/2019-03-01/resources/mgmt/resources
+github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2017-12-01/compute
 github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2020-06-30/compute
+github.com/Azure/azure-sdk-for-go/services/network/mgmt/2017-10-01/network
 github.com/Azure/azure-sdk-for-go/services/network/mgmt/2020-06-01/network
+github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2018-05-01/resources
 github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2020-06-01/resources
 github.com/Azure/azure-sdk-for-go/version
 # github.com/Azure/go-ansiterm v0.0.0-20170929234023-d6e3b3328b78
@@ -185,7 +191,7 @@ github.com/onsi/gomega/matchers/support/goraph/edge
 github.com/onsi/gomega/matchers/support/goraph/node
 github.com/onsi/gomega/matchers/support/goraph/util
 github.com/onsi/gomega/types
-# github.com/openshift/api v0.0.0-20210416115537-a60c0dc032fd
+# github.com/openshift/api v0.0.0-20210709160908-e5f26793e0dd
 ## explicit
 github.com/openshift/api/config/v1
 # github.com/openshift/client-go v0.0.0-20210409155308-a8e62c60e930
@@ -377,7 +383,7 @@ gopkg.in/tomb.v1
 gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776
 gopkg.in/yaml.v3
-# k8s.io/api v0.21.0
+# k8s.io/api v0.21.1
 ## explicit
 k8s.io/api/admission/v1
 k8s.io/api/admission/v1beta1
@@ -433,7 +439,7 @@ k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset
 k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/scheme
 k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1
 k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1beta1
-# k8s.io/apimachinery v0.21.0
+# k8s.io/apimachinery v0.21.1
 ## explicit
 k8s.io/apimachinery/pkg/api/equality
 k8s.io/apimachinery/pkg/api/errors
@@ -628,7 +634,7 @@ k8s.io/client-go/util/jsonpath
 k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/retry
 k8s.io/client-go/util/workqueue
-# k8s.io/code-generator v0.21.0
+# k8s.io/code-generator v0.21.1
 ## explicit
 k8s.io/code-generator
 k8s.io/code-generator/cmd/client-gen

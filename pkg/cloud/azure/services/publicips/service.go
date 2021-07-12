@@ -39,6 +39,10 @@ func getPublicIPAddressesClient(resourceManagerEndpoint, subscriptionID string, 
 
 // NewService creates a new groups service.
 func NewService(scope *actuators.MachineScope) azure.Service {
+	if scope.IsStackHub() {
+		return NewStackHubService(scope)
+	}
+
 	return &Service{
 		Client: getPublicIPAddressesClient(scope.ResourceManagerEndpoint, scope.SubscriptionID, scope.Authorizer),
 		Scope:  scope,

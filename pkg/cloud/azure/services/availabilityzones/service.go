@@ -39,6 +39,10 @@ func getResourceSkusClient(resourceManagerEndpoint, subscriptionID string, autho
 
 // NewService creates a new availability zones service.
 func NewService(scope *actuators.MachineScope) azure.Service {
+	if scope.IsStackHub() {
+		return NewStackHubService(scope)
+	}
+
 	return &Service{
 		Client: getResourceSkusClient(scope.ResourceManagerEndpoint, scope.SubscriptionID, scope.Authorizer),
 		Scope:  scope,

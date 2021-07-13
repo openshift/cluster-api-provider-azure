@@ -92,6 +92,11 @@ func (in *AzureMachineProviderSpec) DeepCopyInto(out *AzureMachineProviderSpec) 
 		*out = new(SecurityProfile)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.AcceleratedNetworking != nil {
+		in, out := &in.AcceleratedNetworking, &out.AcceleratedNetworking
+		*out = new(bool)
+		**out = **in
+	}
 	return
 }
 

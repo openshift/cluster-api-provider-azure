@@ -42,7 +42,7 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 // Delete deletes the resource group with the provided name.
 func (s *Service) Delete(ctx context.Context, spec azure.Spec) error {
 	klog.V(2).Infof("deleting resource group %s", s.Scope.MachineConfig.ResourceGroup)
-	future, err := s.Client.Delete(ctx, s.Scope.MachineConfig.ResourceGroup)
+	future, err := s.Client.Delete(ctx, s.Scope.MachineConfig.ResourceGroup, "Microsoft.Compute/virtualMachines")
 	if err != nil {
 		return fmt.Errorf("failed to delete resource group %s: %w", s.Scope.MachineConfig.ResourceGroup, err)
 	}

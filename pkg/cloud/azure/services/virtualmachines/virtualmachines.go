@@ -294,11 +294,11 @@ func deriveVirtualMachineParameters(vmSpec *Spec, location, subscription, resour
 		virtualMachine.Zones = &zones
 	}
 
-	if vmSpec.AvailabilitySetName != "" {
-		virtualMachine.AvailabilitySet = &compute.SubResource{
-			ID: to.StringPtr(availabilitySetID(subscription, resourceGroup, vmSpec.AvailabilitySetName)),
-		}
-	}
+	// if vmSpec.AvailabilitySetName != "" {
+	// 	virtualMachine.AvailabilitySet = &compute.SubResource{
+	// 		ID: to.StringPtr(availabilitySetID(subscription, resourceGroup, vmSpec.AvailabilitySetName)),
+	// 	}
+	// }
 
 	return virtualMachine, nil
 }

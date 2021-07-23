@@ -39,6 +39,10 @@ func getVirtualMachinesClient(resourceManagerEndpoint, subscriptionID string, au
 
 // NewService creates a new groups service.
 func NewService(scope *actuators.MachineScope) azure.Service {
+	if scope.IsStackHub() {
+		return NewServiceStackHub(scope)
+	}
+
 	return &Service{
 		Client: getVirtualMachinesClient(scope.ResourceManagerEndpoint, scope.SubscriptionID, scope.Authorizer),
 		Scope:  scope,

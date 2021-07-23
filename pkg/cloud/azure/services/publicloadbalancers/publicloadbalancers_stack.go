@@ -28,15 +28,9 @@ import (
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure/services/publicips"
 )
 
-// StackHubSpec specification for public load balancer
-type StackHubSpec struct {
-	Name         string
-	PublicIPName string
-}
-
 // Get provides information about a route table.
 func (s *StackHubService) Get(ctx context.Context, spec azure.Spec) (interface{}, error) {
-	publicLBSpec, ok := spec.(*StackHubSpec)
+	publicLBSpec, ok := spec.(*Spec)
 	if !ok {
 		return network.LoadBalancer{}, errors.New("invalid public loadbalancer specification")
 	}
@@ -51,7 +45,7 @@ func (s *StackHubService) Get(ctx context.Context, spec azure.Spec) (interface{}
 
 // CreateOrUpdate creates or updates a route table.
 func (s *StackHubService) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
-	publicLBSpec, ok := spec.(*StackHubSpec)
+	publicLBSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("invalid public loadbalancer specification")
 	}
@@ -189,7 +183,7 @@ func (s *StackHubService) CreateOrUpdate(ctx context.Context, spec azure.Spec) e
 
 // Delete deletes the route table with the provided name.
 func (s *StackHubService) Delete(ctx context.Context, spec azure.Spec) error {
-	publicLBSpec, ok := spec.(*StackHubSpec)
+	publicLBSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("invalid public loadbalancer specification")
 	}

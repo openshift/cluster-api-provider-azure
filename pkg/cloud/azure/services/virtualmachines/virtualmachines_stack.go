@@ -56,7 +56,8 @@ func (s *StackHubService) Get(ctx context.Context, spec azure.Spec) (interface{}
 	}
 	vm, err := s.Client.Get(ctx, s.Scope.MachineConfig.ResourceGroup, vmSpec.Name, compute.InstanceView)
 	if err != nil && azure.ResourceNotFound(err) {
-		return nil, fmt.Errorf("vm %s not found: %w", vmSpec.Name, err)
+		klog.Warningf("vm %s not found: %w", vmSpec.Name, err.Error())
+		return nil, err
 	} else if err != nil {
 		return vm, err
 	}
@@ -77,7 +78,7 @@ func (s *StackHubService) CreateOrUpdate(ctx context.Context, spec azure.Spec) e
 	}
 	nic, ok := nicInterface.(network.Interface)
 	if !ok {
-		return errors.New("error getting network security group")
+		return errors.New("error getting network security group3")
 	}
 	klog.V(2).Infof("got nic %s", vmSpec.NICName)
 

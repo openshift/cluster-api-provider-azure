@@ -34,23 +34,9 @@ import (
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure/services/subnets"
 )
 
-// StackHubSpec specification for routetable
-type StackHubSpec struct {
-	Name                          string
-	SubnetName                    string
-	VnetName                      string
-	StaticIPAddress               string
-	PublicLoadBalancerName        string
-	InternalLoadBalancerName      string
-	NatRule                       *int
-	PublicIP                      string
-	SecurityGroupName             string
-	ApplicationSecurityGroupNames []string
-}
-
 // Get provides information about a network interface.
 func (s *StackHubService) Get(ctx context.Context, spec azure.Spec) (interface{}, error) {
-	nicSpec, ok := spec.(*StackHubSpec)
+	nicSpec, ok := spec.(*Spec)
 	if !ok {
 		return network.Interface{}, errors.New("invalid network interface specification")
 	}
@@ -65,7 +51,7 @@ func (s *StackHubService) Get(ctx context.Context, spec azure.Spec) (interface{}
 
 // CreateOrUpdate creates or updates a network interface.
 func (s *StackHubService) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
-	nicSpec, ok := spec.(*StackHubSpec)
+	nicSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("invalid network interface specification")
 	}
@@ -277,7 +263,7 @@ func (s *StackHubService) CreateOrUpdate(ctx context.Context, spec azure.Spec) e
 
 // Delete deletes the network interface with the provided name.
 func (s *StackHubService) Delete(ctx context.Context, spec azure.Spec) error {
-	nicSpec, ok := spec.(*StackHubSpec)
+	nicSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("invalid network interface Specification")
 	}

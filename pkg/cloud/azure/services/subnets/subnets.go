@@ -83,7 +83,7 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 	}
 	nsg, ok := nsgInterface.(network.SecurityGroup)
 	if !ok {
-		return errors.New("error getting network security group")
+		return errors.New("error getting network security group2")
 	}
 	klog.V(2).Infof("got nsg %s", subnetSpec.SecurityGroupName)
 	subnetProperties.NetworkSecurityGroup = &nsg

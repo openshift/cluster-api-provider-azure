@@ -22,12 +22,11 @@ import (
 	"errors"
 	"fmt"
 	"path"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2020-06-30/compute"
-	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2020-06-01/network"
+	"github.com/Azure/azure-sdk-for-go/profiles/2019-03-01/compute/mgmt/compute"
+	"github.com/Azure/azure-sdk-for-go/profiles/2019-03-01/network/mgmt/network"
 	"github.com/Azure/go-autorest/autorest"
 	"github.com/Azure/go-autorest/autorest/to"
 	machinev1 "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
@@ -136,7 +135,7 @@ func (s *Reconciler) CreateMachine(ctx context.Context) error {
 
 // Update updates machine if and only if machine exists, handled by cluster-api
 func (s *Reconciler) Update(ctx context.Context) error {
-	vmSpec := &virtualmachines.Spec{
+	vmSpec := &virtualmachines.StackHubSpec{
 		Name: s.scope.Machine.Name,
 	}
 	vmInterface, err := s.virtualMachinesSvc.Get(ctx, vmSpec)
@@ -360,7 +359,7 @@ func (s *Reconciler) setMachineCloudProviderSpecifics(vm compute.VirtualMachine)
 
 // Exists checks if machine exists
 func (s *Reconciler) Exists(ctx context.Context) (bool, error) {
-	vmSpec := &virtualmachines.Spec{
+	vmSpec := &virtualmachines.StackHubSpec{
 		Name: s.scope.Name(),
 	}
 	vmInterface, err := s.virtualMachinesSvc.Get(ctx, vmSpec)
@@ -407,7 +406,7 @@ func (s *Reconciler) Exists(ctx context.Context) (bool, error) {
 
 // Delete reconciles all the services in pre determined order
 func (s *Reconciler) Delete(ctx context.Context) error {
-	vmSpec := &virtualmachines.Spec{
+	vmSpec := &virtualmachines.StackHubSpec{
 		Name: s.scope.Machine.Name,
 	}
 
@@ -558,12 +557,7 @@ func (s *Reconciler) createVirtualMachine(ctx context.Context, nicName, asName s
 		return fmt.Errorf("failed to decode ssh public key: %w", err)
 	}
 
-	priority, evictionPolicy, billingProfile, err := getSpotVMOptions(s.scope.MachineConfig.SpotVMOptions)
-	if err != nil {
-		return fmt.Errorf("failed to get Spot VM options %w", err)
-	}
-
-	vmSpec := &virtualmachines.Spec{
+	vmSpec := &virtualmachines.StackHubSpec{
 		Name: s.scope.Machine.Name,
 	}
 
@@ -578,20 +572,16 @@ func (s *Reconciler) createVirtualMachine(ctx context.Context, nicName, asName s
 			return fmt.Errorf("machine is missing %q label", machinev1.MachineClusterIDLabel)
 		}
 
-		vmSpec = &virtualmachines.Spec{
-			Name:                s.scope.Machine.Name,
-			NICName:             nicName,
-			SSHKeyData:          string(decoded),
-			Size:                s.scope.MachineConfig.VMSize,
-			OSDisk:              s.scope.MachineConfig.OSDisk,
-			Image:               s.scope.MachineConfig.Image,
-			Zone:                zone,
-			Tags:                s.scope.MachineConfig.Tags,
-			Priority:            priority,
-			EvictionPolicy:      evictionPolicy,
-			BillingProfile:      billingProfile,
-			SecurityProfile:     s.scope.MachineConfig.SecurityProfile,
-			AvailabilitySetName: asName,
+		vmSpec = &virtualmachines.StackHubSpec{
+			Name:            s.scope.Machine.Name,
+			NICName:         nicName,
+			SSHKeyData:      string(decoded),
+			Size:            s.scope.MachineConfig.VMSize,
+			OSDisk:          s.scope.MachineConfig.OSDisk,
+			Image:           s.scope.MachineConfig.Image,
+			Zone:            zone,
+			Tags:            s.scope.MachineConfig.Tags,
+			SecurityProfile: s.scope.MachineConfig.SecurityProfile,
 		}
 
 		if s.scope.MachineConfig.ManagedIdentity != "" {
@@ -674,27 +664,6 @@ func (s *Reconciler) getCustomUserData() (string, error) {
 	}
 
 	return base64.StdEncoding.EncodeToString(data), nil
-}
-
-func getSpotVMOptions(spotVMOptions *v1beta1.SpotVMOptions) (compute.VirtualMachinePriorityTypes, compute.VirtualMachineEvictionPolicyTypes, *compute.BillingProfile, error) {
-	// Spot VM not requested, return zero values to apply defaults
-	if spotVMOptions == nil {
-		return compute.VirtualMachinePriorityTypes(""), compute.VirtualMachineEvictionPolicyTypes(""), nil, nil
-	}
-	var billingProfile *compute.BillingProfile
-	if spotVMOptions.MaxPrice != nil && spotVMOptions.MaxPrice.AsDec().String() != "" {
-		maxPrice, err := strconv.ParseFloat(spotVMOptions.MaxPrice.AsDec().String(), 64)
-		if err != nil {
-			return compute.VirtualMachinePriorityTypes(""), compute.VirtualMachineEvictionPolicyTypes(""), nil, err
-		}
-		billingProfile = &compute.BillingProfile{
-			MaxPrice: &maxPrice,
-		}
-	}
-
-	// We should use deallocate eviction policy it's - "the only supported eviction policy for Single Instance Spot VMs"
-	// https://github.com/openshift/enhancements/blob/master/enhancements/machine-api/spot-instances.md#eviction-policies
-	return compute.Spot, compute.Deallocate, billingProfile, nil
 }
 
 func (s *Reconciler) createAvailabilitySet() (string, error) {

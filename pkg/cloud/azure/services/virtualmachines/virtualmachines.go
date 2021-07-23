@@ -109,9 +109,12 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 	if err != nil {
 		return err
 	}
+	fmt.Println(123)
+	fmt.Println(nicInterface)
+	fmt.Println(123)
 	nic, ok := nicInterface.(network.Interface)
 	if !ok {
-		return errors.New("error getting network security group")
+		return errors.New("error getting network security group4")
 	}
 	klog.V(2).Infof("got nic %s", vmSpec.NICName)
 

@@ -27,15 +27,9 @@ import (
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
 )
 
-// StackHubSpec specification for network security groups
-type StackHubSpec struct {
-	Name           string
-	IsControlPlane bool
-}
-
 // Get provides information about a route table.
 func (s *StackHubService) Get(ctx context.Context, spec azure.Spec) (interface{}, error) {
-	nsgSpec, ok := spec.(*StackHubSpec)
+	nsgSpec, ok := spec.(*Spec)
 	if !ok {
 		return network.SecurityGroup{}, errors.New("invalid security groups specification")
 	}
@@ -50,7 +44,7 @@ func (s *StackHubService) Get(ctx context.Context, spec azure.Spec) (interface{}
 
 // CreateOrUpdate creates or updates a route table.
 func (s *StackHubService) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
-	nsgSpec, ok := spec.(*StackHubSpec)
+	nsgSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("invalid security groups specification")
 	}
@@ -120,7 +114,7 @@ func (s *StackHubService) CreateOrUpdate(ctx context.Context, spec azure.Spec) e
 
 // Delete deletes the route table with the provided name.
 func (s *StackHubService) Delete(ctx context.Context, spec azure.Spec) error {
-	nsgSpec, ok := spec.(*StackHubSpec)
+	nsgSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("invalid security groups specification")
 	}

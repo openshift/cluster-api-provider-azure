@@ -29,18 +29,9 @@ import (
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure/services/securitygroups"
 )
 
-// StackHubSpec input specification for Get/CreateOrUpdate/Delete calls
-type StackHubSpec struct {
-	Name              string
-	CIDR              string
-	VnetName          string
-	RouteTableName    string
-	SecurityGroupName string
-}
-
 // Get provides information about a route table.
 func (s *StackHubService) Get(ctx context.Context, spec azure.Spec) (interface{}, error) {
-	subnetSpec, ok := spec.(*StackHubSpec)
+	subnetSpec, ok := spec.(*Spec)
 	if !ok {
 		return network.Subnet{}, errors.New("Invalid Subnet Specification")
 	}
@@ -55,7 +46,7 @@ func (s *StackHubService) Get(ctx context.Context, spec azure.Spec) (interface{}
 
 // CreateOrUpdate creates or updates a route table.
 func (s *StackHubService) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
-	subnetSpec, ok := spec.(*StackHubSpec)
+	subnetSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("Invalid Subnet Specification")
 	}
@@ -83,7 +74,7 @@ func (s *StackHubService) CreateOrUpdate(ctx context.Context, spec azure.Spec) e
 	}
 	nsg, ok := nsgInterface.(network.SecurityGroup)
 	if !ok {
-		return errors.New("error getting network security group")
+		return errors.New("error getting network security group1")
 	}
 	klog.V(2).Infof("got nsg %s", subnetSpec.SecurityGroupName)
 	subnetProperties.NetworkSecurityGroup = &nsg
@@ -118,7 +109,7 @@ func (s *StackHubService) CreateOrUpdate(ctx context.Context, spec azure.Spec) e
 
 // Delete deletes the route table with the provided name.
 func (s *StackHubService) Delete(ctx context.Context, spec azure.Spec) error {
-	subnetSpec, ok := spec.(*StackHubSpec)
+	subnetSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("Invalid Subnet Specification")
 	}

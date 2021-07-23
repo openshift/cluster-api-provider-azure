@@ -26,11 +26,6 @@ import (
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
 )
 
-// StackHubSpec specification for disk
-type StackHubSpec struct {
-	Name string
-}
-
 // Get on disk is currently no-op. OS disks should only be deleted and will create with the VM automatically.
 func (s *StackHubService) Get(ctx context.Context, spec azure.Spec) (interface{}, error) {
 	return compute.Disk{}, nil
@@ -43,7 +38,7 @@ func (s *StackHubService) CreateOrUpdate(ctx context.Context, spec azure.Spec) e
 
 // Delete deletes the disk associated with a VM.
 func (s *StackHubService) Delete(ctx context.Context, spec azure.Spec) error {
-	diskSpec, ok := spec.(*StackHubSpec)
+	diskSpec, ok := spec.(*Spec)
 	if !ok {
 		return errors.New("Invalid disk specification")
 	}

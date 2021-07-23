@@ -77,7 +77,7 @@ type Reconciler struct {
 	virtualMachinesSvc    azure.Service
 	virtualMachinesExtSvc azure.Service
 	disksSvc              azure.Service
-	availabilitysetsSvc   azure.Service
+	availabilitySetsSvc   azure.Service
 }
 
 // NewReconciler populates all the services based on input scope
@@ -90,7 +90,7 @@ func NewReconciler(scope *actuators.MachineScope) *Reconciler {
 		virtualMachinesExtSvc: virtualmachineextensions.NewService(scope),
 		publicIPSvc:           publicips.NewService(scope),
 		disksSvc:              disks.NewService(scope),
-		availabilitysetsSvc:   availabilitysets.NewService(scope),
+		availabilitySetsSvc:   availabilitysets.NewService(scope),
 	}
 }
 
@@ -719,13 +719,13 @@ func (s *Reconciler) createAvailabilitySet() (string, error) {
 	klog.V(4).Infof("No availability zones were found for %s, an availability set will be created", s.scope.Machine.Name)
 
 	// Create the availability set
-	msName := fmt.Sprintf("%s-%s", s.scope.Machine.Labels[MachineSetLabelName], "worker")
+	availabilityZoneName := fmt.Sprintf("%s-%s", s.scope.Machine.Labels[MachineSetLabelName], "worker")
 
-	if err := s.availabilitysetsSvc.CreateOrUpdate(context.Background(), availabilitysets.Spec{
-		Name: msName,
+	if err := s.availabilitySetsSvc.CreateOrUpdate(context.Background(), availabilitysets.Spec{
+		Name: availabilityZoneName,
 	}); err != nil {
 		return "", err
 	}
 
-	return msName, nil
+	return availabilityZoneName, nil
 }

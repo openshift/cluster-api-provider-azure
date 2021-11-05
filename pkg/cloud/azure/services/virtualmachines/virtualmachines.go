@@ -304,6 +304,17 @@ func (s *Service) deriveVirtualMachineParameters(vmSpec *Spec, nic network.Inter
 		}
 	}
 
+	// When a SKU, Offer, & Publisher are specified in the ImageReference, the VM will
+	// use an Azure Marketplace image. RHCOS marketplace images require a purchase plan:
+	// For more information, see the second example here:
+	// https://docs.microsoft.com/en-us/azure/virtual-machines/linux/cli-ps-findimage#deploy-a-new-vm-using-the-image-parameters
+	if virtualMachine.StorageProfile.ImageReference.Sku != nil {
+		virtualMachine.Plan = &compute.Plan{
+			Name:      virtualMachine.StorageProfile.ImageReference.Sku,
+			Product:   virtualMachine.StorageProfile.ImageReference.Offer,
+			Publisher: virtualMachine.StorageProfile.ImageReference.Publisher,
+		}
+	}
 	return virtualMachine, nil
 }
 

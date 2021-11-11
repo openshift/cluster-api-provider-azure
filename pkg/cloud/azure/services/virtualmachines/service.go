@@ -25,16 +25,25 @@ import (
 
 // Service provides operations on resource groups
 type Service struct {
-	Client compute.VirtualMachinesClient
-	Scope  *actuators.MachineScope
+	Client       compute.VirtualMachinesClient
+	ImagesClient compute.VirtualMachineImagesClient
+	Scope        *actuators.MachineScope
 }
 
-// getVirtualNetworksClient creates a new groups client from subscriptionid.
+// getVirtualMachinesClient creates a new vm client from subscriptionid.
 func getVirtualMachinesClient(resourceManagerEndpoint, subscriptionID string, authorizer autorest.Authorizer) compute.VirtualMachinesClient {
 	vmClient := compute.NewVirtualMachinesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
 	vmClient.Authorizer = authorizer
 	vmClient.AddToUserAgent(azure.UserAgent)
 	return vmClient
+}
+
+// getVirtualMachineImagesClient creates a new vm image client from subscriptionid.
+func getVirtualMachineImagesClient(resourceManagerEndpoint, subscriptionID string, authorizer autorest.Authorizer) compute.VirtualMachineImagesClient {
+	vmiClient := compute.NewVirtualMachineImagesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
+	vmiClient.Authorizer = authorizer
+	vmiClient.AddToUserAgent(azure.UserAgent)
+	return vmiClient
 }
 
 // NewService creates a new groups service.
@@ -44,7 +53,8 @@ func NewService(scope *actuators.MachineScope) azure.Service {
 	}
 
 	return &Service{
-		Client: getVirtualMachinesClient(scope.ResourceManagerEndpoint, scope.SubscriptionID, scope.Authorizer),
-		Scope:  scope,
+		Client:       getVirtualMachinesClient(scope.ResourceManagerEndpoint, scope.SubscriptionID, scope.Authorizer),
+		ImagesClient: getVirtualMachineImagesClient(scope.ResourceManagerEndpoint, scope.SubscriptionID, scope.Authorizer),
+		Scope:        scope,
 	}
 }

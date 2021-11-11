@@ -119,7 +119,7 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 
 	klog.V(2).Infof("creating vm %s ", vmSpec.Name)
 
-	virtualMachine, err := s.deriveVirtualMachineParameters(vmSpec, nic)
+	virtualMachine, err := s.deriveVirtualMachineParameters(ctx, vmSpec, nic)
 	if err != nil {
 		return err
 	}
@@ -211,7 +211,7 @@ func generateOSProfile(vmSpec *Spec) (*compute.OSProfile, error) {
 // Derive virtual machine parameters for CreateOrUpdate API call based
 // on the provided virtual machine specification, resource location,
 // subscription ID, and the network interface.
-func (s *Service) deriveVirtualMachineParameters(vmSpec *Spec, nic network.Interface) (*compute.VirtualMachine, error) {
+func (s *Service) deriveVirtualMachineParameters(ctx context.Context, vmSpec *Spec, nic network.Interface) (*compute.VirtualMachine, error) {
 	osProfile, err := generateOSProfile(vmSpec)
 	if err != nil {
 		return nil, err
@@ -304,6 +304,23 @@ func (s *Service) deriveVirtualMachineParameters(vmSpec *Spec, nic network.Inter
 		}
 	}
 
+	// Some marketplace images (RHCOS) cost to use while others (Windows Servers used by Windows Containers)
+	// are free. So when using a marketplace image, we need to check if there is a purchase plan and pass it along.
+	// https://docs.microsoft.com/en-us/azure/virtual-machines/linux/cli-ps-findimage#deploy-a-new-vm-using-the-image-parameters
+	ir := virtualMachine.StorageProfile.ImageReference
+	if ir.Offer != nil && ir.Publisher != nil && ir.Sku != nil && ir.Version != nil {
+		img, err := s.ImagesClient.Get(ctx, s.Scope.Location(), *ir.Publisher, *ir.Offer, *ir.Sku, *ir.Version)
+		if err != nil {
+			return nil, err
+		}
+		if img.Plan != nil {
+			virtualMachine.Plan = &compute.Plan{
+				Name:      img.Plan.Name,
+				Product:   img.Plan.Product,
+				Publisher: img.Plan.Publisher,
+			}
+		}
+	}
 	return virtualMachine, nil
 }
 

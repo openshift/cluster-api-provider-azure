@@ -1,6 +1,7 @@
 package virtualmachines
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -97,10 +98,10 @@ func TestDeriveVirtualMachineParameters(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			vmSpec := getTestVMSpec(tc.updateSpec)
 			subscription := "226e02ba-43d1-43d3-a02a-19e584a4ef67"
 			resourcegroup := "foobar"
 			location := "eastus"
+			vmSpec := getTestVMSpec(tc.updateSpec, resourcegroup)
 			nic := getTestNic(vmSpec, subscription, resourcegroup, location)
 
 			s := Service{
@@ -115,7 +116,7 @@ func TestDeriveVirtualMachineParameters(t *testing.T) {
 				},
 			}
 
-			vm, err := s.deriveVirtualMachineParameters(vmSpec, nic)
+			vm, err := s.deriveVirtualMachineParameters(context.TODO(), vmSpec, nic)
 
 			g.Expect(err).ToNot(HaveOccurred())
 			tc.validate(g, vm)
@@ -134,7 +135,7 @@ func getTestNic(vmSpec *Spec, subscription, resourcegroup, location string) netw
 	}
 }
 
-func getTestVMSpec(updateSpec func(*Spec)) *Spec {
+func getTestVMSpec(updateSpec func(*Spec), resourcegroup string) *Spec {
 	spec := &Spec{
 		Name:       "my-awesome-machine",
 		NICName:    "gxqb-master-nic",
@@ -142,10 +143,7 @@ func getTestVMSpec(updateSpec func(*Spec)) *Spec {
 		Size:       "Standard_D4s_v3",
 		Zone:       "",
 		Image: machinev1.Image{
-			Publisher: "Red Hat Inc",
-			Offer:     "ubi",
-			SKU:       "ubi7",
-			Version:   "latest",
+			ResourceID: fmt.Sprintf("/resourceGroups/%s/providers/Microsoft.Compute/images/%s", resourcegroup, "mycluster"),
 		},
 		OSDisk: machinev1.OSDisk{
 			OSType:     "Linux",

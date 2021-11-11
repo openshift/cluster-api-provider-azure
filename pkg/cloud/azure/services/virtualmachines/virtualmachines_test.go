@@ -10,10 +10,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2021-03-01/compute"
 	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2021-02-01/network"
 	"github.com/Azure/go-autorest/autorest/to"
+	"github.com/golang/mock/gomock"
 	. "github.com/onsi/gomega"
 	machinev1 "github.com/openshift/api/machine/v1beta1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure/actuators"
+	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure/services/virtualmachines/mock_virtualmachines"
 )
 
 func TestGetTagListFromSpec(t *testing.T) {
@@ -93,7 +95,30 @@ func TestDeriveVirtualMachineParameters(t *testing.T) {
 				g.Expect(vm.SecurityProfile.EncryptionAtHost).To(BeNil())
 			},
 		},
+		{
+			name: "Paid Marketplace Image",
+			updateSpec: func(vmSpec *Spec) {
+				vmSpec.Image = machinev1.Image{
+					Publisher: "Red Hat Inc",
+					Offer:     "OpenShift",
+					SKU:       "RHCOS",
+					Version:   "4.9.7",
+				}
+			},
+			validate: func(g *WithT, vm *compute.VirtualMachine) {
+				g.Expect(vm.Plan).ToNot(BeNil())
+			},
+		},
+		{
+			name:       "Free Marketplace Image",
+			updateSpec: nil,
+			validate: func(g *WithT, vm *compute.VirtualMachine) {
+				g.Expect(vm.Plan).To(BeNil())
+			},
+		},
 	}
+
+	mockImagesClient := newMockVMIClient(t)
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -114,6 +139,7 @@ func TestDeriveVirtualMachineParameters(t *testing.T) {
 						ResourceGroup: resourcegroup,
 					},
 				},
+				ImagesClient: mockImagesClient,
 			}
 
 			vm, err := s.deriveVirtualMachineParameters(context.TODO(), vmSpec, nic)
@@ -143,7 +169,10 @@ func getTestVMSpec(updateSpec func(*Spec), resourcegroup string) *Spec {
 		Size:       "Standard_D4s_v3",
 		Zone:       "",
 		Image: machinev1.Image{
-			ResourceID: fmt.Sprintf("/resourceGroups/%s/providers/Microsoft.Compute/images/%s", resourcegroup, "mycluster"),
+			Publisher: "Red Hat Inc",
+			Offer:     "ubi",
+			SKU:       "ubi7",
+			Version:   "latest",
 		},
 		OSDisk: machinev1.OSDisk{
 			OSType:     "Linux",
@@ -250,4 +279,28 @@ func TestGetSpotVMOptions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func newMockVMIClient(t *testing.T) VMImagesClient {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	vmiClient := mock_virtualmachines.NewMockVMImagesClient(mockCtrl)
+
+	// For Get calls for the Ubi image, return a VM image with no purchase plan
+	freeImage := compute.VirtualMachineImage{VirtualMachineImageProperties: &compute.VirtualMachineImageProperties{Plan: nil}}
+	vmiClient.EXPECT().Get(gomock.Any(), gomock.Any(), "Red Hat Inc", "ubi", "ubi7", "latest").Return(freeImage, nil).AnyTimes()
+
+	// For Get calls for OCP, return a VM image with a purchase plan
+	paidImage := compute.VirtualMachineImage{
+		VirtualMachineImageProperties: &compute.VirtualMachineImageProperties{
+			Plan: &compute.PurchasePlan{
+				Publisher: to.StringPtr("Red Hat Inc"),
+				Product:   to.StringPtr("OpenShift"),
+				Name:      to.StringPtr("RHCOS"),
+			},
+		},
+	}
+	vmiClient.EXPECT().Get(gomock.Any(), gomock.Any(), "Red Hat Inc", "OpenShift", "RHCOS", "4.9.7").Return(paidImage, nil).AnyTimes()
+	return vmiClient
 }

@@ -17,6 +17,8 @@ limitations under the License.
 package virtualmachines
 
 import (
+	"context"
+
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2021-03-01/compute"
 	"github.com/Azure/go-autorest/autorest"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
@@ -26,8 +28,12 @@ import (
 // Service provides operations on resource groups
 type Service struct {
 	Client       compute.VirtualMachinesClient
-	ImagesClient compute.VirtualMachineImagesClient
+	ImagesClient VMImagesClient
 	Scope        *actuators.MachineScope
+}
+
+type VMImagesClient interface {
+	Get(ctx context.Context, location string, publisherName string, offer string, skus string, version string) (result compute.VirtualMachineImage, err error)
 }
 
 // getVirtualMachinesClient creates a new vm client from subscriptionid.
@@ -39,7 +45,7 @@ func getVirtualMachinesClient(resourceManagerEndpoint, subscriptionID string, au
 }
 
 // getVirtualMachineImagesClient creates a new vm image client from subscriptionid.
-func getVirtualMachineImagesClient(resourceManagerEndpoint, subscriptionID string, authorizer autorest.Authorizer) compute.VirtualMachineImagesClient {
+func getVirtualMachineImagesClient(resourceManagerEndpoint, subscriptionID string, authorizer autorest.Authorizer) VMImagesClient {
 	vmiClient := compute.NewVirtualMachineImagesClientWithBaseURI(resourceManagerEndpoint, subscriptionID)
 	vmiClient.Authorizer = authorizer
 	vmiClient.AddToUserAgent(azure.UserAgent)

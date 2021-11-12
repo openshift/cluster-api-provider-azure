@@ -24,7 +24,7 @@ endif
 VERSION     ?= $(shell git describe --always --abbrev=7)
 REPO_PATH   ?= sigs.k8s.io/cluster-api-provider-azure
 LD_FLAGS    ?= -X $(REPO_PATH)/pkg/version.Raw=$(VERSION) -extldflags -static
-BUILD_IMAGE ?= openshift/origin-release:golang-1.16
+BUILD_IMAGE ?= registry.ci.openshift.org/openshift/release:golang-1.17
 
 GO111MODULE = on
 export GO111MODULE

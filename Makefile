@@ -24,6 +24,7 @@ endif
 VERSION     ?= $(shell git describe --always --abbrev=7)
 REPO_PATH   ?= sigs.k8s.io/cluster-api-provider-azure
 LD_FLAGS    ?= -X $(REPO_PATH)/pkg/version.Raw=$(VERSION) -extldflags -static
+BUILD_IMAGE ?= openshift/origin-release:golang-1.16
 
 GO111MODULE = on
 export GO111MODULE
@@ -55,11 +56,11 @@ CGO_ENABLED = 0
 unit : CGO_ENABLED = 1
 
 ifeq ($(NO_DOCKER), 1)
-  DOCKER_CMD =
+  DOCKER_CMD = CGO_ENABLED=$(CGO_ENABLED) GOARCH=$(GOARCH) GOOS=$(GOOS)
   IMAGE_BUILD_CMD = imagebuilder
   export CGO_ENABLED
 else
-  DOCKER_CMD = $(ENGINE)  run --rm -e CGO_ENABLED=$(CGO_ENABLED) -e GOARCH=$(GOARCH) -e GOOS=$(GOOS) -v "$(PWD)":/go/src/sigs.k8s.io/cluster-api-provider-azure:Z -w /go/src/sigs.k8s.io/cluster-api-provider-azure openshift/origin-release:golang-1.16
+  DOCKER_CMD = $(ENGINE)  run --rm -e CGO_ENABLED=$(CGO_ENABLED) -e GOARCH=$(GOARCH) -e GOOS=$(GOOS) -v "$(PWD)":/go/src/sigs.k8s.io/cluster-api-provider-azure:Z -w /go/src/sigs.k8s.io/cluster-api-provider-azure $(BUILD_IMAGE)
   IMAGE_BUILD_CMD = $(ENGINE)  build
 endif
 

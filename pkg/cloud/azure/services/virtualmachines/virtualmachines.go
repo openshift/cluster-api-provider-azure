@@ -189,6 +189,7 @@ func (s *Service) CreateOrUpdate(ctx context.Context, spec azure.Spec) error {
 	virtualMachine := compute.VirtualMachine{
 		Location: to.StringPtr(s.Scope.MachineConfig.Location),
 		Tags:     getTagListFromSpec(vmSpec),
+		Plan:     generateImagePlan(vmSpec.Image),
 		VirtualMachineProperties: &compute.VirtualMachineProperties{
 			HardwareProfile: &compute.HardwareProfile{
 				VMSize: compute.VirtualMachineSizeTypes(vmSpec.Size),
@@ -312,4 +313,21 @@ func GenerateRandomString(n int) (string, error) {
 		return "", err
 	}
 	return base64.URLEncoding.EncodeToString(b), err
+}
+
+func generateImagePlan(image v1beta1.Image) *compute.Plan {
+	// We only need a purchase plan for third-party marketplace images.
+	if image.Type == "" || image.Type == v1beta1.AzureImageTypeMarketplaceNoPlan {
+		return nil
+	}
+
+	if image.Publisher == "" || image.SKU == "" || image.Offer == "" {
+		return nil
+	}
+
+	return &compute.Plan{
+		Publisher: to.StringPtr(image.Publisher),
+		Name:      to.StringPtr(image.SKU),
+		Product:   to.StringPtr(image.Offer),
+	}
 }

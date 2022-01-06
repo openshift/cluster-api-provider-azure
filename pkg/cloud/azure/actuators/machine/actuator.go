@@ -28,6 +28,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/cloud/azure/actuators"
 	controllerclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -102,7 +103,11 @@ func (a *Actuator) Create(ctx context.Context, machine *machinev1.Machine) error
 		var detailedError autorest.DetailedError
 		if errors.As(err, &detailedError) {
 			statusCode, ok := detailedError.StatusCode.(int)
-			if ok && statusCode >= 400 && statusCode < 500 {
+			// Any 4xx error that isn't invalid credentials should be a terminal failure.
+			// Invalid Credentials implies that the credentials expired between the scope creation and API calls,
+			// this may happen when CCO is refreshing credentials simultaneously.
+			// In this case we should retry as the credentials should be updated in the secret.
+			if ok && statusCode >= 400 && statusCode < 500 && !azure.InvalidCredentials(err) {
 				return a.handleMachineError(machine, machineapierrors.InvalidMachineConfiguration("failed to reconcile machine %q: %v", machine.Name, detailedError), createEventAction)
 			}
 		}

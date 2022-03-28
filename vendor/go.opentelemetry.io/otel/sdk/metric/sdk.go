@@ -26,8 +26,8 @@ import (
 	internal "go.opentelemetry.io/otel/internal/metric"
 	"go.opentelemetry.io/otel/metric/number"
 	"go.opentelemetry.io/otel/metric/sdkapi"
-	export "go.opentelemetry.io/otel/sdk/export/metric"
 	"go.opentelemetry.io/otel/sdk/metric/aggregator"
+	"go.opentelemetry.io/otel/sdk/metric/export"
 )
 
 type (
@@ -114,8 +114,8 @@ type (
 		// current implements the actual RecordOne() API,
 		// depending on the type of aggregation.  If nil, the
 		// metric was disabled by the exporter.
-		current    export.Aggregator
-		checkpoint export.Aggregator
+		current    aggregator.Aggregator
+		checkpoint aggregator.Aggregator
 	}
 
 	instrument struct {
@@ -133,15 +133,14 @@ type (
 	labeledRecorder struct {
 		observedEpoch int64
 		labels        *attribute.Set
-		observed      export.Aggregator
+		observed      aggregator.Aggregator
 	}
 )
 
 var (
-	_ sdkapi.MeterImpl     = &Accumulator{}
-	_ sdkapi.AsyncImpl     = &asyncInstrument{}
-	_ sdkapi.SyncImpl      = &syncInstrument{}
-	_ sdkapi.BoundSyncImpl = &record{}
+	_ sdkapi.MeterImpl = &Accumulator{}
+	_ sdkapi.AsyncImpl = &asyncInstrument{}
+	_ sdkapi.SyncImpl  = &syncInstrument{}
 
 	// ErrUninitializedInstrument is returned when an instrument is used when uninitialized.
 	ErrUninitializedInstrument = fmt.Errorf("use of an uninitialized instrument")
@@ -176,7 +175,7 @@ func (a *asyncInstrument) observe(num number.Number, labels *attribute.Set) {
 	}
 }
 
-func (a *asyncInstrument) getRecorder(labels *attribute.Set) export.Aggregator {
+func (a *asyncInstrument) getRecorder(labels *attribute.Set) aggregator.Aggregator {
 	lrec, ok := a.recorders[labels.Equivalent()]
 	if ok {
 		// Note: SynchronizedMove(nil) can't return an error
@@ -185,7 +184,7 @@ func (a *asyncInstrument) getRecorder(labels *attribute.Set) export.Aggregator {
 		a.recorders[labels.Equivalent()] = lrec
 		return lrec.observed
 	}
-	var rec export.Aggregator
+	var rec aggregator.Aggregator
 	a.meter.processor.AggregatorFor(&a.descriptor, &rec)
 	if a.recorders == nil {
 		a.recorders = make(map[attribute.Distinct]*labeledRecorder)
@@ -280,14 +279,9 @@ func (s *syncInstrument) acquireHandle(kvs []attribute.KeyValue, labelPtr *attri
 }
 
 // The order of the input array `kvs` may be sorted after the function is called.
-func (s *syncInstrument) Bind(kvs []attribute.KeyValue) sdkapi.BoundSyncImpl {
-	return s.acquireHandle(kvs, nil)
-}
-
-// The order of the input array `kvs` may be sorted after the function is called.
 func (s *syncInstrument) RecordOne(ctx context.Context, num number.Number, kvs []attribute.KeyValue) {
 	h := s.acquireHandle(kvs, nil)
-	defer h.Unbind()
+	defer h.unbind()
 	h.RecordOne(ctx, num)
 }
 
@@ -490,7 +484,7 @@ func (m *Accumulator) RecordBatch(ctx context.Context, kvs []attribute.KeyValue,
 			labelsPtr = h.labels
 		}
 
-		defer h.Unbind()
+		defer h.unbind()
 		h.RecordOne(ctx, meas.Number())
 	}
 }
@@ -514,8 +508,7 @@ func (r *record) RecordOne(ctx context.Context, num number.Number) {
 	atomic.AddInt64(&r.updateCount, 1)
 }
 
-// Unbind implements sdkapi.SyncImpl.
-func (r *record) Unbind() {
+func (r *record) unbind() {
 	r.refMapped.unref()
 }
 

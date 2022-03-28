@@ -21,14 +21,12 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/rest"
+
 	"sigs.k8s.io/cluster-api/cmd/clusterctl/client/config"
 	"sigs.k8s.io/cluster-api/cmd/clusterctl/client/repository"
 	yaml "sigs.k8s.io/cluster-api/cmd/clusterctl/client/yamlprocessor"
 	logf "sigs.k8s.io/cluster-api/cmd/clusterctl/log"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -61,15 +59,15 @@ type Client interface {
 	// Proxy return the Proxy used for operating objects in the management cluster.
 	Proxy() Proxy
 
-	// CertManager returns a CertManagerClient that can be user for
+	// CertManager returns a CertManagerClient that can be used for
 	// operating the cert-manager components in the cluster.
 	CertManager() CertManagerClient
 
-	// ProviderComponents returns a ComponentsClient object that can be user for
+	// ProviderComponents returns a ComponentsClient object that can be used for
 	// operating provider components objects in the management cluster (e.g. the CRDs, controllers, RBAC).
 	ProviderComponents() ComponentsClient
 
-	// ProviderInventory returns a InventoryClient object that can be user for
+	// ProviderInventory returns a InventoryClient object that can be used for
 	// operating provider inventory stored in the management cluster (e.g. the list of installed providers/versions).
 	ProviderInventory() InventoryClient
 
@@ -89,6 +87,9 @@ type Client interface {
 
 	// WorkloadCluster has methods for fetching kubeconfig of workload cluster from management cluster.
 	WorkloadCluster() WorkloadCluster
+
+	// Topology returns a TopologyClient that can be used for performing dry run executions of the topology reconciler.
+	Topology() TopologyClient
 }
 
 // PollImmediateWaiter tries a condition func until it returns true, an error, or the timeout is reached.
@@ -148,6 +149,10 @@ func (c *clusterClient) Template() TemplateClient {
 
 func (c *clusterClient) WorkloadCluster() WorkloadCluster {
 	return newWorkloadCluster(c.proxy)
+}
+
+func (c *clusterClient) Topology() TopologyClient {
+	return newTopologyClient(c.proxy, c.ProviderInventory())
 }
 
 // Option is a configuration option supplied to New.
@@ -219,35 +224,6 @@ func newClusterClient(kubeconfig Kubeconfig, configClient config.Client, options
 	return client
 }
 
-// Proxy defines a client proxy interface.
-type Proxy interface {
-	// GetConfig returns the rest.Config
-	GetConfig() (*rest.Config, error)
-
-	// CurrentNamespace returns the namespace from the current context in the kubeconfig file
-	CurrentNamespace() (string, error)
-
-	// ValidateKubernetesVersion returns an error if management cluster version less than minimumKubernetesVersion
-	ValidateKubernetesVersion() error
-
-	// NewClient returns a new controller runtime Client object for working on the management cluster
-	NewClient() (client.Client, error)
-
-	// ListResources lists namespaced and cluster-wide resources for a component matching the labels.
-	// Namespaced resources are only listed in the given namespaces.
-	// Please note that we are not returning resources for the component's CRD (e.g. we are not returning
-	// Certificates for cert-manager, Clusters for CAPI, AWSCluster for CAPA and so on).
-	// This is done to avoid errors when listing resources of providers which have already been
-	// deleted/scaled down to 0 replicas/with malfunctioning webhooks.
-	ListResources(labels map[string]string, namespaces ...string) ([]unstructured.Unstructured, error)
-
-	// GetContexts returns the list of contexts in kubeconfig which begin with prefix.
-	GetContexts(prefix string) ([]string, error)
-
-	// GetResourceNames returns the list of resource names which begin with prefix.
-	GetResourceNames(groupVersion, kind string, options []client.ListOption, prefix string) ([]string, error)
-}
-
 // retryWithExponentialBackoff repeats an operation until it passes or the exponential backoff times out.
 func retryWithExponentialBackoff(opts wait.Backoff, operation func() error) error {
 	log := logf.Log
@@ -292,6 +268,20 @@ func newConnectBackoff() wait.Backoff {
 		Duration: 250 * time.Millisecond,
 		Factor:   1.5,
 		Steps:    9,
+		Jitter:   0.1,
+	}
+}
+
+// newShortConnectBackoff creates a new API Machinery backoff parameter set suitable for use when clusterctl connect to a cluster.
+// Preferred over newConnectBackoff() only when used to perform quick checks to check if a cluster is reachable.
+func newShortConnectBackoff() wait.Backoff {
+	// Return a exponential backoff configuration which returns durations for a total time of ~5s.
+	// Example: 0, .25s, .6s, 1.2, 2.1s, 3.4s, 5.5s.
+	// Jitter is added as a random fraction of the duration multiplied by the jitter factor.
+	return wait.Backoff{
+		Duration: 250 * time.Millisecond,
+		Factor:   1.5,
+		Steps:    7,
 		Jitter:   0.1,
 	}
 }

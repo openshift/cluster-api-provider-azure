@@ -237,6 +237,8 @@ func (m *MachineScope) NICSpecs() []azure.NICSpec {
 		spec.PublicLBAddressPoolName = m.OutboundPoolName(m.OutboundLBName(m.Role()))
 	}
 
+	spec.PublicLBAddressPoolName = ""
+
 	if m.Role() == infrav1.Node && m.AzureMachine.Spec.AllocatePublicIP {
 		spec.PublicIPName = azure.GenerateNodePublicIPName(m.Name())
 	}

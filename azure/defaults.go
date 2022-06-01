@@ -21,7 +21,6 @@ import (
 	"net/http"
 
 	"github.com/Azure/go-autorest/autorest"
-	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/blang/semver"
 	"github.com/pkg/errors"
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
@@ -339,30 +338,30 @@ func GetDefaultWindowsImage(k8sVersion, runtime string) (*infrav1.Image, error) 
 // Its role is to detect and report Kubernetes bootstrap failure or success.
 func GetBootstrappingVMExtension(osType string, cloud string, vmName string) *ExtensionSpec {
 	// currently, the bootstrap extension is only available in AzurePublicCloud.
-	if osType == LinuxOS && cloud == azure.PublicCloud.Name {
-		// The command checks for the existence of the bootstrapSentinelFile on the machine, with retries and sleep between retries.
-		return &ExtensionSpec{
-			Name:      "CAPZ.Linux.Bootstrapping",
-			VMName:    vmName,
-			Publisher: "Microsoft.Azure.ContainerUpstream",
-			Version:   "1.0",
-			ProtectedSettings: map[string]string{
-				"commandToExecute": LinuxBootstrapExtensionCommand,
-			},
-		}
-	} else if osType == WindowsOS && cloud == azure.PublicCloud.Name {
-		// This command for the existence of the bootstrapSentinelFile on the machine, with retries and sleep between reties.
-		// If the file is not present after the retries are exhausted the extension fails with return code '-2' - ERROR_FILE_NOT_FOUND.
-		return &ExtensionSpec{
-			Name:      "CAPZ.Windows.Bootstrapping",
-			VMName:    vmName,
-			Publisher: "Microsoft.Azure.ContainerUpstream",
-			Version:   "1.0",
-			ProtectedSettings: map[string]string{
-				"commandToExecute": WindowsBootstrapExtensionCommand,
-			},
-		}
-	}
+	// if osType == LinuxOS && cloud == azure.PublicCloud.Name {
+	// 	// The command checks for the existence of the bootstrapSentinelFile on the machine, with retries and sleep between retries.
+	// 	return &ExtensionSpec{
+	// 		Name:      "CAPZ.Linux.Bootstrapping",
+	// 		VMName:    vmName,
+	// 		Publisher: "Microsoft.Azure.ContainerUpstream",
+	// 		Version:   "1.0",
+	// 		ProtectedSettings: map[string]string{
+	// 			"commandToExecute": LinuxBootstrapExtensionCommand,
+	// 		},
+	// 	}
+	// } else if osType == WindowsOS && cloud == azure.PublicCloud.Name {
+	// 	// This command for the existence of the bootstrapSentinelFile on the machine, with retries and sleep between reties.
+	// 	// If the file is not present after the retries are exhausted the extension fails with return code '-2' - ERROR_FILE_NOT_FOUND.
+	// 	return &ExtensionSpec{
+	// 		Name:      "CAPZ.Windows.Bootstrapping",
+	// 		VMName:    vmName,
+	// 		Publisher: "Microsoft.Azure.ContainerUpstream",
+	// 		Version:   "1.0",
+	// 		ProtectedSettings: map[string]string{
+	// 			"commandToExecute": WindowsBootstrapExtensionCommand,
+	// 		},
+	// 	}
+	// }
 
 	return nil
 }

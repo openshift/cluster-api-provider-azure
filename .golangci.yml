@@ -1,5 +1,5 @@
 run:
-  deadline: 5m
+  deadline: 10m
   skip-files:
   - 'zz_generated\.(\w*)\.go$'
   build-tags:
@@ -103,6 +103,9 @@ linters-settings:
         alias: infrav1exp
       - pkg: sigs.k8s.io/cluster-api-provider-azure/util/webhook
         alias: webhookutils
+      # Azure
+      - pkg: github.com/Azure/go-autorest/autorest/azure
+        alias: azureautorest
   gocritic:
     enabled-tags:
       - "experimental"

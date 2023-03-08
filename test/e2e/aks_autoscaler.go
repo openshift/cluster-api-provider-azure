@@ -29,6 +29,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/types"
 	infrav1exp "sigs.k8s.io/cluster-api-provider-azure/exp/api/v1beta1"
+	azureutil "sigs.k8s.io/cluster-api-provider-azure/util/azure"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	expv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -46,7 +47,7 @@ func AKSAutoscaleSpec(ctx context.Context, inputGetter func() AKSAutoscaleSpecIn
 	settings, err := auth.GetSettingsFromEnvironment()
 	Expect(err).NotTo(HaveOccurred())
 	subscriptionID := settings.GetSubscriptionID()
-	auth, err := settings.GetAuthorizer()
+	auth, err := azureutil.GetAuthorizer(settings)
 	Expect(err).NotTo(HaveOccurred())
 	agentpoolClient := containerservice.NewAgentPoolsClient(subscriptionID)
 	agentpoolClient.Authorizer = auth
@@ -72,24 +73,26 @@ func AKSAutoscaleSpec(ctx context.Context, inputGetter func() AKSAutoscaleSpecIn
 	}
 
 	toggleAutoscaling := func() {
-		err = mgmtClient.Get(ctx, client.ObjectKeyFromObject(ammp), ammp)
-		Expect(err).NotTo(HaveOccurred())
+		Eventually(func(g Gomega) {
+			err = mgmtClient.Get(ctx, client.ObjectKeyFromObject(ammp), ammp)
+			g.Expect(err).NotTo(HaveOccurred())
 
-		enabled := ammp.Spec.Scaling != nil
-		var enabling string
-		if enabled {
-			enabling = "Disabling"
-			ammp.Spec.Scaling = nil
-		} else {
-			enabling = "Enabling"
-			ammp.Spec.Scaling = &infrav1exp.ManagedMachinePoolScaling{
-				MinSize: to.Int32Ptr(1),
-				MaxSize: to.Int32Ptr(2),
+			enabled := ammp.Spec.Scaling != nil
+			var enabling string
+			if enabled {
+				enabling = "Disabling"
+				ammp.Spec.Scaling = nil
+			} else {
+				enabling = "Enabling"
+				ammp.Spec.Scaling = &infrav1exp.ManagedMachinePoolScaling{
+					MinSize: to.Int32Ptr(1),
+					MaxSize: to.Int32Ptr(2),
+				}
 			}
-		}
-		By(enabling + " autoscaling")
-		err = mgmtClient.Update(ctx, ammp)
-		Expect(err).NotTo(HaveOccurred())
+			By(enabling + " autoscaling")
+			err = mgmtClient.Update(ctx, ammp)
+			g.Expect(err).NotTo(HaveOccurred())
+		}, inputGetter().WaitIntervals...).Should(Succeed())
 	}
 
 	validateUntoggled := validateAKSAutoscaleDisabled

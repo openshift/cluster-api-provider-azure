@@ -4,6 +4,8 @@ namespace: default
 resources:
   - ../../../flavors/machinepool-windows
   - ../prow/cni-resource-set.yaml
+  - ../../../addons/windows/csi-proxy/csi-proxy-resource-set.yaml
+  - ../../../addons/windows/containerd-logging/containerd-logger-resource-set.yaml
 patchesStrategicMerge:
   - ../patches/azuremachinepool-vmextension.yaml
   - ../patches/tags.yaml
@@ -16,6 +18,12 @@ configMapGenerator:
     files:
       - windows-cni=../../../addons/windows/calico/calico.yaml
       - proxy=../../../addons/windows/calico/kube-proxy-windows.yaml
+  - name: csi-proxy-addon
+    files:
+      - csi-proxy=../../../addons/windows/csi-proxy/csi-proxy.yaml
+  - name: containerd-logger-${CLUSTER_NAME}
+    files:
+      - containerd-windows-logger=../../../addons/windows/containerd-logging/containerd-logger.yaml
 generatorOptions:
   disableNameSuffixHash: true
   labels:

@@ -487,6 +487,7 @@ func autoConvert_v1beta1_AzureMachinePoolMachineTemplate_To_v1alpha3_AzureMachin
 	}
 	// WARNING: in.SubnetName requires manual conversion: does not exist in peer-type
 	// WARNING: in.VMExtensions requires manual conversion: does not exist in peer-type
+	// WARNING: in.NetworkInterfaces requires manual conversion: does not exist in peer-type
 	return nil
 }
 
@@ -522,6 +523,7 @@ func autoConvert_v1beta1_AzureMachinePoolSpec_To_v1alpha3_AzureMachinePoolSpec(i
 	out.RoleAssignmentName = in.RoleAssignmentName
 	// WARNING: in.Strategy requires manual conversion: does not exist in peer-type
 	// WARNING: in.NodeDrainTimeout requires manual conversion: does not exist in peer-type
+	// WARNING: in.OrchestrationMode requires manual conversion: does not exist in peer-type
 	return nil
 }
 
@@ -795,6 +797,7 @@ func autoConvert_v1beta1_AzureManagedControlPlaneSpec_To_v1alpha3_AzureManagedCo
 	// WARNING: in.SKU requires manual conversion: does not exist in peer-type
 	// WARNING: in.LoadBalancerProfile requires manual conversion: does not exist in peer-type
 	// WARNING: in.APIServerAccessProfile requires manual conversion: does not exist in peer-type
+	// WARNING: in.AutoScalerProfile requires manual conversion: does not exist in peer-type
 	return nil
 }
 
@@ -923,6 +926,7 @@ func autoConvert_v1beta1_AzureManagedMachinePoolSpec_To_v1alpha3_AzureManagedMac
 	// WARNING: in.NodePublicIPPrefixID requires manual conversion: does not exist in peer-type
 	// WARNING: in.ScaleSetPriority requires manual conversion: does not exist in peer-type
 	// WARNING: in.KubeletConfig requires manual conversion: does not exist in peer-type
+	// WARNING: in.KubeletDiskType requires manual conversion: does not exist in peer-type
 	return nil
 }
 

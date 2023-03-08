@@ -17,9 +17,10 @@ limitations under the License.
 package managedclusters
 
 import (
+	"context"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2021-05-01/containerservice"
+	"github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2022-03-01/containerservice"
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
@@ -154,7 +155,7 @@ func TestParameters(t *testing.T) {
 			g := NewWithT(t)
 			t.Parallel()
 
-			result, err := tc.spec.Parameters(tc.existing)
+			result, err := tc.spec.Parameters(context.TODO(), tc.existing)
 			if tc.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err).To(MatchError(tc.expectedError))

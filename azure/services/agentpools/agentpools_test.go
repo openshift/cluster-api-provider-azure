@@ -26,10 +26,11 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/gomega"
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
-	"sigs.k8s.io/cluster-api-provider-azure/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/agentpools/mock_agentpools"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/async/mock_async"
+	infrav1exp "sigs.k8s.io/cluster-api-provider-azure/exp/api/v1beta1"
 	gomockinternal "sigs.k8s.io/cluster-api-provider-azure/internal/test/matchers/gomock"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
 var (
@@ -54,6 +55,7 @@ var (
 		EnableUltraSSD:    to.BoolPtr(true),
 		OSType:            to.StringPtr("fake-os-type"),
 		Headers:           map[string]string{"fake-header": "fake-value"},
+		KubeletDiskType:   (*infrav1exp.KubeletDiskType)(to.StringPtr("fake-kubelet-disk-type")),
 	}
 
 	internalError = autorest.NewErrorWithResponse("", "", &http.Response{StatusCode: http.StatusInternalServerError}, "Internal Server Error")
@@ -71,7 +73,7 @@ func TestReconcileAgentPools(t *testing.T) {
 			expect: func(s *mock_agentpools.MockAgentPoolScopeMockRecorder, r *mock_async.MockReconcilerMockRecorder) {
 				s.AgentPoolSpec().Return(&fakeAgentPoolSpec)
 				r.CreateOrUpdateResource(gomockinternal.AContext(), &fakeAgentPoolSpec, serviceName).Return(fakeAgentPoolWithAutoscalingAndCount(true, 1), nil)
-				s.SetCAPIMachinePoolAnnotation(azure.ReplicasManagedByAutoscalerAnnotation, "true")
+				s.SetCAPIMachinePoolAnnotation(clusterv1.ReplicasManagedByAnnotation, "true")
 				s.SetCAPIMachinePoolReplicas(fakeAgentPoolWithAutoscalingAndCount(true, 1).Count)
 				s.UpdatePutStatus(infrav1.AgentPoolsReadyCondition, serviceName, nil)
 			},
@@ -82,7 +84,7 @@ func TestReconcileAgentPools(t *testing.T) {
 			expect: func(s *mock_agentpools.MockAgentPoolScopeMockRecorder, r *mock_async.MockReconcilerMockRecorder) {
 				s.AgentPoolSpec().Return(&fakeAgentPoolSpec)
 				r.CreateOrUpdateResource(gomockinternal.AContext(), &fakeAgentPoolSpec, serviceName).Return(fakeAgentPoolWithAutoscalingAndCount(false, 1), nil)
-				s.RemoveCAPIMachinePoolAnnotation(azure.ReplicasManagedByAutoscalerAnnotation)
+				s.RemoveCAPIMachinePoolAnnotation(clusterv1.ReplicasManagedByAnnotation)
 
 				s.UpdatePutStatus(infrav1.AgentPoolsReadyCondition, serviceName, nil)
 			},

@@ -19,8 +19,8 @@ settings = {
     "deploy_cert_manager": True,
     "preload_images_for_kind": True,
     "kind_cluster_name": "capz",
-    "capi_version": "v1.3.0",
-    "cert_manager_version": "v1.10.0",
+    "capi_version": "v1.3.1",
+    "cert_manager_version": "v1.11.0",
     "kubernetes_version": "v1.24.6",
     "aks_kubernetes_version": "v1.24.6",
 }
@@ -147,14 +147,10 @@ def observability():
         ],
     ))
 
-    internal_kubeconfig = str(local(kind_cmd + " get kubeconfig --name ${KIND_CLUSTER_NAME:-capz} --internal"))
     k8s_yaml(helm(
         "./hack/observability/cluster-api-visualizer/chart",
         name = "visualize-cluster",
         namespace = "capz-system",
-        set = [
-            "kubeconfig=" + internal_kubeconfig,
-        ],
     ))
 
     k8s_resource(
@@ -404,7 +400,7 @@ include_user_tilt_files()
 load("ext://cert_manager", "deploy_cert_manager")
 
 if settings.get("deploy_cert_manager"):
-    deploy_cert_manager()
+    deploy_cert_manager(version = settings.get("cert_manager_version"))
 
 deploy_capi()
 

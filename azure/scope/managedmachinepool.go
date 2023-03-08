@@ -179,6 +179,7 @@ func buildAgentPoolSpec(managedControlPlane *infrav1exp.AzureManagedControlPlane
 		NodePublicIPPrefixID: managedMachinePool.Spec.NodePublicIPPrefixID,
 		ScaleSetPriority:     managedMachinePool.Spec.ScaleSetPriority,
 		AdditionalTags:       managedMachinePool.Spec.AdditionalTags,
+		KubeletDiskType:      managedMachinePool.Spec.KubeletDiskType,
 	}
 
 	if managedMachinePool.Spec.OSDiskSizeGB != nil {
@@ -309,6 +310,9 @@ func (s *ManagedMachinePoolScope) SetCAPIMachinePoolReplicas(replicas *int32) {
 
 // SetCAPIMachinePoolAnnotation sets the specified annotation on the associated MachinePool.
 func (s *ManagedMachinePoolScope) SetCAPIMachinePoolAnnotation(key, value string) {
+	if s.MachinePool.Annotations == nil {
+		s.MachinePool.Annotations = make(map[string]string)
+	}
 	s.MachinePool.Annotations[key] = value
 }
 

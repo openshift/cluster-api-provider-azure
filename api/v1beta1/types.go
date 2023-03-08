@@ -635,6 +635,24 @@ type ServiceEndpointSpec struct {
 	Locations []string `json:"locations"`
 }
 
+// NetworkInterface defines a network interface.
+type NetworkInterface struct {
+	// SubnetName specifies the subnet in which the new network interface will be placed.
+	SubnetName string `json:"subnetName,omitempty"`
+
+	// PrivateIPConfigs specifies the number of private IP addresses to attach to the interface.
+	// Defaults to 1 if not specified.
+	// +optional
+	PrivateIPConfigs int `json:"privateIPConfigs,omitempty"`
+
+	// AcceleratedNetworking enables or disables Azure accelerated networking. If omitted, it will be set based on
+	// whether the requested VMSize supports accelerated networking.
+	// If AcceleratedNetworking is set to true with a VMSize that does not support it, Azure will return an error.
+	// +kubebuilder:validation:nullable
+	// +optional
+	AcceleratedNetworking *bool `json:"acceleratedNetworking,omitempty"`
+}
+
 // GetControlPlaneSubnet returns the cluster control plane subnet.
 func (n *NetworkSpec) GetControlPlaneSubnet() (SubnetSpec, error) {
 	for _, sn := range n.Subnets {
@@ -855,3 +873,14 @@ type UserManagedBootDiagnostics struct {
 	// +kubebuilder:validation:MaxLength=1024
 	StorageAccountURI string `json:"storageAccountURI"`
 }
+
+// OrchestrationModeType represents the orchestration mode for a Virtual Machine Scale Set backing an AzureMachinePool.
+// +kubebuilder:validation:Enum=Flexible;Uniform
+type OrchestrationModeType string
+
+const (
+	// FlexibleOrchestrationMode treats VMs as individual resources accessible by standard VM APIs.
+	FlexibleOrchestrationMode OrchestrationModeType = "Flexible"
+	// UniformOrchestrationMode treats VMs as identical instances accessible by the VMSS VM API.
+	UniformOrchestrationMode OrchestrationModeType = "Uniform"
+)

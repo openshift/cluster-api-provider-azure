@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/Azure/go-autorest/autorest"
 	"github.com/Azure/go-autorest/autorest/to"
@@ -43,6 +44,8 @@ import (
 	"sigs.k8s.io/cluster-api/util/secret"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+const resourceHealthWarningInitialGracePeriod = 1 * time.Hour
 
 // ManagedControlPlaneScopeParams defines the input parameters used to create a new managed
 // control plane.
@@ -197,6 +200,7 @@ func (s *ManagedControlPlaneScope) PatchObject(ctx context.Context) error {
 			infrav1.SubnetsReadyCondition,
 			infrav1.ManagedClusterRunningCondition,
 			infrav1.AgentPoolsReadyCondition,
+			infrav1.AzureResourceAvailableCondition,
 		}})
 }
 
@@ -497,6 +501,28 @@ func (s *ManagedControlPlaneScope) ManagedClusterSpec(ctx context.Context) azure
 		}
 	}
 
+	if s.ControlPlane.Spec.AutoScalerProfile != nil {
+		managedClusterSpec.AutoScalerProfile = &managedclusters.AutoScalerProfile{
+			BalanceSimilarNodeGroups:      (*string)(s.ControlPlane.Spec.AutoScalerProfile.BalanceSimilarNodeGroups),
+			Expander:                      (*string)(s.ControlPlane.Spec.AutoScalerProfile.Expander),
+			MaxEmptyBulkDelete:            s.ControlPlane.Spec.AutoScalerProfile.MaxEmptyBulkDelete,
+			MaxGracefulTerminationSec:     s.ControlPlane.Spec.AutoScalerProfile.MaxGracefulTerminationSec,
+			MaxNodeProvisionTime:          s.ControlPlane.Spec.AutoScalerProfile.MaxNodeProvisionTime,
+			MaxTotalUnreadyPercentage:     s.ControlPlane.Spec.AutoScalerProfile.MaxTotalUnreadyPercentage,
+			NewPodScaleUpDelay:            s.ControlPlane.Spec.AutoScalerProfile.NewPodScaleUpDelay,
+			OkTotalUnreadyCount:           s.ControlPlane.Spec.AutoScalerProfile.OkTotalUnreadyCount,
+			ScanInterval:                  s.ControlPlane.Spec.AutoScalerProfile.ScanInterval,
+			ScaleDownDelayAfterAdd:        s.ControlPlane.Spec.AutoScalerProfile.ScaleDownDelayAfterAdd,
+			ScaleDownDelayAfterDelete:     s.ControlPlane.Spec.AutoScalerProfile.ScaleDownDelayAfterDelete,
+			ScaleDownDelayAfterFailure:    s.ControlPlane.Spec.AutoScalerProfile.ScaleDownDelayAfterFailure,
+			ScaleDownUnneededTime:         s.ControlPlane.Spec.AutoScalerProfile.ScaleDownUnneededTime,
+			ScaleDownUnreadyTime:          s.ControlPlane.Spec.AutoScalerProfile.ScaleDownUnreadyTime,
+			ScaleDownUtilizationThreshold: s.ControlPlane.Spec.AutoScalerProfile.ScaleDownUtilizationThreshold,
+			SkipNodesWithLocalStorage:     (*string)(s.ControlPlane.Spec.AutoScalerProfile.SkipNodesWithLocalStorage),
+			SkipNodesWithSystemPods:       (*string)(s.ControlPlane.Spec.AutoScalerProfile.SkipNodesWithSystemPods),
+		}
+	}
+
 	return &managedClusterSpec
 }
 
@@ -532,7 +558,12 @@ func (s *ManagedControlPlaneScope) GetAllAgentPoolSpecs() ([]azure.ResourceSpecG
 
 // SetControlPlaneEndpoint sets a control plane endpoint.
 func (s *ManagedControlPlaneScope) SetControlPlaneEndpoint(endpoint clusterv1.APIEndpoint) {
-	s.ControlPlane.Spec.ControlPlaneEndpoint = endpoint
+	if s.ControlPlane.Spec.ControlPlaneEndpoint.Host == "" {
+		s.ControlPlane.Spec.ControlPlaneEndpoint.Host = endpoint.Host
+	}
+	if s.ControlPlane.Spec.ControlPlaneEndpoint.Port == 0 {
+		s.ControlPlane.Spec.ControlPlaneEndpoint.Port = endpoint.Port
+	}
 }
 
 // MakeEmptyKubeConfigSecret creates an empty secret object that is used for storing kubeconfig secret data.
@@ -654,4 +685,24 @@ func (s *ManagedControlPlaneScope) TagsSpecs() []azure.TagsSpec {
 			Annotation: azure.RGTagsLastAppliedAnnotation,
 		},
 	}
+}
+
+// AvailabilityStatusResource refers to the AzureManagedControlPlane.
+func (s *ManagedControlPlaneScope) AvailabilityStatusResource() conditions.Setter {
+	return s.ControlPlane
+}
+
+// AvailabilityStatusResourceURI constructs the ID of the underlying AKS resource.
+func (s *ManagedControlPlaneScope) AvailabilityStatusResourceURI() string {
+	return azure.ManagedClusterID(s.SubscriptionID(), s.ResourceGroup(), s.ControlPlane.Name)
+}
+
+// AvailabilityStatusFilter ignores the health metrics connection error that
+// occurs on startup for every AKS cluster.
+func (s *ManagedControlPlaneScope) AvailabilityStatusFilter(cond *clusterv1.Condition) *clusterv1.Condition {
+	if time.Since(s.ControlPlane.CreationTimestamp.Time) < resourceHealthWarningInitialGracePeriod &&
+		cond.Severity == clusterv1.ConditionSeverityWarning {
+		return conditions.TrueCondition(infrav1.AzureResourceAvailableCondition)
+	}
+	return cond
 }

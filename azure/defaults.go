@@ -21,7 +21,7 @@ import (
 	"net/http"
 
 	"github.com/Azure/go-autorest/autorest"
-	"github.com/Azure/go-autorest/autorest/azure"
+	azureautorest "github.com/Azure/go-autorest/autorest/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/util/tele"
 	"sigs.k8s.io/cluster-api-provider-azure/version"
 )
@@ -49,6 +49,13 @@ const (
 	LinuxOS = "Linux"
 	// WindowsOS is Windows OS value for OSDisk.OSType.
 	WindowsOS = "Windows"
+)
+
+const (
+	// BootstrappingExtensionLinux is the name of the Linux CAPZ bootstrapping VM extension.
+	BootstrappingExtensionLinux = "CAPZ.Linux.Bootstrapping"
+	// BootstrappingExtensionWindows is the name of the Windows CAPZ bootstrapping VM extension.
+	BootstrappingExtensionWindows = "CAPZ.Windows.Bootstrapping"
 )
 
 const (
@@ -174,7 +181,10 @@ func GenerateVNetLinkName(vnetName string) string {
 }
 
 // GenerateNICName generates the name of a network interface based on the name of a VM.
-func GenerateNICName(machineName string) string {
+func GenerateNICName(machineName string, multiNIC bool, index int) string {
+	if multiNIC {
+		return fmt.Sprintf("%s-nic-%d", machineName, index)
+	}
 	return fmt.Sprintf("%s-nic", machineName)
 }
 
@@ -291,6 +301,11 @@ func VirtualNetworkLinkID(subscriptionID, resourceGroup, privateDNSZoneName, vir
 	return fmt.Sprintf("subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/privateDnsZones/%s/virtualNetworkLinks/%s", subscriptionID, resourceGroup, privateDNSZoneName, virtualNetworkLinkName)
 }
 
+// ManagedClusterID returns the azure resource ID for a given managed cluster.
+func ManagedClusterID(subscriptionID, resourceGroup, managedClusterName string) string {
+	return fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ContainerService/managedClusters/%s", subscriptionID, resourceGroup, managedClusterName)
+}
+
 // GetBootstrappingVMExtension returns the CAPZ Bootstrapping VM extension.
 // The CAPZ Bootstrapping extension is a simple clone of https://github.com/Azure/custom-script-extension-linux for Linux or
 // https://docs.microsoft.com/en-us/azure/virtual-machines/extensions/custom-script-windows for Windows.
@@ -298,10 +313,10 @@ func VirtualNetworkLinkID(subscriptionID, resourceGroup, privateDNSZoneName, vir
 // Its role is to detect and report Kubernetes bootstrap failure or success.
 func GetBootstrappingVMExtension(osType string, cloud string, vmName string) *ExtensionSpec {
 	// currently, the bootstrap extension is only available in AzurePublicCloud.
-	if osType == LinuxOS && cloud == azure.PublicCloud.Name {
+	if osType == LinuxOS && cloud == azureautorest.PublicCloud.Name {
 		// The command checks for the existence of the bootstrapSentinelFile on the machine, with retries and sleep between retries.
 		return &ExtensionSpec{
-			Name:      "CAPZ.Linux.Bootstrapping",
+			Name:      BootstrappingExtensionLinux,
 			VMName:    vmName,
 			Publisher: "Microsoft.Azure.ContainerUpstream",
 			Version:   "1.0",
@@ -309,11 +324,11 @@ func GetBootstrappingVMExtension(osType string, cloud string, vmName string) *Ex
 				"commandToExecute": LinuxBootstrapExtensionCommand,
 			},
 		}
-	} else if osType == WindowsOS && cloud == azure.PublicCloud.Name {
+	} else if osType == WindowsOS && cloud == azureautorest.PublicCloud.Name {
 		// This command for the existence of the bootstrapSentinelFile on the machine, with retries and sleep between reties.
 		// If the file is not present after the retries are exhausted the extension fails with return code '-2' - ERROR_FILE_NOT_FOUND.
 		return &ExtensionSpec{
-			Name:      "CAPZ.Windows.Bootstrapping",
+			Name:      BootstrappingExtensionWindows,
 			VMName:    vmName,
 			Publisher: "Microsoft.Azure.ContainerUpstream",
 			Version:   "1.0",

@@ -30,6 +30,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2020-10-01/resources"
 	"github.com/Azure/go-autorest/autorest/azure/auth"
+	"github.com/blang/semver"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -38,6 +39,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/cluster-api-provider-azure/azure"
 	e2e_namespace "sigs.k8s.io/cluster-api-provider-azure/test/e2e/kubernetes/namespace"
+	azureutil "sigs.k8s.io/cluster-api-provider-azure/util/azure"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	kubeadmv1 "sigs.k8s.io/cluster-api/controlplane/kubeadm/api/v1beta1"
 	"sigs.k8s.io/cluster-api/test/framework"
@@ -198,7 +200,7 @@ func ExpectResourceGroupToBe404(ctx context.Context) {
 	settings, err := auth.GetSettingsFromEnvironment()
 	Expect(err).NotTo(HaveOccurred())
 	subscriptionID := settings.GetSubscriptionID()
-	authorizer, err := settings.GetAuthorizer()
+	authorizer, err := azureutil.GetAuthorizer(settings)
 	Expect(err).NotTo(HaveOccurred())
 	groupsClient := resources.NewGroupsClient(subscriptionID)
 	groupsClient.Authorizer = authorizer
@@ -260,7 +262,13 @@ func EnsureControlPlaneInitialized(ctx context.Context, input clusterctl.ApplyCl
 		InstallCalicoHelmChart(ctx, input, cluster.Spec.ClusterNetwork.Pods.CIDRBlocks, hasWindows)
 	}
 	controlPlane := discoveryAndWaitForControlPlaneInitialized(ctx, input, result)
-	InstallAzureDiskCSIDriverHelmChart(ctx, input)
+	v, err := semver.ParseTolerant(input.ConfigCluster.KubernetesVersion)
+	Expect(err).NotTo(HaveOccurred())
+	if v.GTE(semver.MustParse("1.23.0")) {
+		InstallAzureDiskCSIDriverHelmChart(ctx, input, hasWindows)
+	} else {
+		Logf("Skipping Azure Disk CSI Driver installation for Kubernetes version %s", input.ConfigCluster.KubernetesVersion)
+	}
 	result.ControlPlane = controlPlane
 }
 

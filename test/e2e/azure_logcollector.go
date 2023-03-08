@@ -29,13 +29,14 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2021-11-01/compute"
-	autorest "github.com/Azure/go-autorest/autorest/azure"
+	azureautorest "github.com/Azure/go-autorest/autorest/azure"
 	"github.com/Azure/go-autorest/autorest/azure/auth"
 	"github.com/pkg/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-azure/azure"
 	infrav1exp "sigs.k8s.io/cluster-api-provider-azure/exp/api/v1beta1"
+	azureutil "sigs.k8s.io/cluster-api-provider-azure/util/azure"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	expv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
 	"sigs.k8s.io/cluster-api/test/framework"
@@ -397,7 +398,7 @@ func collectVMBootLog(ctx context.Context, am *infrav1.AzureMachine, outputPath 
 	}
 
 	resourceID := strings.TrimPrefix(*am.Spec.ProviderID, azure.ProviderIDPrefix)
-	resource, err := autorest.ParseResourceID(resourceID)
+	resource, err := azureautorest.ParseResourceID(resourceID)
 	if err != nil {
 		return errors.Wrap(err, "failed to parse resource id")
 	}
@@ -408,7 +409,7 @@ func collectVMBootLog(ctx context.Context, am *infrav1.AzureMachine, outputPath 
 	}
 
 	vmClient := compute.NewVirtualMachinesClient(settings.GetSubscriptionID())
-	vmClient.Authorizer, err = settings.GetAuthorizer()
+	vmClient.Authorizer, err = azureutil.GetAuthorizer(settings)
 	if err != nil {
 		return errors.Wrap(err, "failed to get authorizer")
 	}
@@ -427,7 +428,7 @@ func collectVMSSBootLog(ctx context.Context, providerID string, outputPath strin
 	v := strings.Split(resourceID, "/")
 	instanceID := v[len(v)-1]
 	resourceID = strings.TrimSuffix(resourceID, "/virtualMachines/"+instanceID)
-	resource, err := autorest.ParseResourceID(resourceID)
+	resource, err := azureautorest.ParseResourceID(resourceID)
 	if err != nil {
 		return errors.Wrap(err, "failed to parse resource id")
 	}
@@ -440,7 +441,7 @@ func collectVMSSBootLog(ctx context.Context, providerID string, outputPath strin
 	}
 
 	vmssClient := compute.NewVirtualMachineScaleSetVMsClient(settings.GetSubscriptionID())
-	vmssClient.Authorizer, err = settings.GetAuthorizer()
+	vmssClient.Authorizer, err = azureutil.GetAuthorizer(settings)
 	if err != nil {
 		return errors.Wrap(err, "failed to get authorizer")
 	}

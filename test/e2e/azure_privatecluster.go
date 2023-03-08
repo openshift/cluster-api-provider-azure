@@ -31,7 +31,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2021-08-01/network"
 	"github.com/Azure/azure-sdk-for-go/services/privatedns/mgmt/2018-09-01/privatedns"
 	"github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2019-05-01/resources"
-	azuresdk "github.com/Azure/go-autorest/autorest/azure"
+	azureautorest "github.com/Azure/go-autorest/autorest/azure"
 	"github.com/Azure/go-autorest/autorest/azure/auth"
 	"github.com/Azure/go-autorest/autorest/to"
 	. "github.com/onsi/ginkgo/v2"
@@ -41,6 +41,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/cluster-api-provider-azure/azure"
+	azureutil "sigs.k8s.io/cluster-api-provider-azure/util/azure"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	capi_e2e "sigs.k8s.io/cluster-api/test/e2e"
 	"sigs.k8s.io/cluster-api/test/framework"
@@ -183,7 +184,7 @@ func AzurePrivateClusterSpec(ctx context.Context, inputGetter func() AzurePrivat
 		Expect(err).To(BeNil())
 
 		azureBastionClient := network.NewBastionHostsClient(settings.GetSubscriptionID())
-		azureBastionClient.Authorizer, err = settings.GetAuthorizer()
+		azureBastionClient.Authorizer, err = azureutil.GetAuthorizer(settings)
 		Expect(err).To(BeNil())
 
 		groupName := os.Getenv(AzureResourceGroup)
@@ -223,7 +224,7 @@ func SetupExistingVNet(ctx context.Context, vnetCidr string, cpSubnetCidrs, node
 	settings, err := auth.GetSettingsFromEnvironment()
 	Expect(err).NotTo(HaveOccurred())
 	subscriptionID := settings.GetSubscriptionID()
-	authorizer, err := settings.GetAuthorizer()
+	authorizer, err := azureutil.GetAuthorizer(settings)
 	Expect(err).NotTo(HaveOccurred())
 	groupClient := resources.NewGroupsClient(subscriptionID)
 	groupClient.Authorizer = authorizer
@@ -428,7 +429,7 @@ func SetupExistingVNet(ctx context.Context, vnetCidr string, cpSubnetCidrs, node
 }
 
 func getAPIVersion(resourceID string) (string, error) {
-	parsed, err := azuresdk.ParseResourceID(resourceID)
+	parsed, err := azureautorest.ParseResourceID(resourceID)
 	if err != nil {
 		return "", errors.Wrap(err, fmt.Sprintf("unable to parse resource ID %q", resourceID))
 	}
@@ -456,13 +457,13 @@ func getClientIDforMSI(resourceID string) string {
 	settings, err := auth.GetSettingsFromEnvironment()
 	Expect(err).NotTo(HaveOccurred())
 	subscriptionID := settings.GetSubscriptionID()
-	authorizer, err := settings.GetAuthorizer()
+	authorizer, err := azureutil.GetAuthorizer(settings)
 	Expect(err).NotTo(HaveOccurred())
 
 	msiClient := msi.NewUserAssignedIdentitiesClient(subscriptionID)
 	msiClient.Authorizer = authorizer
 
-	parsed, err := azuresdk.ParseResourceID(resourceID)
+	parsed, err := azureautorest.ParseResourceID(resourceID)
 	Expect(err).NotTo(HaveOccurred())
 
 	id, err := msiClient.Get(context.TODO(), parsed.ResourceGroup, parsed.ResourceName)

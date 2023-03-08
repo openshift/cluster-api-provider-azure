@@ -17,15 +17,17 @@ limitations under the License.
 package agentpools
 
 import (
+	"context"
 	"reflect"
 	"testing"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2021-05-01/containerservice"
+	"github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2022-03-01/containerservice"
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	"github.com/pkg/errors"
+	"k8s.io/utils/pointer"
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-azure/azure"
 )
@@ -112,12 +114,13 @@ var (
 			MinCount:            to.Int32Ptr(1),                                               // updates if changed
 			Mode:                containerservice.AgentPoolMode("fake-mode"),                  // updates if changed
 			NodeLabels:          map[string]*string{"fake-label": to.StringPtr("fake-value")}, // updates if changed
-			NodeTaints:          &[]string{"fake-taint"},
-			OrchestratorVersion: to.StringPtr("fake-version"), // updates if changed
+			NodeTaints:          &[]string{"fake-taint"},                                      // updates if changed
+			OrchestratorVersion: to.StringPtr("fake-version"),                                 // updates if changed
 			OsDiskSizeGB:        to.Int32Ptr(2),
 			OsDiskType:          containerservice.OSDiskType("fake-os-disk-type"),
 			OsType:              containerservice.OSType("fake-os-type"),
 			ProvisioningState:   to.StringPtr("Succeeded"),
+			Tags:                map[string]*string{"fake": pointer.String("tag")},
 			Type:                containerservice.AgentPoolTypeVirtualMachineScaleSets,
 			VMSize:              to.StringPtr("fake-sku"),
 			VnetSubnetID:        to.StringPtr("fake-vnet-subnet-id"),
@@ -135,12 +138,13 @@ var (
 			MinCount:            to.Int32Ptr(1),                                               // updates if changed
 			Mode:                containerservice.AgentPoolMode("fake-mode"),                  // updates if changed
 			NodeLabels:          map[string]*string{"fake-label": to.StringPtr("fake-value")}, // updates if changed
-			NodeTaints:          &[]string{"fake-taint"},
-			OrchestratorVersion: to.StringPtr("fake-version"), // updates if changed
+			NodeTaints:          &[]string{"fake-taint"},                                      // updates if changed
+			OrchestratorVersion: to.StringPtr("fake-version"),                                 // updates if changed
 			OsDiskSizeGB:        to.Int32Ptr(2),
 			OsDiskType:          containerservice.OSDiskType("fake-os-disk-type"),
 			OsType:              containerservice.OSType("fake-os-type"),
 			ProvisioningState:   to.StringPtr("Succeeded"),
+			Tags:                map[string]*string{"fake": pointer.String("tag")},
 			Type:                containerservice.AgentPoolTypeVirtualMachineScaleSets,
 			VMSize:              to.StringPtr("fake-sku"),
 			VnetSubnetID:        to.StringPtr("fake-vnet-subnet-id"),
@@ -158,12 +162,13 @@ var (
 			MinCount:            to.Int32Ptr(3),                                               // updates if changed
 			Mode:                containerservice.AgentPoolMode("fake-mode"),                  // updates if changed
 			NodeLabels:          map[string]*string{"fake-label": to.StringPtr("fake-value")}, // updates if changed
-			NodeTaints:          &[]string{"fake-taint"},
-			OrchestratorVersion: to.StringPtr("fake-version"), // updates if changed
+			NodeTaints:          &[]string{"fake-taint"},                                      // updates if changed
+			OrchestratorVersion: to.StringPtr("fake-version"),                                 // updates if changed
 			OsDiskSizeGB:        to.Int32Ptr(2),
 			OsDiskType:          containerservice.OSDiskType("fake-os-disk-type"),
 			OsType:              containerservice.OSType("fake-os-type"),
 			ProvisioningState:   to.StringPtr("Succeeded"),
+			Tags:                map[string]*string{"fake": pointer.String("tag")},
 			Type:                containerservice.AgentPoolTypeVirtualMachineScaleSets,
 			VMSize:              to.StringPtr("fake-sku"),
 			VnetSubnetID:        to.StringPtr("fake-vnet-subnet-id"),
@@ -178,15 +183,16 @@ var (
 			EnableUltraSSD:      to.BoolPtr(true),
 			MaxCount:            to.Int32Ptr(5), // updates if changed
 			MaxPods:             to.Int32Ptr(10),
-			MinCount:            to.Int32Ptr(3),                                               // updates if changed
+			MinCount:            to.Int32Ptr(1),                                               // updates if changed
 			Mode:                containerservice.AgentPoolMode("fake-old-mode"),              // updates if changed
 			NodeLabels:          map[string]*string{"fake-label": to.StringPtr("fake-value")}, // updates if changed
-			NodeTaints:          &[]string{"fake-taint"},
-			OrchestratorVersion: to.StringPtr("fake-version"), // updates if changed
+			NodeTaints:          &[]string{"fake-taint"},                                      // updates if changed
+			OrchestratorVersion: to.StringPtr("fake-version"),                                 // updates if changed
 			OsDiskSizeGB:        to.Int32Ptr(2),
 			OsDiskType:          containerservice.OSDiskType("fake-os-disk-type"),
 			OsType:              containerservice.OSType("fake-os-type"),
 			ProvisioningState:   to.StringPtr("Succeeded"),
+			Tags:                map[string]*string{"fake": pointer.String("tag")},
 			Type:                containerservice.AgentPoolTypeVirtualMachineScaleSets,
 			VMSize:              to.StringPtr("fake-sku"),
 			VnetSubnetID:        to.StringPtr("fake-vnet-subnet-id"),
@@ -201,17 +207,42 @@ var (
 			EnableUltraSSD:    to.BoolPtr(true),
 			MaxCount:          to.Int32Ptr(5), // updates if changed
 			MaxPods:           to.Int32Ptr(10),
-			MinCount:          to.Int32Ptr(3),                                  // updates if changed
+			MinCount:          to.Int32Ptr(1),                                  // updates if changed
 			Mode:              containerservice.AgentPoolMode("fake-old-mode"), // updates if changed
 			NodeLabels: map[string]*string{
 				"fake-label":     to.StringPtr("fake-value"),
 				"fake-old-label": to.StringPtr("fake-old-value")}, // updates if changed
-			NodeTaints:          &[]string{"fake-taint"},
+			NodeTaints:          &[]string{"fake-taint"},      // updates if changed
 			OrchestratorVersion: to.StringPtr("fake-version"), // updates if changed
 			OsDiskSizeGB:        to.Int32Ptr(2),
 			OsDiskType:          containerservice.OSDiskType("fake-os-disk-type"),
 			OsType:              containerservice.OSType("fake-os-type"),
 			ProvisioningState:   to.StringPtr("Succeeded"),
+			Tags:                map[string]*string{"fake": pointer.String("tag")},
+			Type:                containerservice.AgentPoolTypeVirtualMachineScaleSets,
+			VMSize:              to.StringPtr("fake-sku"),
+			VnetSubnetID:        to.StringPtr("fake-vnet-subnet-id"),
+		},
+	}
+
+	fakeAgentPoolNodeTaintsOutOfDate = containerservice.AgentPool{
+		ManagedClusterAgentPoolProfileProperties: &containerservice.ManagedClusterAgentPoolProfileProperties{
+			AvailabilityZones:   &[]string{"fake-zone"},
+			Count:               to.Int32Ptr(1),   // updates if changed
+			EnableAutoScaling:   to.BoolPtr(true), // updates if changed
+			EnableUltraSSD:      to.BoolPtr(true),
+			MaxCount:            to.Int32Ptr(5), // updates if changed
+			MaxPods:             to.Int32Ptr(10),
+			MinCount:            to.Int32Ptr(1),                                               // updates if changed
+			Mode:                containerservice.AgentPoolMode("fake-mode"),                  // updates if changed
+			NodeLabels:          map[string]*string{"fake-label": to.StringPtr("fake-value")}, // updates if changed
+			NodeTaints:          &[]string{"fake-old-taint"},                                  // updates if changed
+			OrchestratorVersion: to.StringPtr("fake-version"),                                 // updates if changed
+			OsDiskSizeGB:        to.Int32Ptr(2),
+			OsDiskType:          containerservice.OSDiskType("fake-os-disk-type"),
+			OsType:              containerservice.OSType("fake-os-type"),
+			ProvisioningState:   to.StringPtr("Succeeded"),
+			Tags:                map[string]*string{"fake": pointer.String("tag")},
 			Type:                containerservice.AgentPoolTypeVirtualMachineScaleSets,
 			VMSize:              to.StringPtr("fake-sku"),
 			VnetSubnetID:        to.StringPtr("fake-vnet-subnet-id"),
@@ -386,6 +417,13 @@ func TestParameters(t *testing.T) {
 			expectedError: nil,
 		},
 		{
+			name:          "parameters with an existing agent pool and update needed on node taints",
+			spec:          fakeAgentPoolSpecWithAutoscaling,
+			existing:      fakeAgentPoolNodeTaintsOutOfDate,
+			expected:      fakeAgentPoolWithProvisioningState(""),
+			expectedError: nil,
+		},
+		{
 			name:          "scale to zero",
 			spec:          fakeAgentPoolSpecWithZeroReplicas,
 			existing:      fakeAgentPoolWithAutoscalingAndCount(false, 1),
@@ -399,7 +437,7 @@ func TestParameters(t *testing.T) {
 			g := NewWithT(t)
 			t.Parallel()
 
-			result, err := tc.spec.Parameters(tc.existing)
+			result, err := tc.spec.Parameters(context.TODO(), tc.existing)
 			if tc.expectedError != nil {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err).To(MatchError(tc.expectedError))

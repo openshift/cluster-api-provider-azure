@@ -19,13 +19,14 @@ package agentpools
 import (
 	"context"
 
-	"github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2021-05-01/containerservice"
+	"github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2022-03-01/containerservice"
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/pkg/errors"
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-azure/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/async"
 	"sigs.k8s.io/cluster-api-provider-azure/util/tele"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
 const serviceName = "agentpools"
@@ -84,10 +85,10 @@ func (s *Service) Reconcile(ctx context.Context) error {
 			}
 			// When autoscaling is set, add the annotation to the machine pool and update the replica count.
 			if to.Bool(agentPool.EnableAutoScaling) {
-				s.scope.SetCAPIMachinePoolAnnotation(azure.ReplicasManagedByAutoscalerAnnotation, "true")
+				s.scope.SetCAPIMachinePoolAnnotation(clusterv1.ReplicasManagedByAnnotation, "true")
 				s.scope.SetCAPIMachinePoolReplicas(agentPool.Count)
 			} else { // Otherwise, remove the annotation.
-				s.scope.RemoveCAPIMachinePoolAnnotation(azure.ReplicasManagedByAutoscalerAnnotation)
+				s.scope.RemoveCAPIMachinePoolAnnotation(clusterv1.ReplicasManagedByAnnotation)
 			}
 		}
 	} else {

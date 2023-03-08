@@ -32,6 +32,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	infrav1exp "sigs.k8s.io/cluster-api-provider-azure/exp/api/v1beta1"
+	azureutil "sigs.k8s.io/cluster-api-provider-azure/util/azure"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	expv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util/conditions"
@@ -50,7 +51,7 @@ func AKSPublicIPPrefixSpec(ctx context.Context, inputGetter func() AKSPublicIPPr
 	settings, err := auth.GetSettingsFromEnvironment()
 	Expect(err).NotTo(HaveOccurred())
 	subscriptionID := settings.GetSubscriptionID()
-	auth, err := settings.GetAuthorizer()
+	auth, err := azureutil.GetAuthorizer(settings)
 	Expect(err).NotTo(HaveOccurred())
 
 	mgmtClient := bootstrapClusterProxy.GetClient()
@@ -154,11 +155,13 @@ func AKSPublicIPPrefixSpec(ctx context.Context, inputGetter func() AKSPublicIPPr
 	}, input.WaitIntervals...).Should(Succeed())
 
 	By("Scaling the MachinePool to 2 nodes")
-	err = mgmtClient.Get(ctx, client.ObjectKeyFromObject(machinePool), machinePool)
-	Expect(err).NotTo(HaveOccurred())
-	machinePool.Spec.Replicas = to.Int32Ptr(2)
-	err = mgmtClient.Update(ctx, machinePool)
-	Expect(err).NotTo(HaveOccurred())
+	Eventually(func(g Gomega) {
+		err = mgmtClient.Get(ctx, client.ObjectKeyFromObject(machinePool), machinePool)
+		g.Expect(err).NotTo(HaveOccurred())
+		machinePool.Spec.Replicas = to.Int32Ptr(2)
+		err = mgmtClient.Update(ctx, machinePool)
+		g.Expect(err).NotTo(HaveOccurred())
+	}, input.WaitIntervals...).Should(Succeed())
 
 	By("Verifying the AzureManagedMachinePool becomes ready")
 	Eventually(func(g Gomega) {

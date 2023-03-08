@@ -18,6 +18,7 @@ package azure
 
 import (
 	"reflect"
+	"strings"
 
 	"github.com/google/go-cmp/cmp"
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
@@ -66,6 +67,8 @@ type ScaleSetSpec struct {
 	DiagnosticsProfile           *infrav1.Diagnostics
 	FailureDomains               []string
 	VMExtensions                 []infrav1.VMExtension
+	NetworkInterfaces            []infrav1.NetworkInterface
+	OrchestrationMode            infrav1.OrchestrationModeType
 }
 
 // TagsSpec defines the specification for a set of tags.
@@ -91,12 +94,13 @@ type ExtensionSpec struct {
 type (
 	// VMSSVM defines a VM in a virtual machine scale set.
 	VMSSVM struct {
-		ID               string                    `json:"id,omitempty"`
-		InstanceID       string                    `json:"instanceID,omitempty"`
-		Image            infrav1.Image             `json:"image,omitempty"`
-		Name             string                    `json:"name,omitempty"`
-		AvailabilityZone string                    `json:"availabilityZone,omitempty"`
-		State            infrav1.ProvisioningState `json:"vmState,omitempty"`
+		ID                 string                    `json:"id,omitempty"`
+		InstanceID         string                    `json:"instanceID,omitempty"`
+		Image              infrav1.Image             `json:"image,omitempty"`
+		Name               string                    `json:"name,omitempty"`
+		AvailabilityZone   string                    `json:"availabilityZone,omitempty"`
+		State              infrav1.ProvisioningState `json:"vmState,omitempty"`
+		BootstrappingState infrav1.ProvisioningState `json:"bootstrappingState,omitempty"`
 	}
 
 	// VMSS defines a virtual machine scale set.
@@ -136,7 +140,22 @@ func (vmss VMSS) InstancesByProviderID() map[string]VMSSVM {
 
 // ProviderID returns the K8s provider ID for the VMSS instance.
 func (vm VMSSVM) ProviderID() string {
+	if vm.IsFlex() {
+		// ProviderID for Flex scaleset VMs looks like this:
+		// azure:///subscriptions/<sub_id>/resourceGroups/my-cluster/providers/Microsoft.Compute/virtualMachines/my-cluster_1234abcd
+		splitOnSlash := strings.Split(vm.ID, "/")
+		elems := splitOnSlash[:len(splitOnSlash)-4]
+		elems = append(elems, splitOnSlash[len(splitOnSlash)-2:]...)
+		return ProviderIDPrefix + strings.Join(elems, "/")
+	}
+	// ProviderID for Uniform scaleset VMs looks like this:
+	// azure:///subscriptions/<sub_id>/resourceGroups/my-cluster/providers/Microsoft.Compute/virtualMachineScaleSets/my-cluster-mp-0/virtualMachines/0
 	return ProviderIDPrefix + vm.ID
+}
+
+// IsFlex returns true if the VMSS instance is a Flex VM.
+func (vm VMSSVM) IsFlex() bool {
+	return vm.InstanceID == ""
 }
 
 // HasLatestModelAppliedToAll returns true if all VMSS instance have the latest model applied.

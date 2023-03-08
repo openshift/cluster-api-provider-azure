@@ -19,7 +19,7 @@ package v1beta1
 import (
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2021-05-01/containerservice"
+	"github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2022-03-01/containerservice"
 	"github.com/Azure/go-autorest/autorest/to"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -82,6 +82,20 @@ func TestAzureManagedMachinePoolUpdatingWebhook(t *testing.T) {
 		old     *AzureManagedMachinePool
 		wantErr bool
 	}{
+		{
+			name: "Cannot change Name of the agentpool",
+			new: &AzureManagedMachinePool{
+				Spec: AzureManagedMachinePoolSpec{
+					Name: to.StringPtr("pool-new"),
+				},
+			},
+			old: &AzureManagedMachinePool{
+				Spec: AzureManagedMachinePoolSpec{
+					Name: to.StringPtr("pool-old"),
+				},
+			},
+			wantErr: true,
+		},
 		{
 			name: "Cannot change SKU of the agentpool",
 			new: &AzureManagedMachinePool{

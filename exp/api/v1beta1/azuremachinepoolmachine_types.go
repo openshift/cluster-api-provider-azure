@@ -37,7 +37,8 @@ type (
 		ProviderID string `json:"providerID"`
 
 		// InstanceID is the identification of the Machine Instance within the VMSS
-		InstanceID string `json:"instanceID"`
+		// +optional
+		InstanceID string `json:"instanceID,omitempty"`
 	}
 
 	// AzureMachinePoolMachineStatus defines the observed state of AzureMachinePoolMachine.
@@ -90,7 +91,8 @@ type (
 		// LatestModelApplied indicates the instance is running the most up-to-date VMSS model. A VMSS model describes
 		// the image version the VM is running. If the instance is not running the latest model, it means the instance
 		// may not be running the version of Kubernetes the Machine Pool has specified and needs to be updated.
-		LatestModelApplied bool `json:"latestModelApplied"`
+		// +optional
+		LatestModelApplied bool `json:"latestModelApplied,omitempty"`
 
 		// Ready is true when the provider resource is ready.
 		// +optional
@@ -105,6 +107,7 @@ type (
 	// +kubebuilder:printcolumn:name="State",type="string",JSONPath=".status.provisioningState",description="Azure VMSS VM provisioning state"
 	// +kubebuilder:printcolumn:name="Cluster",type="string",priority=1,JSONPath=".metadata.labels.cluster\\.x-k8s\\.io/cluster-name",description="Cluster to which this AzureMachinePoolMachine belongs"
 	// +kubebuilder:printcolumn:name="VMSS VM ID",type="string",priority=1,JSONPath=".spec.providerID",description="Azure VMSS VM ID"
+	// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",description="Time duration since creation of this AzureMachinePoolMachine"
 	// +kubebuilder:storageversion
 
 	// AzureMachinePoolMachine is the Schema for the azuremachinepoolmachines API.

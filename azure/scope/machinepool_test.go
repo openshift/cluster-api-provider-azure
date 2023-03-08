@@ -22,7 +22,7 @@ import (
 	"reflect"
 	"testing"
 
-	autorestazure "github.com/Azure/go-autorest/autorest/azure"
+	azureautorest "github.com/Azure/go-autorest/autorest/azure"
 	"github.com/Azure/go-autorest/autorest/azure/auth"
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/golang/mock/gomock"
@@ -93,6 +93,89 @@ func TestMachinePoolScope_Name(t *testing.T) {
 
 			if tt.testLength && len(got) > 9 {
 				t.Errorf("Length of MachinePoolScope.Name() = %v, want less than %v", len(got), 9)
+			}
+		})
+	}
+}
+func TestMachinePoolScope_NetworkInterfaces(t *testing.T) {
+	tests := []struct {
+		name             string
+		machinePoolScope MachinePoolScope
+		want             int
+	}{
+		{
+			name: "zero network interfaces",
+			machinePoolScope: MachinePoolScope{
+				MachinePool: nil,
+				AzureMachinePool: &infrav1exp.AzureMachinePool{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "default-nics",
+					},
+					Spec: infrav1exp.AzureMachinePoolSpec{
+						Template: infrav1exp.AzureMachinePoolMachineTemplate{
+							AcceleratedNetworking: to.BoolPtr(true),
+							SubnetName:            "node-subnet",
+						},
+					},
+				},
+				ClusterScoper: nil,
+			},
+			want: 0,
+		},
+		{
+			name: "one network interface",
+			machinePoolScope: MachinePoolScope{
+				MachinePool: nil,
+				AzureMachinePool: &infrav1exp.AzureMachinePool{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "single-nic",
+					},
+					Spec: infrav1exp.AzureMachinePoolSpec{
+						Template: infrav1exp.AzureMachinePoolMachineTemplate{
+							NetworkInterfaces: []infrav1.NetworkInterface{
+								{
+									SubnetName: "node-subnet",
+								},
+							},
+						},
+					},
+				},
+				ClusterScoper: nil,
+			},
+			want: 1,
+		},
+		{
+			name: "two network interfaces",
+			machinePoolScope: MachinePoolScope{
+				MachinePool: nil,
+				AzureMachinePool: &infrav1exp.AzureMachinePool{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "dual-nics",
+					},
+					Spec: infrav1exp.AzureMachinePoolSpec{
+						Template: infrav1exp.AzureMachinePoolMachineTemplate{
+							NetworkInterfaces: []infrav1.NetworkInterface{
+								{
+									SubnetName: "control-plane-subnet",
+								},
+								{
+									SubnetName: "node-subnet",
+								},
+							},
+						},
+					},
+				},
+				ClusterScoper: nil,
+			},
+			want: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := len(tt.machinePoolScope.AzureMachinePool.Spec.Template.NetworkInterfaces)
+			if got != tt.want {
+				t.Errorf("MachinePoolScope.Name() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -309,7 +392,6 @@ func TestMachinePoolScope_GetVMImage(t *testing.T) {
 	clusterMock.EXPECT().BaseURI().AnyTimes()
 	clusterMock.EXPECT().Location().AnyTimes()
 	clusterMock.EXPECT().SubscriptionID().AnyTimes()
-
 	cases := []struct {
 		Name   string
 		Setup  func(mp *expv1.MachinePool, amp *infrav1exp.AzureMachinePool)
@@ -665,8 +747,8 @@ func TestMachinePoolScope_VMSSExtensionSpecs(t *testing.T) {
 				ClusterScoper: &ClusterScope{
 					AzureClients: AzureClients{
 						EnvironmentSettings: auth.EnvironmentSettings{
-							Environment: autorestazure.Environment{
-								Name: autorestazure.PublicCloud.Name,
+							Environment: azureautorest.Environment{
+								Name: azureautorest.PublicCloud.Name,
 							},
 						},
 					},
@@ -711,8 +793,8 @@ func TestMachinePoolScope_VMSSExtensionSpecs(t *testing.T) {
 				ClusterScoper: &ClusterScope{
 					AzureClients: AzureClients{
 						EnvironmentSettings: auth.EnvironmentSettings{
-							Environment: autorestazure.Environment{
-								Name: autorestazure.USGovernmentCloud.Name,
+							Environment: azureautorest.Environment{
+								Name: azureautorest.USGovernmentCloud.Name,
 							},
 						},
 					},
@@ -745,8 +827,8 @@ func TestMachinePoolScope_VMSSExtensionSpecs(t *testing.T) {
 				ClusterScoper: &ClusterScope{
 					AzureClients: AzureClients{
 						EnvironmentSettings: auth.EnvironmentSettings{
-							Environment: autorestazure.Environment{
-								Name: autorestazure.PublicCloud.Name,
+							Environment: azureautorest.Environment{
+								Name: azureautorest.PublicCloud.Name,
 							},
 						},
 					},
@@ -792,8 +874,8 @@ func TestMachinePoolScope_VMSSExtensionSpecs(t *testing.T) {
 				ClusterScoper: &ClusterScope{
 					AzureClients: AzureClients{
 						EnvironmentSettings: auth.EnvironmentSettings{
-							Environment: autorestazure.Environment{
-								Name: autorestazure.USGovernmentCloud.Name,
+							Environment: azureautorest.Environment{
+								Name: azureautorest.USGovernmentCloud.Name,
 							},
 						},
 					},
@@ -825,8 +907,8 @@ func TestMachinePoolScope_VMSSExtensionSpecs(t *testing.T) {
 				ClusterScoper: &ClusterScope{
 					AzureClients: AzureClients{
 						EnvironmentSettings: auth.EnvironmentSettings{
-							Environment: autorestazure.Environment{
-								Name: autorestazure.PublicCloud.Name,
+							Environment: azureautorest.Environment{
+								Name: azureautorest.PublicCloud.Name,
 							},
 						},
 					},
@@ -858,8 +940,8 @@ func TestMachinePoolScope_VMSSExtensionSpecs(t *testing.T) {
 				ClusterScoper: &ClusterScope{
 					AzureClients: AzureClients{
 						EnvironmentSettings: auth.EnvironmentSettings{
-							Environment: autorestazure.Environment{
-								Name: autorestazure.USGovernmentCloud.Name,
+							Environment: azureautorest.Environment{
+								Name: azureautorest.USGovernmentCloud.Name,
 							},
 						},
 					},
@@ -904,8 +986,8 @@ func TestMachinePoolScope_VMSSExtensionSpecs(t *testing.T) {
 				ClusterScoper: &ClusterScope{
 					AzureClients: AzureClients{
 						EnvironmentSettings: auth.EnvironmentSettings{
-							Environment: autorestazure.Environment{
-								Name: autorestazure.PublicCloud.Name,
+							Environment: azureautorest.Environment{
+								Name: azureautorest.PublicCloud.Name,
 							},
 						},
 					},

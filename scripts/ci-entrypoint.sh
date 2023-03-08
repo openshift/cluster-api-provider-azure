@@ -132,31 +132,46 @@ create_cluster() {
 }
 
 install_addons() {
-    # Get CCM cluster CIDRs from Cluster object if not set
-    if [[ -z "${CCM_CLUSTER_CIDR:-}" ]]; then
-        CCM_CLUSTER_CIDR=$(${KUBECTL} get cluster "${CLUSTER_NAME}" -o=jsonpath='{.spec.clusterNetwork.pods.cidrBlocks[0]}')
-        if CIDR1=$(${KUBECTL} get cluster "${CLUSTER_NAME}" -o=jsonpath='{.spec.clusterNetwork.pods.cidrBlocks[1]}' 2> /dev/null); then
-            CCM_CLUSTER_CIDR="${CCM_CLUSTER_CIDR:-}\,${CIDR1}"
-        fi
-    fi
-    echo "CCM cluster CIDR: ${CCM_CLUSTER_CIDR:-}"
+    # Get cluster CIDRs from Cluster object
+    CIDR0=$(${KUBECTL} get cluster "${CLUSTER_NAME}" -o=jsonpath='{.spec.clusterNetwork.pods.cidrBlocks[0]}')
+    CIDR1=$(${KUBECTL} get cluster "${CLUSTER_NAME}" -o=jsonpath='{.spec.clusterNetwork.pods.cidrBlocks[1]}' 2> /dev/null) || true
 
     # export the target cluster KUBECONFIG if not already set
     export KUBECONFIG="${KUBECONFIG:-${PWD}/kubeconfig}"
 
+    # wait for the apiserver pod to be Ready.
+    APISERVER_POD=$("${KUBECTL}" get pods -n kube-system -o name | grep apiserver)
+    "${KUBECTL}" wait --for=condition=Ready -n kube-system "${APISERVER_POD}" --timeout=5m
+
     # Copy the kubeadm configmap to the calico-system namespace. This is a workaround needed for the calico-node-windows daemonset to be able to run in the calico-system namespace.
     "${KUBECTL}" create ns calico-system
+    until "${KUBECTL}" get configmap kubeadm-config --namespace=kube-system
+    do
+        # Wait for the kubeadm-config configmap to exist.
+        sleep 2
+    done
     "${KUBECTL}" get configmap kubeadm-config --namespace=kube-system -o yaml \
     | sed 's/namespace: kube-system/namespace: calico-system/' \
-    | ${KUBECTL} create -f -
+    | "${KUBECTL}" create -f -
 
-    # install cni
+    # install Calico CNI
     echo "Installing Calico CNI via helm"
-    "${HELM}" repo add projectcalico https://projectcalico.docs.tigera.io/charts
-    "${HELM}" install calico projectcalico/tigera-operator -f "${CALICO_VALUES:-${REPO_ROOT}/templates/addons/calico/values.yaml}" --namespace tigera-operator --create-namespace
+    if [[ "${CIDR0}" =~ .*:.* ]]; then
+        echo "Cluster CIDR is IPv6"
+        CALICO_VALUES_FILE="${REPO_ROOT}/templates/addons/calico-ipv6/values.yaml"
+        CIDR_STRING_VALUES="installation.calicoNetwork.ipPools[0].cidr=${CIDR0}"
+    elif [[ "${CIDR1}" =~ .*:.* ]]; then
+        echo "Cluster CIDR is dual-stack"
+        CALICO_VALUES_FILE="${REPO_ROOT}/templates/addons/calico-dual-stack/values.yaml"
+        CIDR_STRING_VALUES="installation.calicoNetwork.ipPools[0].cidr=${CIDR0},installation.calicoNetwork.ipPools[1].cidr=${CIDR1}"
+    else
+        echo "Cluster CIDR is IPv4"
+        CALICO_VALUES_FILE="${REPO_ROOT}/templates/addons/calico/values.yaml"
+        CIDR_STRING_VALUES="installation.calicoNetwork.ipPools[0].cidr=${CIDR0}"
+    fi
 
-    export -f wait_for_nodes
-    timeout --foreground 1800 bash -c wait_for_nodes
+    "${HELM}" repo add projectcalico https://projectcalico.docs.tigera.io/charts
+    "${HELM}" install calico projectcalico/tigera-operator -f "${CALICO_VALUES_FILE}" --set-string "${CIDR_STRING_VALUES}" --namespace tigera-operator --create-namespace
 
     # Add FeatureOverride for ChecksumOffloadBroken in FelixConfiguration.
     # This is the recommended workaround for https://github.com/projectcalico/calico/issues/3145.
@@ -173,6 +188,12 @@ install_addons() {
             ENABLE_DYNAMIC_RELOADING=true
             copy_secret
         fi
+
+        CCM_CLUSTER_CIDR="${CIDR0}"
+        if [[ -n "${CIDR1}" ]]; then
+            CCM_CLUSTER_CIDR="${CIDR0}\,${CIDR1}"
+        fi
+        echo "CCM cluster CIDR: ${CCM_CLUSTER_CIDR:-}"
 
         export CCM_LOG_VERBOSITY="${CCM_LOG_VERBOSITY:-4}"
         echo "Installing cloud-provider-azure components via helm"
@@ -192,6 +213,9 @@ install_addons() {
             --set-string cloudControllerManager.clusterCIDR="${CCM_CLUSTER_CIDR}"
     fi
 
+    export -f wait_for_nodes
+    timeout --foreground 1800 bash -c wait_for_nodes
+
     echo "Waiting for all calico-system pods to be ready"
     "${KUBECTL}" wait --for=condition=Ready pod -n calico-system --all --timeout=10m
 
@@ -200,7 +224,7 @@ install_addons() {
 }
 
 wait_for_nodes() {
-    echo "Waiting for ${CONTROL_PLANE_MACHINE_COUNT} control plane machine(s), ${WORKER_MACHINE_COUNT} worker machine(s), and ${WINDOWS_WORKER_MACHINE_COUNT} windows machine(s) to become Ready"
+    echo "Waiting for ${CONTROL_PLANE_MACHINE_COUNT} control plane machine(s), ${WORKER_MACHINE_COUNT} worker machine(s), and ${WINDOWS_WORKER_MACHINE_COUNT:-0} windows machine(s) to become Ready"
 
     # Ensure that all nodes are registered with the API server before checking for readiness
     local total_nodes="$((CONTROL_PLANE_MACHINE_COUNT + WORKER_MACHINE_COUNT + WINDOWS_WORKER_MACHINE_COUNT))"

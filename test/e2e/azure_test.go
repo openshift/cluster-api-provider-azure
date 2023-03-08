@@ -84,7 +84,7 @@ var _ = Describe("Workload cluster creation", func() {
 		secret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "cluster-identity-secret",
-				Namespace: namespace.Name,
+				Namespace: defaultNamespace,
 				Labels: map[string]string{
 					clusterctlv1.ClusterctlMoveHierarchyLabelName: "true",
 				},
@@ -92,23 +92,25 @@ var _ = Describe("Workload cluster creation", func() {
 			Type: corev1.SecretTypeOpaque,
 			Data: map[string][]byte{"clientSecret": []byte(spClientSecret)},
 		}
-		_, err = bootstrapClusterProxy.GetClientSet().CoreV1().Secrets(namespace.Name).Get(ctx, secret.Name, metav1.GetOptions{})
+		_, err = bootstrapClusterProxy.GetClientSet().CoreV1().Secrets(defaultNamespace).Get(ctx, secret.Name, metav1.GetOptions{})
 		if err != nil && !apierrors.IsNotFound(err) {
 			Expect(err).ShouldNot(HaveOccurred())
 		}
 		if err != nil {
 			Logf("Creating cluster identity secret \"%s\"", secret.Name)
 			err = bootstrapClusterProxy.GetClient().Create(ctx, secret)
-			Expect(err).NotTo(HaveOccurred())
+			if !apierrors.IsAlreadyExists(err) {
+				Expect(err).NotTo(HaveOccurred())
+			}
 		} else {
 			Logf("Using existing cluster identity secret")
 		}
 
 		identityName := e2eConfig.GetVariable(ClusterIdentityName)
 		Expect(os.Setenv(ClusterIdentityName, identityName)).To(Succeed())
-		Expect(os.Setenv(ClusterIdentityNamespace, namespace.Name)).To(Succeed())
+		Expect(os.Setenv(ClusterIdentityNamespace, defaultNamespace)).To(Succeed())
 		Expect(os.Setenv(ClusterIdentitySecretName, "cluster-identity-secret")).To(Succeed())
-		Expect(os.Setenv(ClusterIdentitySecretNamespace, namespace.Name)).To(Succeed())
+		Expect(os.Setenv(ClusterIdentitySecretNamespace, defaultNamespace)).To(Succeed())
 		additionalCleanup = nil
 	})
 
@@ -147,7 +149,7 @@ var _ = Describe("Workload cluster creation", func() {
 		logCheckpoint(specTimes)
 	})
 
-	if os.Getenv("LOCAL_ONLY") != "true" {
+	if os.Getenv("USE_LOCAL_KIND_REGISTRY") != "true" {
 		// This spec expects a user-assigned identity with Contributor role assignment named "cloud-provider-user-identity" in a "capz-ci"
 		// resource group. Override these defaults by setting the USER_IDENTITY and CI_RG environment variables.
 		Context("Creating a private cluster [OPTIONAL]", func() {
@@ -494,6 +496,70 @@ var _ = Describe("Workload cluster creation", func() {
 	// ci-e2e.sh and Prow CI skip this test by default. To include this test, set `GINKGO_SKIP=""`.
 	// This spec expects a user-assigned identity named "cloud-provider-user-identity" in a "capz-ci"
 	// resource group. Override these defaults by setting the USER_IDENTITY and CI_RG environment variables.
+	Context("Creating a cluster that uses the external cloud provider and machinepools [OPTIONAL]", func() {
+		It("with 1 control plane node and 1 machinepool", func() {
+			By("using user-assigned identity")
+			clusterName = getClusterName(clusterNamePrefix, "flex")
+			clusterctl.ApplyClusterTemplateAndWait(ctx, clusterctl.ApplyClusterTemplateAndWaitInput{
+				ClusterProxy: bootstrapClusterProxy,
+				ConfigCluster: clusterctl.ConfigClusterInput{
+					LogFolder:                filepath.Join(artifactFolder, "clusters", bootstrapClusterProxy.GetName()),
+					ClusterctlConfigPath:     clusterctlConfigPath,
+					KubeconfigPath:           bootstrapClusterProxy.GetKubeconfigPath(),
+					InfrastructureProvider:   clusterctl.DefaultInfrastructureProvider,
+					Flavor:                   "external-cloud-provider-vmss-flex",
+					Namespace:                namespace.Name,
+					ClusterName:              clusterName,
+					KubernetesVersion:        "v1.26.0",
+					ControlPlaneMachineCount: pointer.Int64Ptr(1),
+					WorkerMachineCount:       pointer.Int64Ptr(1),
+				},
+				WaitForClusterIntervals:      e2eConfig.GetIntervals(specName, "wait-cluster"),
+				WaitForControlPlaneIntervals: e2eConfig.GetIntervals(specName, "wait-control-plane"),
+				WaitForMachinePools:          e2eConfig.GetIntervals(specName, "wait-machine-pool-nodes"),
+				ControlPlaneWaiters: clusterctl.ControlPlaneWaiters{
+					WaitForControlPlaneInitialized: EnsureControlPlaneInitialized,
+				},
+			}, result)
+
+			By("Verifying machinepool resources", func() {
+				AzureMachinePoolsSpec(ctx, func() AzureMachinePoolsSpecInput {
+					return AzureMachinePoolsSpecInput{
+						BootstrapClusterProxy: bootstrapClusterProxy,
+						Namespace:             namespace,
+						ClusterName:           clusterName,
+					}
+				})
+			})
+
+			By("Verifying expected VM extensions are present on the node", func() {
+				AzureVMExtensionsSpec(ctx, func() AzureVMExtensionsSpecInput {
+					return AzureVMExtensionsSpecInput{
+						BootstrapClusterProxy: bootstrapClusterProxy,
+						Namespace:             namespace,
+						ClusterName:           clusterName,
+					}
+				})
+			})
+
+			By("Creating an accessible load balancer", func() {
+				AzureLBSpec(ctx, func() AzureLBSpecInput {
+					return AzureLBSpecInput{
+						BootstrapClusterProxy: bootstrapClusterProxy,
+						Namespace:             namespace,
+						ClusterName:           clusterName,
+						SkipCleanup:           skipCleanup,
+					}
+				})
+			})
+
+			By("PASSED!")
+		})
+	})
+
+	// ci-e2e.sh and Prow CI skip this test by default. To include this test, set `GINKGO_SKIP=""`.
+	// This spec expects a user-assigned identity named "cloud-provider-user-identity" in a "capz-ci"
+	// resource group. Override these defaults by setting the USER_IDENTITY and CI_RG environment variables.
 	Context("Creating a cluster that uses the external cloud provider and external azurediskcsi driver [OPTIONAL]", func() {
 		It("with a 1 control plane nodes and 2 worker nodes", func() {
 			By("using user-assigned identity")
@@ -514,7 +580,7 @@ var _ = Describe("Workload cluster creation", func() {
 				},
 				WaitForClusterIntervals:      e2eConfig.GetIntervals(specName, "wait-cluster"),
 				WaitForControlPlaneIntervals: e2eConfig.GetIntervals(specName, "wait-control-plane"),
-				WaitForMachinePools:          e2eConfig.GetIntervals(specName, "wait-machine-pool-nodes"),
+				WaitForMachineDeployments:    e2eConfig.GetIntervals(specName, "wait-worker-nodes"),
 				ControlPlaneWaiters: clusterctl.ControlPlaneWaiters{
 					WaitForControlPlaneInitialized: EnsureControlPlaneInitialized,
 				},
@@ -639,6 +705,15 @@ var _ = Describe("Workload cluster creation", func() {
 						Cluster:       result.Cluster,
 						MachinePools:  result.MachinePools,
 						WaitForUpdate: e2eConfig.GetIntervals(specName, "wait-machine-pool-nodes"),
+					}
+				})
+			})
+
+			By("modifying the azure cluster-autoscaler settings", func() {
+				AKSAzureClusterAutoscalerSettingsSpec(ctx, func() AKSAzureClusterAutoscalerSettingsSpecInput {
+					return AKSAzureClusterAutoscalerSettingsSpecInput{
+						Cluster:       result.Cluster,
+						WaitIntervals: e2eConfig.GetIntervals(specName, "wait-control-plane"),
 					}
 				})
 			})

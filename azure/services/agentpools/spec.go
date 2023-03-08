@@ -17,17 +17,20 @@ limitations under the License.
 package agentpools
 
 import (
+	"context"
 	"fmt"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2021-05-01/containerservice"
+	"github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2022-03-01/containerservice"
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-azure/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/converters"
+	infrav1exp "sigs.k8s.io/cluster-api-provider-azure/exp/api/v1beta1"
 	azureutil "sigs.k8s.io/cluster-api-provider-azure/util/azure"
+	"sigs.k8s.io/cluster-api-provider-azure/util/tele"
 )
 
 // KubeletConfig defines the set of kubelet configurations for nodes in pools.
@@ -130,6 +133,9 @@ type AgentPoolSpec struct {
 	// KubeletConfig specifies the kubelet configurations for nodes.
 	KubeletConfig *KubeletConfig `json:"kubeletConfig,omitempty"`
 
+	// KubeletDiskType specifies the kubelet disk type for each node in the pool. Allowed values are 'OS' and 'Temporary'
+	KubeletDiskType *infrav1exp.KubeletDiskType `json:"kubeletDiskType,omitempty"`
+
 	// AdditionalTags is an optional set of tags to add to Azure resources managed by the Azure provider, in addition to the ones added by default.
 	AdditionalTags infrav1.Tags
 }
@@ -155,7 +161,10 @@ func (s *AgentPoolSpec) CustomHeaders() map[string]string {
 }
 
 // Parameters returns the parameters for the agent pool.
-func (s *AgentPoolSpec) Parameters(existing interface{}) (params interface{}, err error) {
+func (s *AgentPoolSpec) Parameters(ctx context.Context, existing interface{}) (params interface{}, err error) {
+	_, log, done := tele.StartSpanWithLogger(ctx, "agentpools.Service.Parameters")
+	defer done()
+
 	nodeLabels := s.NodeLabels
 	if existing != nil {
 		existingPool, ok := existing.(containerservice.AgentPool)
@@ -195,9 +204,12 @@ func (s *AgentPoolSpec) Parameters(existing interface{}) (params interface{}, er
 				MinCount:            s.MinCount,
 				MaxCount:            s.MaxCount,
 				NodeLabels:          s.NodeLabels,
-				NodeTaints:          existingPool.NodeTaints,
+				NodeTaints:          &s.NodeTaints,
 				Tags:                converters.TagsToMap(s.AdditionalTags),
 			},
+		}
+		if len(*normalizedProfile.NodeTaints) == 0 {
+			normalizedProfile.NodeTaints = nil
 		}
 
 		if s.KubeletConfig != nil {
@@ -227,8 +239,10 @@ func (s *AgentPoolSpec) Parameters(existing interface{}) (params interface{}, er
 		diff := cmp.Diff(normalizedProfile, existingProfile)
 		if diff == "" {
 			// agent pool is up to date, nothing to do
+			log.V(4).Info("no changes found between user-updated spec and existing spec")
 			return nil, nil
 		}
+		log.V(4).Info("found a diff between the desired spec and the existing agentpool", "difference", diff)
 		// We do a just-in-time merge of existent kubernetes.azure.com-prefixed labels
 		// So that we don't unintentionally delete them
 		// See https://github.com/Azure/AKS/issues/3152
@@ -278,6 +292,7 @@ func (s *AgentPoolSpec) Parameters(existing interface{}) (params interface{}, er
 			EnableAutoScaling:    s.EnableAutoScaling,
 			EnableUltraSSD:       s.EnableUltraSSD,
 			KubeletConfig:        kubeletConfig,
+			KubeletDiskType:      containerservice.KubeletDiskType(to.String((*string)(s.KubeletDiskType))),
 			MaxCount:             s.MaxCount,
 			MaxPods:              s.MaxPods,
 			MinCount:             s.MinCount,

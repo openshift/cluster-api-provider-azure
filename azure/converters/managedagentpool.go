@@ -17,7 +17,7 @@ limitations under the License.
 package converters
 
 import (
-	"github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2021-05-01/containerservice"
+	"github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2022-03-01/containerservice"
 )
 
 // AgentPoolToManagedClusterAgentPoolProfile converts a AgentPoolSpec to an Azure SDK ManagedClusterAgentPoolProfile used in managedcluster reconcile.
@@ -46,6 +46,7 @@ func AgentPoolToManagedClusterAgentPoolProfile(pool containerservice.AgentPool) 
 		NodePublicIPPrefixID: properties.NodePublicIPPrefixID,
 		ScaleSetPriority:     properties.ScaleSetPriority,
 		Tags:                 properties.Tags,
+		KubeletDiskType:      properties.KubeletDiskType,
 	}
 	if properties.KubeletConfig != nil {
 		agentPool.KubeletConfig = properties.KubeletConfig

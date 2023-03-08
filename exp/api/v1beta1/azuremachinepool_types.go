@@ -65,9 +65,7 @@ type (
 		// SSHPublicKey is the SSH public key string base64 encoded to add to a Virtual Machine
 		SSHPublicKey string `json:"sshPublicKey"`
 
-		// AcceleratedNetworking enables or disables Azure accelerated networking. If omitted, it will be set based on
-		// whether the requested VMSize supports accelerated networking.
-		// If AcceleratedNetworking is set to true with a VMSize that does not support it, Azure will return an error.
+		// Deprecated: AcceleratedNetworking should be set in the networkInterfaces field.
 		// +optional
 		AcceleratedNetworking *bool `json:"acceleratedNetworking,omitempty"`
 
@@ -89,13 +87,20 @@ type (
 		// +optional
 		SpotVMOptions *infrav1.SpotVMOptions `json:"spotVMOptions,omitempty"`
 
-		// SubnetName selects the Subnet where the VMSS will be placed
+		// Deprecated: SubnetName should be set in the networkInterfaces field.
 		// +optional
 		SubnetName string `json:"subnetName,omitempty"`
 
 		// VMExtensions specifies a list of extensions to be added to the scale set.
 		// +optional
 		VMExtensions []infrav1.VMExtension `json:"vmExtensions,omitempty"`
+
+		// NetworkInterfaces specifies a list of network interface configurations.
+		// If left unspecified, the VM will get a single network interface with a
+		// single IPConfig in the subnet specified in the cluster's node subnet field.
+		// The primary interface will be the first networkInterface specified (index 0) in the list.
+		// +optional
+		NetworkInterfaces []infrav1.NetworkInterface `json:"networkInterfaces,omitempty"`
 	}
 
 	// AzureMachinePoolSpec defines the desired state of AzureMachinePool.
@@ -152,6 +157,10 @@ type (
 		// NOTE: NodeDrainTimeout is different from `kubectl drain --timeout`
 		// +optional
 		NodeDrainTimeout *metav1.Duration `json:"nodeDrainTimeout,omitempty"`
+
+		// OrchestrationMode specifies the orchestration mode for the Virtual Machine Scale Set
+		// +kubebuilder:default=Uniform
+		OrchestrationMode infrav1.OrchestrationModeType `json:"orchestrationMode,omitempty"`
 	}
 
 	// AzureMachinePoolDeploymentStrategyType is the type of deployment strategy employed to rollout a new version of
@@ -335,6 +344,7 @@ type (
 	// +kubebuilder:printcolumn:name="MachinePool",type="string",priority=1,JSONPath=".metadata.ownerReferences[?(@.kind==\"MachinePool\")].name",description="MachinePool object to which this AzureMachinePool belongs"
 	// +kubebuilder:printcolumn:name="VMSS ID",type="string",priority=1,JSONPath=".spec.providerID",description="Azure VMSS ID"
 	// +kubebuilder:printcolumn:name="VM Size",type="string",priority=1,JSONPath=".spec.template.vmSize",description="Azure VM Size"
+	// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",description="Time duration since creation of this AzureMachinePool"
 
 	// AzureMachinePool is the Schema for the azuremachinepools API.
 	AzureMachinePool struct {

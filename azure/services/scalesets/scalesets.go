@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2021-11-01/compute"
@@ -51,6 +52,7 @@ type (
 		SetAnnotation(string, string)
 		SetProviderID(string)
 		SetVMSSState(*azure.VMSS)
+		ReconcileReplicas(context.Context, *azure.VMSS) error
 	}
 
 	// Service provides operations on Azure resources.
@@ -253,6 +255,10 @@ func (s *Service) patchVMSSIfNeeded(ctx context.Context, infraVMSS *azure.VMSS) 
 	ctx, log, done := tele.StartSpanWithLogger(ctx, "scalesets.Service.patchVMSSIfNeeded")
 	defer done()
 
+	if err := s.Scope.ReconcileReplicas(ctx, infraVMSS); err != nil {
+		return nil, errors.Wrap(err, "unable to reconcile replicas")
+	}
+
 	spec := s.Scope.ScaleSetSpec()
 
 	vmss, err := s.buildVMSSFromSpec(ctx, spec)
@@ -271,10 +277,21 @@ func (s *Service) patchVMSSIfNeeded(ctx context.Context, infraVMSS *azure.VMSS) 
 	}
 
 	hasModelChanges := hasModelModifyingDifferences(infraVMSS, vmss)
-	if maxSurge > 0 && (hasModelChanges || !infraVMSS.HasEnoughLatestModelOrNotMixedModel()) {
+	var isFlex bool
+	for _, instance := range infraVMSS.Instances {
+		if instance.IsFlex() {
+			isFlex = true
+			break
+		}
+	}
+	updated := true
+	if !isFlex {
+		updated = infraVMSS.HasEnoughLatestModelOrNotMixedModel()
+	}
+	if maxSurge > 0 && (hasModelChanges || !updated) {
 		// surge capacity with the intention of lowering during instance reconciliation
 		surge := spec.Capacity + int64(maxSurge)
-		log.V(4).Info("surging...", "surge", surge)
+		log.V(4).Info("surging...", "surge", surge, "hasModelChanges", hasModelChanges, "updated", updated)
 		patch.Sku.Capacity = to.Int64Ptr(surge)
 	}
 
@@ -424,7 +441,7 @@ func (s *Service) buildVMSSFromSpec(ctx context.Context, vmssSpec azure.ScaleSet
 		vmssSpec.AcceleratedNetworking = &accelNet
 	}
 
-	extensions, err := s.generateExtensions()
+	extensions, err := s.generateExtensions(ctx)
 	if err != nil {
 		return compute.VirtualMachineScaleSet{}, err
 	}
@@ -462,6 +479,7 @@ func (s *Service) buildVMSSFromSpec(ctx context.Context, vmssSpec azure.ScaleSet
 		return compute.VirtualMachineScaleSet{}, err
 	}
 
+	orchestrationMode := converters.GetOrchestrationMode(s.Scope.ScaleSetSpec().OrchestrationMode)
 	vmss := compute.VirtualMachineScaleSet{
 		Location: to.StringPtr(s.Scope.Location()),
 		Sku: &compute.Sku{
@@ -472,11 +490,8 @@ func (s *Service) buildVMSSFromSpec(ctx context.Context, vmssSpec azure.ScaleSet
 		Zones: to.StringSlicePtr(vmssSpec.FailureDomains),
 		Plan:  s.generateImagePlan(ctx),
 		VirtualMachineScaleSetProperties: &compute.VirtualMachineScaleSetProperties{
+			OrchestrationMode:    orchestrationMode,
 			SinglePlacementGroup: to.BoolPtr(false),
-			UpgradePolicy: &compute.UpgradePolicy{
-				Mode: compute.UpgradeModeManual,
-			},
-			Overprovision: to.BoolPtr(false),
 			VirtualMachineProfile: &compute.VirtualMachineScaleSetVMProfile{
 				OsProfile:          osProfile,
 				StorageProfile:     storageProfile,
@@ -515,6 +530,82 @@ func (s *Service) buildVMSSFromSpec(ctx context.Context, vmssSpec azure.ScaleSet
 				},
 			},
 		},
+	}
+
+	// Set properties specific to VMSS orchestration mode
+	switch orchestrationMode {
+	case compute.OrchestrationModeUniform:
+		vmss.VirtualMachineScaleSetProperties.Overprovision = to.BoolPtr(false)
+		vmss.VirtualMachineScaleSetProperties.UpgradePolicy = &compute.UpgradePolicy{Mode: compute.UpgradeModeManual}
+	case compute.OrchestrationModeFlexible:
+		vmss.VirtualMachineScaleSetProperties.VirtualMachineProfile.NetworkProfile.NetworkAPIVersion =
+			compute.NetworkAPIVersionTwoZeroTwoZeroHyphenMinusOneOneHyphenMinusZeroOne
+		vmss.VirtualMachineScaleSetProperties.PlatformFaultDomainCount = to.Int32Ptr(1)
+		if len(vmssSpec.FailureDomains) > 1 {
+			vmss.VirtualMachineScaleSetProperties.PlatformFaultDomainCount = to.Int32Ptr(int32(len(vmssSpec.FailureDomains)))
+		}
+	}
+
+	// Use custom NIC definitions in VMSS if set
+	if len(vmssSpec.NetworkInterfaces) > 0 {
+		nicConfigs := []compute.VirtualMachineScaleSetNetworkConfiguration{}
+		for i, n := range vmssSpec.NetworkInterfaces {
+			nicConfig := compute.VirtualMachineScaleSetNetworkConfiguration{}
+			nicConfig.VirtualMachineScaleSetNetworkConfigurationProperties = &compute.VirtualMachineScaleSetNetworkConfigurationProperties{}
+			nicConfig.Name = to.StringPtr(vmssSpec.Name + "-" + strconv.Itoa(i))
+			if to.Bool(n.AcceleratedNetworking) {
+				nicConfig.VirtualMachineScaleSetNetworkConfigurationProperties.EnableAcceleratedNetworking = to.BoolPtr(true)
+			} else {
+				nicConfig.VirtualMachineScaleSetNetworkConfigurationProperties.EnableAcceleratedNetworking = to.BoolPtr(false)
+			}
+			if n.PrivateIPConfigs == 0 {
+				nicConfig.VirtualMachineScaleSetNetworkConfigurationProperties.IPConfigurations = &[]compute.VirtualMachineScaleSetIPConfiguration{
+					{
+						Name: to.StringPtr(vmssSpec.Name + "-" + strconv.Itoa(i)),
+						VirtualMachineScaleSetIPConfigurationProperties: &compute.VirtualMachineScaleSetIPConfigurationProperties{
+							Subnet: &compute.APIEntityReference{
+								ID: to.StringPtr(azure.SubnetID(s.Scope.SubscriptionID(), vmssSpec.VNetResourceGroup, vmssSpec.VNetName, n.SubnetName)),
+							},
+							Primary:                         to.BoolPtr(true),
+							PrivateIPAddressVersion:         compute.IPVersionIPv4,
+							LoadBalancerBackendAddressPools: &backendAddressPools,
+						},
+					},
+				}
+			} else {
+				ipconfigs := []compute.VirtualMachineScaleSetIPConfiguration{}
+
+				// Create IPConfigs
+				for j := 0; j < n.PrivateIPConfigs; j++ {
+					ipconfig := compute.VirtualMachineScaleSetIPConfiguration{
+						Name: to.StringPtr(fmt.Sprintf("private-ipConfig-%v", j)),
+						VirtualMachineScaleSetIPConfigurationProperties: &compute.VirtualMachineScaleSetIPConfigurationProperties{
+							PrivateIPAddressVersion: compute.IPVersionIPv4,
+							Subnet: &compute.APIEntityReference{
+								ID: to.StringPtr(azure.SubnetID(s.Scope.SubscriptionID(), vmssSpec.VNetResourceGroup, vmssSpec.VNetName, n.SubnetName)),
+							},
+						},
+					}
+
+					ipconfig.Subnet = &compute.APIEntityReference{
+						ID: to.StringPtr(azure.SubnetID(s.Scope.SubscriptionID(), vmssSpec.VNetResourceGroup, vmssSpec.VNetName, n.SubnetName)),
+					}
+					ipconfigs = append(ipconfigs, ipconfig)
+				}
+				if i == 0 {
+					ipconfigs[0].LoadBalancerBackendAddressPools = &backendAddressPools
+				}
+				// Always use the first IPConfig as the Primary
+				ipconfigs[0].Primary = to.BoolPtr(true)
+				nicConfig.VirtualMachineScaleSetNetworkConfigurationProperties.IPConfigurations = &ipconfigs
+			}
+			nicConfigs = append(nicConfigs, nicConfig)
+		}
+		nicConfigs[0].VirtualMachineScaleSetNetworkConfigurationProperties.Primary = to.BoolPtr(true)
+		vmss.VirtualMachineScaleSetProperties.VirtualMachineProfile.NetworkProfile.NetworkInterfaceConfigurations = &nicConfigs
+	} else {
+		// Set default interface configuration if no custom ones are specified
+		vmss.VirtualMachineScaleSetProperties.VirtualMachineProfile.NetworkProfile.NetworkInterfaceConfigurations = s.getVirtualMachineScaleSetDefaultNetworkConfiguration(vmssSpec)
 	}
 
 	// Assign Identity to VMSS
@@ -572,6 +663,39 @@ func (s *Service) buildVMSSFromSpec(ctx context.Context, vmssSpec azure.ScaleSet
 	return vmss, nil
 }
 
+func (s *Service) getVirtualMachineScaleSetDefaultNetworkConfiguration(vmssSpec azure.ScaleSetSpec) *[]compute.VirtualMachineScaleSetNetworkConfiguration {
+	var backendAddressPools []compute.SubResource
+	if vmssSpec.PublicLBName != "" {
+		if vmssSpec.PublicLBAddressPoolName != "" {
+			backendAddressPools = append(backendAddressPools,
+				compute.SubResource{
+					ID: to.StringPtr(azure.AddressPoolID(s.Scope.SubscriptionID(), s.Scope.ResourceGroup(), vmssSpec.PublicLBName, vmssSpec.PublicLBAddressPoolName)),
+				})
+		}
+	}
+	return &[]compute.VirtualMachineScaleSetNetworkConfiguration{{
+		Name: to.StringPtr(vmssSpec.Name),
+		VirtualMachineScaleSetNetworkConfigurationProperties: &compute.VirtualMachineScaleSetNetworkConfigurationProperties{
+			Primary:            to.BoolPtr(true),
+			EnableIPForwarding: to.BoolPtr(true),
+			IPConfigurations: &[]compute.VirtualMachineScaleSetIPConfiguration{
+				{
+					Name: to.StringPtr(vmssSpec.Name),
+					VirtualMachineScaleSetIPConfigurationProperties: &compute.VirtualMachineScaleSetIPConfigurationProperties{
+						Subnet: &compute.APIEntityReference{
+							ID: to.StringPtr(azure.SubnetID(s.Scope.SubscriptionID(), vmssSpec.VNetResourceGroup, vmssSpec.VNetName, vmssSpec.SubnetName)),
+						},
+						Primary:                         to.BoolPtr(true),
+						PrivateIPAddressVersion:         compute.IPVersionIPv4,
+						LoadBalancerBackendAddressPools: &backendAddressPools,
+					},
+				},
+			},
+			EnableAcceleratedNetworking: vmssSpec.AcceleratedNetworking,
+		},
+	}}
+}
+
 // getVirtualMachineScaleSet provides information about a Virtual Machine Scale Set and its instances.
 func (s *Service) getVirtualMachineScaleSet(ctx context.Context, vmssName string) (*azure.VMSS, error) {
 	ctx, _, done := tele.StartSpanWithLogger(ctx, "scalesets.Service.getVirtualMachineScaleSet")
@@ -608,11 +732,11 @@ func (s *Service) getVirtualMachineScaleSetIfDone(ctx context.Context, future *i
 	return converters.SDKToVMSS(vmss, vmssInstances), nil
 }
 
-func (s *Service) generateExtensions() ([]compute.VirtualMachineScaleSetExtension, error) {
+func (s *Service) generateExtensions(ctx context.Context) ([]compute.VirtualMachineScaleSetExtension, error) {
 	extensions := make([]compute.VirtualMachineScaleSetExtension, len(s.Scope.VMSSExtensionSpecs()))
 	for i, extensionSpec := range s.Scope.VMSSExtensionSpecs() {
 		extensionSpec := extensionSpec
-		parameters, err := extensionSpec.Parameters(nil)
+		parameters, err := extensionSpec.Parameters(ctx, nil)
 		if err != nil {
 			return nil, err
 		}

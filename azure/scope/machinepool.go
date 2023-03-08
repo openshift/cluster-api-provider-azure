@@ -19,8 +19,11 @@ package scope
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
+	"strings"
 	"time"
 
+	azureautorest "github.com/Azure/go-autorest/autorest/azure"
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
@@ -40,6 +43,7 @@ import (
 	"sigs.k8s.io/cluster-api/controllers/noderefutil"
 	capierrors "sigs.k8s.io/cluster-api/errors"
 	expv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
+	"sigs.k8s.io/cluster-api/util/annotations"
 	"sigs.k8s.io/cluster-api/util/conditions"
 	"sigs.k8s.io/cluster-api/util/patch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -63,11 +67,12 @@ type (
 	// MachinePoolScope defines a scope defined around a machine pool and its cluster.
 	MachinePoolScope struct {
 		azure.ClusterScoper
-		AzureMachinePool *infrav1exp.AzureMachinePool
-		MachinePool      *expv1.MachinePool
-		client           client.Client
-		patchHelper      *patch.Helper
-		vmssState        *azure.VMSS
+		AzureMachinePool           *infrav1exp.AzureMachinePool
+		MachinePool                *expv1.MachinePool
+		client                     client.Client
+		patchHelper                *patch.Helper
+		capiMachinePoolPatchHelper *patch.Helper
+		vmssState                  *azure.VMSS
 	}
 
 	// NodeStatus represents the status of a Kubernetes node.
@@ -97,12 +102,18 @@ func NewMachinePoolScope(params MachinePoolScopeParams) (*MachinePoolScope, erro
 		return nil, errors.Wrap(err, "failed to init patch helper")
 	}
 
+	capiMachinePoolPatchHelper, err := patch.NewHelper(params.MachinePool, params.Client)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to init capi patch helper")
+	}
+
 	return &MachinePoolScope{
-		client:           params.Client,
-		MachinePool:      params.MachinePool,
-		AzureMachinePool: params.AzureMachinePool,
-		patchHelper:      helper,
-		ClusterScoper:    params.ClusterScope,
+		client:                     params.Client,
+		MachinePool:                params.MachinePool,
+		AzureMachinePool:           params.AzureMachinePool,
+		patchHelper:                helper,
+		capiMachinePoolPatchHelper: capiMachinePoolPatchHelper,
+		ClusterScoper:              params.ClusterScope,
 	}, nil
 }
 
@@ -115,12 +126,12 @@ func (m *MachinePoolScope) ScaleSetSpec() azure.ScaleSetSpec {
 		SSHKeyData:                   m.AzureMachinePool.Spec.Template.SSHPublicKey,
 		OSDisk:                       m.AzureMachinePool.Spec.Template.OSDisk,
 		DataDisks:                    m.AzureMachinePool.Spec.Template.DataDisks,
-		SubnetName:                   m.AzureMachinePool.Spec.Template.SubnetName,
+		SubnetName:                   m.AzureMachinePool.Spec.Template.NetworkInterfaces[0].SubnetName,
 		VNetName:                     m.Vnet().Name,
 		VNetResourceGroup:            m.Vnet().ResourceGroup,
 		PublicLBName:                 m.OutboundLBName(infrav1.Node),
 		PublicLBAddressPoolName:      azure.GenerateOutboundBackendAddressPoolName(m.OutboundLBName(infrav1.Node)),
-		AcceleratedNetworking:        m.AzureMachinePool.Spec.Template.AcceleratedNetworking,
+		AcceleratedNetworking:        m.AzureMachinePool.Spec.Template.NetworkInterfaces[0].AcceleratedNetworking,
 		Identity:                     m.AzureMachinePool.Spec.Identity,
 		UserAssignedIdentities:       m.AzureMachinePool.Spec.UserAssignedIdentities,
 		DiagnosticsProfile:           m.AzureMachinePool.Spec.Template.Diagnostics,
@@ -128,6 +139,8 @@ func (m *MachinePoolScope) ScaleSetSpec() azure.ScaleSetSpec {
 		SpotVMOptions:                m.AzureMachinePool.Spec.Template.SpotVMOptions,
 		FailureDomains:               m.MachinePool.Spec.FailureDomains,
 		TerminateNotificationTimeout: m.AzureMachinePool.Spec.Template.TerminateNotificationTimeout,
+		NetworkInterfaces:            m.AzureMachinePool.Spec.Template.NetworkInterfaces,
+		OrchestrationMode:            m.AzureMachinePool.Spec.OrchestrationMode,
 	}
 }
 
@@ -331,17 +344,18 @@ func (m *MachinePoolScope) applyAzureMachinePoolMachines(ctx context.Context) er
 }
 
 func (m *MachinePoolScope) createMachine(ctx context.Context, machine azure.VMSSVM) error {
-	if machine.InstanceID == "" {
-		return errors.New("machine.InstanceID must not be empty")
-	}
+	ctx, _, done := tele.StartSpanWithLogger(ctx, "scope.MachinePoolScope.createMachine")
+	defer done()
 
-	if machine.Name == "" {
-		return errors.New("machine.Name must not be empty")
+	parsed, err := azureautorest.ParseResourceID(machine.ID)
+	if err != nil {
+		return errors.Wrap(err, fmt.Sprintf("failed to parse resource id %q", machine.ID))
 	}
+	instanceID := strings.ReplaceAll(parsed.ResourceName, "_", "-")
 
 	ampm := infrav1exp.AzureMachinePoolMachine{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      m.AzureMachinePool.Name + "-" + machine.InstanceID,
+			Name:      m.AzureMachinePool.Name + "-" + instanceID,
 			Namespace: m.AzureMachinePool.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
 				{
@@ -524,7 +538,13 @@ func (m *MachinePoolScope) Close(ctx context.Context) error {
 		}
 	}
 
-	return m.PatchObject(ctx)
+	if err := m.PatchObject(ctx); err != nil {
+		return errors.Wrap(err, "unable to patch AzureMachinePool")
+	}
+	if err := m.PatchCAPIMachinePoolObject(ctx); err != nil {
+		return errors.Wrap(err, "unable to patch CAPI MachinePool")
+	}
+	return nil
 }
 
 // GetBootstrapData returns the bootstrap data from the secret in the MachinePool's bootstrap.dataSecretName.
@@ -655,7 +675,7 @@ func (m *MachinePoolScope) getDeploymentStrategy() machinepool.TypedDeleteSelect
 // Note: this logic exists only for purposes of ensuring backwards compatibility for old clusters created without the `subnetName` field being
 // set, and should be removed in the future when this field is no longer optional.
 func (m *MachinePoolScope) SetSubnetName() error {
-	if m.AzureMachinePool.Spec.Template.SubnetName == "" {
+	if m.AzureMachinePool.Spec.Template.NetworkInterfaces[0].SubnetName == "" {
 		subnetName := ""
 		for _, subnet := range m.NodeSubnets() {
 			subnetName = subnet.Name
@@ -664,7 +684,7 @@ func (m *MachinePoolScope) SetSubnetName() error {
 			return errors.New("a subnet name must be specified when no subnets are specified or more than 1 subnet of role 'node' exist")
 		}
 
-		m.AzureMachinePool.Spec.Template.SubnetName = subnetName
+		m.AzureMachinePool.Spec.Template.NetworkInterfaces[0].SubnetName = subnetName
 	}
 
 	return nil
@@ -704,4 +724,40 @@ func (m *MachinePoolScope) UpdatePatchStatus(condition clusterv1.ConditionType, 
 	default:
 		conditions.MarkFalse(m.AzureMachinePool, condition, infrav1.FailedReason, clusterv1.ConditionSeverityError, "%s failed to update. err: %s", service, err.Error())
 	}
+}
+
+// PatchCAPIMachinePoolObject persists the capi machinepool configuration and status.
+func (m *MachinePoolScope) PatchCAPIMachinePoolObject(ctx context.Context) error {
+	return m.capiMachinePoolPatchHelper.Patch(
+		ctx,
+		m.MachinePool,
+	)
+}
+
+// UpdateCAPIMachinePoolReplicas updates the associated MachinePool replica count.
+func (m *MachinePoolScope) UpdateCAPIMachinePoolReplicas(ctx context.Context, replicas *int32) {
+	m.MachinePool.Spec.Replicas = replicas
+}
+
+// HasReplicasExternallyManaged returns true if the externally managed annotation is set on the CAPI MachinePool resource.
+func (m *MachinePoolScope) HasReplicasExternallyManaged(ctx context.Context) bool {
+	return annotations.ReplicasManagedByExternalAutoscaler(m.MachinePool)
+}
+
+// ReconcileReplicas ensures MachinePool replicas match VMSS capacity if replicas are externally managed by an autoscaler.
+func (m *MachinePoolScope) ReconcileReplicas(ctx context.Context, vmss *azure.VMSS) error {
+	if !m.HasReplicasExternallyManaged(ctx) {
+		return nil
+	}
+
+	var replicas int32 = 0
+	if m.MachinePool.Spec.Replicas != nil {
+		replicas = *m.MachinePool.Spec.Replicas
+	}
+
+	if capacity := int32(vmss.Capacity); capacity != replicas {
+		m.UpdateCAPIMachinePoolReplicas(ctx, &capacity)
+	}
+
+	return nil
 }

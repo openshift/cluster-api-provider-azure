@@ -95,6 +95,13 @@ func (m *AzureManagedMachinePool) ValidateUpdate(oldRaw runtime.Object, client c
 	old := oldRaw.(*AzureManagedMachinePool)
 	var allErrs field.ErrorList
 
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "Name"),
+		old.Spec.Name,
+		m.Spec.Name); err != nil {
+		allErrs = append(allErrs, err)
+	}
+
 	if err := m.validateNodeLabels(); err != nil {
 		allErrs = append(allErrs,
 			field.Invalid(
@@ -196,6 +203,13 @@ func (m *AzureManagedMachinePool) ValidateUpdate(oldRaw runtime.Object, client c
 		field.NewPath("Spec", "KubeletConfig"),
 		old.Spec.KubeletConfig,
 		m.Spec.KubeletConfig); err != nil {
+		allErrs = append(allErrs, err)
+	}
+
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "KubeletDiskType"),
+		old.Spec.KubeletDiskType,
+		m.Spec.KubeletDiskType); err != nil {
 		allErrs = append(allErrs, err)
 	}
 

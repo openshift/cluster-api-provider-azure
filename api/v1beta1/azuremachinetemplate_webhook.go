@@ -51,12 +51,23 @@ func (r *AzureMachineTemplate) SetupWebhookWithManager(mgr ctrl.Manager) error {
 var _ webhook.CustomDefaulter = &AzureMachineTemplate{}
 var _ webhook.CustomValidator = &AzureMachineTemplate{}
 
+// openshiftDisableVMExtensions is openshift patch function that prevents VMExtensions being from being set.
+func (r *AzureMachineTemplate) openshiftDisableVMExtensions() *field.Error {
+	if len(r.Spec.Template.Spec.VMExtensions) > 0 {
+		return field.Forbidden(field.NewPath("AzureMachineTemplate", "spec", "template", "spec", "vmExtensions"), "VMExtensions are currently not supported in OpenShift")
+	}
+	return nil
+}
+
 // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type.
 func (r *AzureMachineTemplate) ValidateCreate(ctx context.Context, obj runtime.Object) error {
 	t := obj.(*AzureMachineTemplate)
 	spec := t.Spec.Template.Spec
 
 	allErrs := ValidateAzureMachineSpec(spec)
+	if err := r.openshiftDisableVMExtensions(); err != nil {
+		allErrs = append(allErrs, err)
+	}
 
 	if spec.RoleAssignmentName != "" {
 		allErrs = append(allErrs,
@@ -94,6 +105,10 @@ func (r *AzureMachineTemplate) ValidateUpdate(ctx context.Context, oldRaw runtim
 	req, err := admission.RequestFromContext(ctx)
 	if err != nil {
 		return apierrors.NewBadRequest(fmt.Sprintf("expected a admission.Request inside context: %v", err))
+	}
+
+	if err := r.openshiftDisableVMExtensions(); err != nil {
+		allErrs = append(allErrs, err)
 	}
 
 	if !topology.ShouldSkipImmutabilityChecks(req, t) &&

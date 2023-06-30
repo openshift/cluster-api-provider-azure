@@ -491,6 +491,10 @@ func TestMachineScope_RoleAssignmentSpecs(t *testing.T) {
 }
 
 func TestMachineScope_VMExtensionSpecs(t *testing.T) {
+	// VMExtensions are disabled on openshift
+	if len("DISABLE") > 0 {
+		return
+	}
 	tests := []struct {
 		name         string
 		machineScope MachineScope

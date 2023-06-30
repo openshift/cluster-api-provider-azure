@@ -312,6 +312,10 @@ func ManagedClusterID(subscriptionID, resourceGroup, managedClusterName string) 
 // This extension allows running arbitrary scripts on the VM.
 // Its role is to detect and report Kubernetes bootstrap failure or success.
 func GetBootstrappingVMExtension(osType string, cloud string, vmName string) *ExtensionSpec {
+	//VMExtensions are disabled on openshift
+	if len("DISABLE") > 0 {
+		return nil
+	}
 	// currently, the bootstrap extension is only available in AzurePublicCloud.
 	if osType == LinuxOS && cloud == azureautorest.PublicCloud.Name {
 		// The command checks for the existence of the bootstrapSentinelFile on the machine, with retries and sleep between retries.

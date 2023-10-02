@@ -113,7 +113,7 @@ KUBECTL_VER := v1.25.6
 KUBECTL_BIN := kubectl
 KUBECTL := $(TOOLS_BIN_DIR)/$(KUBECTL_BIN)-$(KUBECTL_VER)
 
-HELM_VER := v3.11.3
+HELM_VER := v3.12.2
 HELM_BIN := helm
 HELM := $(TOOLS_BIN_DIR)/$(HELM_BIN)-$(HELM_VER)
 
@@ -121,7 +121,7 @@ YQ_VER := v4.14.2
 YQ_BIN := yq
 YQ :=  $(TOOLS_BIN_DIR)/$(YQ_BIN)-$(YQ_VER)
 
-KIND_VER := v0.18.0
+KIND_VER := v0.20.0
 KIND_BIN := kind
 KIND :=  $(TOOLS_BIN_DIR)/$(KIND_BIN)-$(KIND_VER)
 
@@ -166,11 +166,7 @@ E2E_CONF_FILE ?= $(ROOT_DIR)/test/e2e/config/azure-dev.yaml
 E2E_CONF_FILE_ENVSUBST := $(ROOT_DIR)/test/e2e/config/azure-dev-envsubst.yaml
 SKIP_CLEANUP ?= false
 SKIP_LOG_COLLECTION ?= false
-# @sonasingh46: Skip creating mgmt cluster for ci as workload identity needs kind cluster
-# to be created with extra mounts for key pairs which is not yet supported
-# by existing e2e framework. A mgmt cluster(kind) is created as part of e2e suite
-# that meets workload identity pre-requisites.
-SKIP_CREATE_MGMT_CLUSTER ?= true
+SKIP_CREATE_MGMT_CLUSTER ?= false
 WIN_REPO_URL ?=
 
 # Build time versioning details.
@@ -289,7 +285,7 @@ create-management-cluster: $(KUSTOMIZE) $(ENVSUBST) $(KUBECTL) $(KIND) ## Create
 	./hack/create-custom-cloud-provider-config.sh
 
 	# Deploy CAPI
-	curl --retry $(CURL_RETRIES) -sSL https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.4.3/cluster-api-components.yaml | $(ENVSUBST) | $(KUBECTL) apply -f -
+	curl --retry $(CURL_RETRIES) -sSL https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.4.6/cluster-api-components.yaml | $(ENVSUBST) | $(KUBECTL) apply -f -
 
 	# Deploy CAPZ
 	$(KIND) load docker-image $(CONTROLLER_IMG)-$(ARCH):$(TAG) --name=$(KIND_CLUSTER_NAME)
@@ -651,12 +647,8 @@ test-cover: test ## Run tests with code coverage and generate reports.
 	./hack/codecov-ignore.sh
 	go tool cover -html=coverage.out -o coverage.html
 
-.PHONY: kind-create-bootstrap
-kind-create-bootstrap: $(KUBECTL) ## Create capz kind bootstrap cluster.
-	export AZWI=true KIND_CLUSTER_NAME=capz-e2e && ./scripts/kind-with-registry.sh
-
 .PHONY: test-e2e-run
-test-e2e-run: generate-e2e-templates install-tools kind-create-bootstrap ## Run e2e tests.
+test-e2e-run: generate-e2e-templates install-tools ## Run e2e tests.
 	$(ENVSUBST) < $(E2E_CONF_FILE) > $(E2E_CONF_FILE_ENVSUBST) && \
     $(GINKGO) -v --trace --timeout=4h --tags=e2e --focus="$(GINKGO_FOCUS)" --skip="$(GINKGO_SKIP)" --nodes=$(GINKGO_NODES) --no-color=$(GINKGO_NOCOLOR) --output-dir="$(ARTIFACTS)" --junit-report="junit.e2e_suite.1.xml" $(GINKGO_ARGS) ./test/e2e -- \
     	-e2e.artifacts-folder="$(ARTIFACTS)" \

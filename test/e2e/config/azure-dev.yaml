@@ -3,11 +3,11 @@ managementClusterName: capz-e2e
 images:
   - name: ${MANAGER_IMAGE}
     loadBehavior: mustLoad
-  - name: registry.k8s.io/cluster-api/cluster-api-controller:v1.4.3
+  - name: registry.k8s.io/cluster-api/cluster-api-controller:v1.4.6
     loadBehavior: tryLoad
-  - name: registry.k8s.io/cluster-api/kubeadm-bootstrap-controller:v1.4.3
+  - name: registry.k8s.io/cluster-api/kubeadm-bootstrap-controller:v1.4.6
     loadBehavior: tryLoad
-  - name: registry.k8s.io/cluster-api/kubeadm-control-plane-controller:v1.4.3
+  - name: registry.k8s.io/cluster-api/kubeadm-control-plane-controller:v1.4.6
     loadBehavior: tryLoad
 
 providers:
@@ -23,8 +23,8 @@ providers:
           new: --metrics-addr=:8080
       files:
         - sourcePath: "../data/shared/v1beta1/metadata.yaml"
-    - name: v1.4.3
-      value: https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.4.3/core-components.yaml
+    - name: v1.4.6
+      value: https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.4.6/core-components.yaml
       type: url
       contract: v1beta1
       files:
@@ -46,8 +46,8 @@ providers:
           new: --metrics-addr=:8080
       files:
         - sourcePath: "../data/shared/v1beta1/metadata.yaml"
-    - name: v1.4.3
-      value: https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.4.3/bootstrap-components.yaml
+    - name: v1.4.6
+      value: https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.4.6/bootstrap-components.yaml
       type: url
       contract: v1beta1
       files:
@@ -68,8 +68,8 @@ providers:
           new: --metrics-addr=:8080
       files:
         - sourcePath: "../data/shared/v1beta1/metadata.yaml"
-    - name: v1.4.3
-      value: https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.4.3/control-plane-components.yaml
+    - name: v1.4.6
+      value: https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.4.6/control-plane-components.yaml
       type: url
       contract: v1beta1
       files:
@@ -122,8 +122,6 @@ providers:
         targetName: "cluster-template-intree-cloud-provider.yaml"
       - sourcePath: "${PWD}/templates/test/ci/cluster-template-prow-machine-pool-flex.yaml"
         targetName: "cluster-template-machine-pool-flex.yaml"
-      - sourcePath: "${PWD}/templates/test/ci/cluster-template-prow-workload-identity.yaml"
-        targetName: "cluster-template-workload-identity.yaml"
       - sourcePath: "${PWD}/templates/test/ci/cluster-template-prow-aks.yaml"
         targetName: "cluster-template-aks.yaml"
       - sourcePath: "${PWD}/templates/test/ci/cluster-template-prow-custom-vnet.yaml"
@@ -145,7 +143,7 @@ providers:
 variables:
   AKS_KUBERNETES_VERSION: "latest"
   AKS_KUBERNETES_VERSION_UPGRADE_FROM: "latest-1"
-  KUBERNETES_VERSION: "${KUBERNETES_VERSION:-stable-1.25}"
+  KUBERNETES_VERSION: "${KUBERNETES_VERSION:-v1.25.11}" # temporarily pin to v1.25.11 to workaround Calico dual stack issues
   FLATCAR_KUBERNETES_VERSION: "${FLATCAR_KUBERNETES_VERSION:-stable-1.25}"
   FLATCAR_VERSION: "${FLATCAR_VERSION:-latest}"
   ETCD_VERSION_UPGRADE_TO: "3.5.4-0"
@@ -168,7 +166,6 @@ variables:
   CONFORMANCE_IMAGE: "${CONFORMANCE_IMAGE:-}"
   CONFORMANCE_NODES: "${CONFORMANCE_NODES:-1}"
   IP_FAMILY: "IPv4" # this is used by the CAPI quickstart spec
-  MULTI_TENANCY_IDENTITY_NAME: "multi-tenancy-identity"
   CLUSTER_IDENTITY_NAME: "cluster-identity-sp"
   NODE_DRAIN_TIMEOUT: "60s"
   CI_VERSION: ""

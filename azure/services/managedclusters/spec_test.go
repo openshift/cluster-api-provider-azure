@@ -177,6 +177,67 @@ func TestParameters(t *testing.T) {
 				g.Expect(result).To(BeNil())
 			},
 		},
+		{
+			name:     "update authorized IP ranges with empty struct if spec does not have authorized IP ranges but existing cluster has authorized IP ranges",
+			existing: getExistingClusterWithAuthorizedIPRanges(),
+			spec: &ManagedClusterSpec{
+				Name:          "test-managedcluster",
+				ResourceGroup: "test-rg",
+				Location:      "test-location",
+				Tags: map[string]string{
+					"test-tag": "test-value",
+				},
+				Version:         "v1.22.0",
+				LoadBalancerSKU: "Standard",
+			},
+			expect: func(g *WithT, result interface{}) {
+				g.Expect(result).To(BeAssignableToTypeOf(containerservice.ManagedCluster{}))
+				g.Expect(result.(containerservice.ManagedCluster).APIServerAccessProfile).To(Not(BeNil()))
+				g.Expect(result.(containerservice.ManagedCluster).APIServerAccessProfile.AuthorizedIPRanges).To(Equal(&[]string{}))
+			},
+		},
+		{
+			name:     "update authorized IP ranges with authorized IPs spec has authorized IP ranges but existing cluster does not have authorized IP ranges",
+			existing: getExistingCluster(),
+			spec: &ManagedClusterSpec{
+				Name:          "test-managedcluster",
+				ResourceGroup: "test-rg",
+				Location:      "test-location",
+				Tags: map[string]string{
+					"test-tag": "test-value",
+				},
+				Version:         "v1.22.0",
+				LoadBalancerSKU: "Standard",
+				APIServerAccessProfile: &APIServerAccessProfile{
+					AuthorizedIPRanges: []string{"192.168.0.1/32, 192.168.0.2/32, 192.168.0.3/32"},
+				},
+			},
+			expect: func(g *WithT, result interface{}) {
+				g.Expect(result).To(BeAssignableToTypeOf(containerservice.ManagedCluster{}))
+				g.Expect(result.(containerservice.ManagedCluster).APIServerAccessProfile).To(Not(BeNil()))
+				g.Expect(result.(containerservice.ManagedCluster).APIServerAccessProfile.AuthorizedIPRanges).To(Equal(&[]string{"192.168.0.1/32, 192.168.0.2/32, 192.168.0.3/32"}))
+			},
+		},
+		{
+			name:     "no update needed when authorized IP ranges when both clusters have the same authorized IP ranges",
+			existing: getExistingClusterWithAuthorizedIPRanges(),
+			spec: &ManagedClusterSpec{
+				Name:          "test-managedcluster",
+				ResourceGroup: "test-rg",
+				Location:      "test-location",
+				Tags: map[string]string{
+					"test-tag": "test-value",
+				},
+				Version:         "v1.22.0",
+				LoadBalancerSKU: "Standard",
+				APIServerAccessProfile: &APIServerAccessProfile{
+					AuthorizedIPRanges: []string{"192.168.0.1/32, 192.168.0.2/32, 192.168.0.3/32"},
+				},
+			},
+			expect: func(g *WithT, result interface{}) {
+				g.Expect(result).To(BeNil())
+			},
+		},
 	}
 	for _, tc := range testcases {
 		tc := tc
@@ -226,6 +287,7 @@ func getSampleManagedCluster() containerservice.ManagedCluster {
 					Tags: map[string]*string{
 						"test-tag": pointer.String("test-value"),
 					},
+					EnableAutoScaling: pointer.Bool(false),
 				},
 				{
 					Name:                pointer.String("test-agentpool-1"),
@@ -241,6 +303,7 @@ func getSampleManagedCluster() containerservice.ManagedCluster {
 					Tags: map[string]*string{
 						"test-tag": pointer.String("test-value"),
 					},
+					EnableAutoScaling: pointer.Bool(false),
 				},
 			},
 			LinuxProfile: &containerservice.LinuxProfile{
@@ -274,4 +337,12 @@ func getSampleManagedCluster() containerservice.ManagedCluster {
 			},
 		})),
 	}
+}
+
+func getExistingClusterWithAuthorizedIPRanges() containerservice.ManagedCluster {
+	mc := getExistingCluster()
+	mc.APIServerAccessProfile = &containerservice.ManagedClusterAPIServerAccessProfile{
+		AuthorizedIPRanges: &[]string{"192.168.0.1/32, 192.168.0.2/32, 192.168.0.3/32"},
+	}
+	return mc
 }

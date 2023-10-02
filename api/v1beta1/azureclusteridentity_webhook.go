@@ -17,10 +17,7 @@ limitations under the License.
 package v1beta1
 
 import (
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/validation/field"
-	webhookutils "sigs.k8s.io/cluster-api-provider-azure/util/webhook"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
@@ -43,18 +40,7 @@ func (c *AzureClusterIdentity) ValidateCreate() error {
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
 func (c *AzureClusterIdentity) ValidateUpdate(oldRaw runtime.Object) error {
-	var allErrs field.ErrorList
-	old := oldRaw.(*AzureClusterIdentity)
-	if err := webhookutils.ValidateImmutable(
-		field.NewPath("Spec", "Type"),
-		old.Spec.Type,
-		c.Spec.Type); err != nil {
-		allErrs = append(allErrs, err)
-	}
-	if len(allErrs) == 0 {
-		return c.validateClusterIdentity()
-	}
-	return apierrors.NewInvalid(GroupVersion.WithKind("AzureClusterIdentity").GroupKind(), c.Name, allErrs)
+	return c.validateClusterIdentity()
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.

@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net"
+	"reflect"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2022-03-01/containerservice"
@@ -138,7 +139,7 @@ type LoadBalancerProfile struct {
 	// Load balancer profile must specify at most one of ManagedOutboundIPs, OutboundIPPrefixes and OutboundIPs.
 	// By default the AKS cluster automatically creates a public IP in the AKS-managed infrastructure resource group and assigns it to the load balancer outbound pool.
 	// Alternatively, you can assign your own custom public IP or public IP prefix at cluster creation time.
-	// See https://docs.microsoft.com/en-us/azure/aks/load-balancer-standard#provide-your-own-outbound-public-ips-or-prefixes
+	// See https://learn.microsoft.com/azure/aks/load-balancer-standard#provide-your-own-outbound-public-ips-or-prefixes
 
 	// ManagedOutboundIPs are the desired managed outbound IPs for the cluster load balancer.
 	ManagedOutboundIPs *int32
@@ -260,6 +261,9 @@ func buildAutoScalerProfile(autoScalerProfile *AutoScalerProfile) *containerserv
 }
 
 // Parameters returns the parameters for the managed clusters.
+// TODO: refactor this function to reduce cyclomatic complexity
+//
+//nolint:gocyclo // Function requires a lot of nil checks that raise complexity.
 func (s *ManagedClusterSpec) Parameters(ctx context.Context, existing interface{}) (params interface{}, err error) {
 	ctx, log, done := tele.StartSpanWithLogger(ctx, "managedclusters.Service.Parameters")
 	defer done()
@@ -387,7 +391,7 @@ func (s *ManagedClusterSpec) Parameters(ctx context.Context, existing interface{
 			EnablePrivateClusterPublicFQDN: s.APIServerAccessProfile.EnablePrivateClusterPublicFQDN,
 		}
 
-		if len(s.APIServerAccessProfile.AuthorizedIPRanges) > 0 {
+		if s.APIServerAccessProfile.AuthorizedIPRanges != nil {
 			managedCluster.APIServerAccessProfile.AuthorizedIPRanges = &s.APIServerAccessProfile.AuthorizedIPRanges
 		}
 	}
@@ -421,6 +425,16 @@ func (s *ManagedClusterSpec) Parameters(ctx context.Context, existing interface{
 		// Avoid changing agent pool profiles through AMCP and just use the existing agent pool profiles
 		// AgentPool changes are managed through AMMP.
 		managedCluster.AgentPoolProfiles = existingMC.AgentPoolProfiles
+
+		// if the AuthorizedIPRanges is nil in the user-updated spec, but not nil in the existing spec, then
+		// we need to set the AuthorizedIPRanges to empty array (&[]string{}) once so that the Azure API will
+		// update the existing authorized IP ranges to nil.
+		if !isAuthIPRangesNilOrEmpty(existingMC) && isAuthIPRangesNilOrEmpty(managedCluster) {
+			log.V(4).Info("managed cluster spec has nil AuthorizedIPRanges, updating existing authorized IP ranges to an empty list")
+			managedCluster.APIServerAccessProfile = &containerservice.ManagedClusterAPIServerAccessProfile{
+				AuthorizedIPRanges: &[]string{},
+			}
+		}
 
 		diff := computeDiffOfNormalizedClusters(managedCluster, existingMC)
 		if diff == "" {
@@ -583,4 +597,12 @@ func computeDiffOfNormalizedClusters(managedCluster containerservice.ManagedClus
 
 	diff := cmp.Diff(clusterNormalized, existingMCClusterNormalized)
 	return diff
+}
+
+// isAuthIPRangesNilOrEmpty returns true if the managed cluster's APIServerAccessProfile or AuthorizedIPRanges is nil or if AuthorizedIPRanges is empty.
+func isAuthIPRangesNilOrEmpty(managedCluster containerservice.ManagedCluster) bool {
+	if managedCluster.APIServerAccessProfile == nil || managedCluster.APIServerAccessProfile.AuthorizedIPRanges == nil || reflect.DeepEqual(managedCluster.APIServerAccessProfile.AuthorizedIPRanges, &[]string{}) {
+		return true
+	}
+	return false
 }

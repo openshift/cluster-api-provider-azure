@@ -21,7 +21,6 @@ set -o pipefail
 REPO_ROOT=$(dirname "${BASH_SOURCE[0]}")/..
 KUBECTL="${REPO_ROOT}/hack/tools/bin/kubectl"
 KIND="${REPO_ROOT}/hack/tools/bin/kind"
-AZWI_ENABLED=${AZWI:-}
 make --directory="${REPO_ROOT}" "${KUBECTL##*/}" "${KIND##*/}"
 
 # desired cluster name; default is "kind"
@@ -42,72 +41,8 @@ if [ "${running}" != 'true' ]; then
   docker run -d --restart=always -p "127.0.0.1:${reg_port}:5000" --name "${reg_name}" registry:2
 fi
 
-# To use workload identity, service account signing key pairs base64 encoded should be exposed via the
-# env variables. The function creates the key pair files after reading it from the env variables.
-function checkAZWIENVPreReqsAndCreateFiles() {
-  if [[ -z "${SERVICE_ACCOUNT_SIGNING_PUB}" ]]; then
-    echo "'SERVICE_ACCOUNT_SIGNING_PUB' is not set."
-    exit 1
-  fi
-
-  if [[ -z "${SERVICE_ACCOUNT_SIGNING_KEY}" ]]; then
-    echo "'SERVICE_ACCOUNT_SIGNING_KEY' is not set."
-    exit 1
-  fi
-  mkdir -p "$HOME"/azwi/creds
-  echo "${SERVICE_ACCOUNT_SIGNING_PUB}" > "$HOME"/azwi/creds/sa.pub
-  echo  "${SERVICE_ACCOUNT_SIGNING_KEY}" > "$HOME"/azwi/creds/sa.key
-  SERVICE_ACCOUNT_ISSUER="${SERVICE_ACCOUNT_ISSUER:-https://oidcissuercapzci.blob.core.windows.net/oidc-capzci/}"
-}
-
-# This function create a kind cluster for Workload identity which requires key pairs path
-# to be mounted on the kind cluster and hence extra mount flags are required.
-function createKindForAZWI() {
-  echo "creating azwi kind"
-  cat <<EOF | "${KIND}" create cluster --name "${KIND_CLUSTER_NAME}" --config=-
-  kind: Cluster
-  apiVersion: kind.x-k8s.io/v1alpha4
-  nodes:
-  - role: control-plane
-    extraMounts:
-      - hostPath: $HOME/azwi/creds/sa.pub
-        containerPath: /etc/kubernetes/pki/sa.pub
-      - hostPath: $HOME/azwi/creds/sa.key
-        containerPath: /etc/kubernetes/pki/sa.key
-    kubeadmConfigPatches:
-    - |
-      kind: ClusterConfiguration
-      apiServer:
-        extraArgs:
-          service-account-issuer: ${SERVICE_ACCOUNT_ISSUER}
-          service-account-key-file: /etc/kubernetes/pki/sa.pub
-          service-account-signing-key-file: /etc/kubernetes/pki/sa.key
-      controllerManager:
-        extraArgs:
-          service-account-private-key-file: /etc/kubernetes/pki/sa.key
-  containerdConfigPatches:
-  - |-
-    [plugins."io.containerd.grpc.v1.cri".registry]
-       config_path = "/etc/containerd/certs.d"
-EOF
-}
-
-# 2. Create kind cluster with containerd registry config dir enabled
-# TODO: kind will eventually enable this by default and this patch will
-# be unnecessary.
-#
-# See:
-# https://github.com/kubernetes-sigs/kind/issues/2875
-# https://github.com/containerd/containerd/blob/main/docs/cri/config.md#registry-configuration
-# See: https://github.com/containerd/containerd/blob/main/docs/hosts.md
-if [ "$AZWI_ENABLED" == 'true' ]
- then
-   echo "azwi is enabled..."
-   checkAZWIENVPreReqsAndCreateFiles
-   createKindForAZWI
-else
-  echo "azwi is not enabled..."
- cat <<EOF | ${KIND} create cluster --name "${KIND_CLUSTER_NAME}" --config=-
+# create a cluster with the local registry enabled in containerd
+cat <<EOF | "${KIND}" create cluster --name "${KIND_CLUSTER_NAME}" --config=-
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 containerdConfigPatches:
@@ -115,7 +50,6 @@ containerdConfigPatches:
   [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:${reg_port}"]
     endpoint = ["http://${reg_name}:5000"]
 EOF
-fi
 
 # connect the registry to the cluster network
 # (the network may already be connected)

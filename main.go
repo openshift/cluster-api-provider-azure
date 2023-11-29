@@ -245,6 +245,9 @@ func main() {
 
 	ctrl.SetLogger(klogr.New())
 
+	// Just enough to trigger a CI job
+	_ = ""
+
 	if watchNamespace != "" {
 		setupLog.Info("Watching cluster-api objects only in namespace for reconciliation", "namespace", watchNamespace)
 	}

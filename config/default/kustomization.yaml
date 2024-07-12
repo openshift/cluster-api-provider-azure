@@ -3,8 +3,9 @@ kind: Kustomization
 resources:
 - ../capz
 
-components:
-- ../aso
+# Disable ASO in openshift until we fix CRD ownership issue.
+#components:
+#  - ../aso
 
 replacements:
 - source:

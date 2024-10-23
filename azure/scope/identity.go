@@ -18,6 +18,7 @@ package scope
 
 import (
 	"context"
+	"os"
 	"reflect"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -171,11 +172,23 @@ func (p *AzureCredentialsProvider) GetTokenCredential(ctx context.Context, resou
 		cred, authErr = azidentity.NewClientSecretCredential(p.GetTenantID(), p.Identity.Spec.ClientID, clientSecret, &options)
 
 	case infrav1.ServicePrincipalCertificate:
-		clientSecret, err := p.GetClientSecret(ctx)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to get client secret")
+		var (
+			certsContent []byte
+			err          error
+		)
+		if p.Identity.Spec.CertPath != "" {
+			certsContent, err = os.ReadFile(p.Identity.Spec.CertPath)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to read certificate file")
+			}
+		} else {
+			clientSecret, err := p.GetClientSecret(ctx)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to get client secret")
+			}
+			certsContent = []byte(clientSecret)
 		}
-		certs, key, err := azidentity.ParseCertificates([]byte(clientSecret), nil)
+		certs, key, err := azidentity.ParseCertificates(certsContent, nil)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to parse certificate data")
 		}
@@ -232,7 +245,7 @@ func (p *AzureCredentialsProvider) GetTenantID() string {
 // This does not include managed identities.
 func (p *AzureCredentialsProvider) hasClientSecret() bool {
 	switch p.Identity.Spec.Type {
-	case infrav1.ServicePrincipal, infrav1.ManualServicePrincipal, infrav1.ServicePrincipalCertificate:
+	case infrav1.ServicePrincipal, infrav1.ManualServicePrincipal:
 		return true
 	default:
 		return false

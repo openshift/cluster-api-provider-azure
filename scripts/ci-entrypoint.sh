@@ -16,7 +16,7 @@
 
 ###############################################################################
 
-# To run locally, set AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_SUBSCRIPTION_ID, AZURE_TENANT_ID
+# To run locally, set AZURE_CLIENT_ID, AZURE_SUBSCRIPTION_ID, AZURE_TENANT_ID
 
 set -o errexit
 set -o nounset
@@ -39,8 +39,6 @@ export HELM
 source "${REPO_ROOT}/hack/ensure-go.sh"
 # shellcheck source=hack/ensure-tags.sh
 source "${REPO_ROOT}/hack/ensure-tags.sh"
-# shellcheck source=hack/parse-prow-creds.sh
-source "${REPO_ROOT}/hack/parse-prow-creds.sh"
 # shellcheck source=hack/util.sh
 source "${REPO_ROOT}/hack/util.sh"
 
@@ -139,6 +137,7 @@ create_cluster() {
         echo "Unable to find kubeconfig for kind mgmt cluster ${KIND_CLUSTER_NAME}"
         exit 1
     fi
+    "${KUBECTL}" --kubeconfig "${REPO_ROOT}/${KIND_CLUSTER_NAME}.kubeconfig" get clusters -A
 
     # set the SSH bastion and user that can be used to SSH into nodes
     KUBE_SSH_BASTION=$(${KUBECTL} get azurecluster -o json | jq '.items[0].spec.networkSpec.apiServerLB.frontendIPs[0].publicIP.dnsName' | tr -d \"):22
@@ -161,6 +160,13 @@ copy_kubeadm_config_map() {
     if ! "${KUBECTL}" get configmap kubeadm-config --namespace=calico-system; then
         "${KUBECTL}" get configmap kubeadm-config --namespace=kube-system -o yaml | sed 's/namespace: kube-system/namespace: calico-system/' | "${KUBECTL}" apply -f - || return 1
     fi
+}
+
+wait_for_copy_kubeadm_config_map() {
+    echo "Copying kubeadm ConfigMap into calico-system namespace"
+    until copy_kubeadm_config_map; do
+        sleep 5
+    done
 }
 
 # wait_for_nodes returns when all nodes in the workload cluster are Ready.
@@ -200,11 +206,8 @@ wait_for_pods() {
 }
 
 install_addons() {
-    # export the target cluster KUBECONFIG if not already set
-    export KUBECONFIG="${KUBECONFIG:-${PWD}/kubeconfig}"
-    until copy_kubeadm_config_map; do
-        sleep 5
-    done
+    export -f copy_kubeadm_config_map wait_for_copy_kubeadm_config_map
+    timeout --foreground 600 bash -c wait_for_copy_kubeadm_config_map
     # In order to determine the successful outcome of CNI and cloud-provider-azure,
     # we need to wait a little bit for nodes and pods terminal state,
     # so we block successful return upon the cluster being fully operational.
@@ -236,7 +239,7 @@ capz::ci-entrypoint::on_exit() {
     "${REPO_ROOT}/hack/log/redact.sh" || true
     # cleanup all resources we use
     if [[ ! "${SKIP_CLEANUP:-}" == "true" ]]; then
-        timeout 1800 "${KUBECTL}" --kubeconfig "${REPO_ROOT}/${KIND_CLUSTER_NAME}.kubeconfig" delete cluster "${CLUSTER_NAME}" || echo "Unable to delete cluster ${CLUSTER_NAME}"
+        timeout 1800 "${KUBECTL}" --kubeconfig "${REPO_ROOT}/${KIND_CLUSTER_NAME}.kubeconfig" delete cluster "${CLUSTER_NAME}" -n default || echo "Unable to delete cluster ${CLUSTER_NAME}"
         make --directory="${REPO_ROOT}" kind-reset || true
     fi
 }
@@ -250,8 +253,16 @@ export ARTIFACTS="${ARTIFACTS:-${PWD}/_artifacts}"
 # create cluster
 create_cluster
 
-# install CNI and CCM
-install_addons
+# export the target cluster KUBECONFIG if not already set
+export KUBECONFIG="${KUBECONFIG:-${PWD}/kubeconfig}"
+
+if [[ ! "${CLUSTER_TEMPLATE}" =~ "aks" ]]; then
+  # install CNI and CCM
+  install_addons
+fi
+
+"${KUBECTL}" --kubeconfig "${REPO_ROOT}/${KIND_CLUSTER_NAME}.kubeconfig" wait -A --for=condition=Ready --timeout=10m -l "cluster.x-k8s.io/cluster-name=${CLUSTER_NAME}" machinedeployments,machinepools
+
 echo "Cluster ${CLUSTER_NAME} created and fully operational"
 
 if [[ "${#}" -gt 0 ]]; then

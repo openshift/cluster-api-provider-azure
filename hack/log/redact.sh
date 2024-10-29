@@ -24,13 +24,7 @@ log_files=()
 while IFS='' read -r line; do log_files+=("$line"); done < <(find "${ARTIFACTS:-${PWD}/_artifacts}" -type f)
 redact_vars=(
     "${AZURE_CLIENT_ID:-}"
-    "${AZURE_CLIENT_SECRET:-}"
-    "${AZURE_SUBSCRIPTION_ID:-}"
-    "${AZURE_TENANT_ID:-}"
     "${AZURE_JSON_B64:-}"
-    "$(echo -n "${AZURE_SUBSCRIPTION_ID:-}" | base64 | tr -d '\n')"
-    "$(echo -n "${AZURE_TENANT_ID:-}" | base64 | tr -d '\n')"
-    "$(echo -n "${AZURE_CLIENT_ID:-}" | base64 | tr -d '\n')"
     "$(echo -n "${AZURE_CLIENT_SECRET:-}" | base64 | tr -d '\n')"
 )
 

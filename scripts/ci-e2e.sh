@@ -17,7 +17,7 @@
 ###############################################################################
 
 # This script is executed by presubmit `pull-cluster-api-provider-azure-e2e`
-# To run locally, set AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_SUBSCRIPTION_ID, AZURE_TENANT_ID
+# To run locally, set AZURE_CLIENT_ID, AZURE_SUBSCRIPTION_ID, AZURE_TENANT_ID
 
 set -o errexit
 set -o nounset
@@ -33,16 +33,13 @@ make --directory="${REPO_ROOT}" "${KUBECTL##*/}" "${KIND##*/}"
 source "${REPO_ROOT}/hack/ensure-go.sh"
 # shellcheck source=hack/ensure-tags.sh
 source "${REPO_ROOT}/hack/ensure-tags.sh"
-# shellcheck source=hack/parse-prow-creds.sh
-source "${REPO_ROOT}/hack/parse-prow-creds.sh"
 # shellcheck source=hack/util.sh
 source "${REPO_ROOT}/hack/util.sh"
 
 # Verify the required Environment Variables are present.
 capz::util::ensure_azure_envs
 
-export LOCAL_ONLY=${LOCAL_ONLY:-"true"}
-export USE_LOCAL_KIND_REGISTRY=${USE_LOCAL_KIND_REGISTRY:-${LOCAL_ONLY}} 
+export USE_LOCAL_KIND_REGISTRY=${USE_LOCAL_KIND_REGISTRY:-"true"}
 export BUILD_MANAGER_IMAGE=${BUILD_MANAGER_IMAGE:-"true"}
 
 if [[ "${USE_LOCAL_KIND_REGISTRY}" == "false" ]]; then

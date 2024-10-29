@@ -84,6 +84,8 @@ spec:
         kind: AzureClusterIdentity
         name: ${CLUSTER_IDENTITY_NAME}
       location: ${AZURE_LOCATION}
+      sku:
+        tier: Standard
       subscriptionID: ${AZURE_SUBSCRIPTION_ID}
       version: ${KUBERNETES_VERSION}
 ---
@@ -108,7 +110,6 @@ spec:
       - "1"
       - "2"
       enableNodePublicIP: false
-      enableUltraSSD: true
       maxPods: 30
       mode: System
       name: pool0
@@ -194,12 +195,9 @@ metadata:
   namespace: default
 spec:
   allowedNamespaces: {}
-  clientID: ${AZURE_CLIENT_ID}
-  clientSecret:
-    name: ${AZURE_CLUSTER_IDENTITY_SECRET_NAME}
-    namespace: ${AZURE_CLUSTER_IDENTITY_SECRET_NAMESPACE}
+  clientID: ${AZURE_CLIENT_ID_USER_ASSIGNED_IDENTITY}
   tenantID: ${AZURE_TENANT_ID}
-  type: ServicePrincipal
+  type: ${CLUSTER_IDENTITY_TYPE:=WorkloadIdentity}
 ---
 apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
 kind: KubeadmConfigTemplate
@@ -246,25 +244,3 @@ spec:
             cloud-provider: external
           name: '{{ ds.meta_data["local_hostname"] }}'
       preKubeadmCommands: []
----
-apiVersion: cluster.x-k8s.io/v1beta1
-kind: Cluster
-metadata:
-  name: ${CLUSTER_NAME}
-  namespace: default
-spec:
-  clusterNetwork:
-    pods:
-      cidrBlocks:
-      - 192.168.0.0/16
-  topology:
-    class: default
-    version: ${KUBERNETES_VERSION}
-    workers:
-      machinePools:
-      - class: default-system
-        name: mp-0
-        replicas: 1
-      - class: default-worker
-        name: mp-1
-        replicas: 1

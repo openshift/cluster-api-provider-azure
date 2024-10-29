@@ -63,7 +63,7 @@ capz::util::should_build_ccm() {
 
 # all test regions must support AvailabilityZones
 capz::util::get_random_region() {
-    local REGIONS=("canadacentral" "eastus" "eastus2" "northeurope" "uksouth" "westeurope" "westus2" "westus3")
+    local REGIONS=("australiaeast" "canadacentral" "francecentral" "germanywestcentral" "northeurope" "switzerlandnorth" "uksouth" )
     echo "${REGIONS[${RANDOM} % ${#REGIONS[@]}]}"
 }
 # all regions below must have GPU availability for the chosen GPU VM SKU
@@ -108,6 +108,4 @@ capz::util::generate_ssh_key() {
 capz::util::ensure_azure_envs() {
     : "${AZURE_SUBSCRIPTION_ID:?Environment variable empty or not defined.}"
     : "${AZURE_TENANT_ID:?Environment variable empty or not defined.}"
-    : "${AZURE_CLIENT_ID:?Environment variable empty or not defined.}"
-    : "${AZURE_CLIENT_SECRET:?Environment variable empty or not defined.}"
 }

@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
     exclude.release.openshift.io/internal-openshift-hosted: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -124,6 +124,10 @@ spec:
                 description: |-
                   CapacityReservationGroupID specifies the capacity reservation group resource id that should be
                   used for allocating the virtual machine.
+                  The field size should be greater than 0 and the field input must start with '/'.
+                  The input for capacityReservationGroupID must be similar to '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/capacityReservationGroups/{capacityReservationGroupName}'.
+                  The keys which are used should be among 'subscriptions', 'providers' and 'resourcegroups' followed by valid ID or names respectively.
+                  It is optional but may not be changed once set.
                 type: string
               dataDisks:
                 description: DataDisk specifies the parameters that are used to add
@@ -503,6 +507,15 @@ spec:
                           See https://learn.microsoft.com/azure/virtual-machines/ephemeral-os-disks for full details
                         enum:
                         - Local
+                        type: string
+                      placement:
+                        description: Placement specifies the ephemeral disk placement
+                          for operating system disk. If placement is specified, Option
+                          must be set to "Local".
+                        enum:
+                        - CacheDisk
+                        - NvmeDisk
+                        - ResourceDisk
                         type: string
                     required:
                     - option
@@ -888,7 +901,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
     exclude.release.openshift.io/internal-openshift-hosted: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -1202,7 +1215,7 @@ spec:
                             - node
                             - control-plane
                             - bastion
-                            - all
+                            - cluster
                             type: string
                           routeTable:
                             description: RouteTable defines the route table that should
@@ -1952,7 +1965,7 @@ spec:
                           - node
                           - control-plane
                           - bastion
-                          - all
+                          - cluster
                           type: string
                         routeTable:
                           description: RouteTable defines the route table that should
@@ -2353,7 +2366,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
     exclude.release.openshift.io/internal-openshift-hosted: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -2564,7 +2577,7 @@ spec:
                                     - node
                                     - control-plane
                                     - bastion
-                                    - all
+                                    - cluster
                                     type: string
                                   securityGroup:
                                     description: SecurityGroup defines the NSG (network
@@ -3058,7 +3071,7 @@ spec:
                                   - node
                                   - control-plane
                                   - bastion
-                                  - all
+                                  - cluster
                                   type: string
                                 securityGroup:
                                   description: SecurityGroup defines the NSG (network
@@ -3318,7 +3331,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
     exclude.release.openshift.io/internal-openshift-hosted: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -3453,6 +3466,10 @@ spec:
                         description: |-
                           CapacityReservationGroupID specifies the capacity reservation group resource id that should be
                           used for allocating the virtual machine.
+                          The field size should be greater than 0 and the field input must start with '/'.
+                          The input for capacityReservationGroupID must be similar to '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/capacityReservationGroups/{capacityReservationGroupName}'.
+                          The keys which are used should be among 'subscriptions', 'providers' and 'resourcegroups' followed by valid ID or names respectively.
+                          It is optional but may not be changed once set.
                         type: string
                       dataDisks:
                         description: DataDisk specifies the parameters that are used
@@ -3834,6 +3851,15 @@ spec:
                                 enum:
                                 - Local
                                 type: string
+                              placement:
+                                description: Placement specifies the ephemeral disk
+                                  placement for operating system disk. If placement
+                                  is specified, Option must be set to "Local".
+                                enum:
+                                - CacheDisk
+                                - NvmeDisk
+                                - ResourceDisk
+                                type: string
                             required:
                             - option
                             type: object
@@ -4074,7 +4100,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
     exclude.release.openshift.io/internal-openshift-hosted: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -4186,11 +4212,13 @@ spec:
                               items:
                                 type: string
                               type: array
+                              x-kubernetes-list-type: atomic
                           required:
                           - key
                           - operator
                           type: object
                         type: array
+                        x-kubernetes-list-type: atomic
                       matchLabels:
                         additionalProperties:
                           type: string
@@ -4225,6 +4253,9 @@ spec:
                 description: |-
                   ResourceID is the Azure resource ID for the User Assigned MSI resource.
                   Only applicable when type is UserAssignedMSI.
+
+
+                  Deprecated: This field no longer has any effect.
                 type: string
               tenantID:
                 description: TenantID is the service principal primary tenant id.
@@ -4311,7 +4342,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
     exclude.release.openshift.io/internal-openshift-hosted: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -4896,6 +4927,15 @@ spec:
                             enum:
                             - Local
                             type: string
+                          placement:
+                            description: Placement specifies the ephemeral disk placement
+                              for operating system disk. If placement is specified,
+                              Option must be set to "Local".
+                            enum:
+                            - CacheDisk
+                            - NvmeDisk
+                            - ResourceDisk
+                            type: string
                         required:
                         - option
                         type: object
@@ -5473,7 +5513,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
     exclude.release.openshift.io/internal-openshift-hosted: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -6234,7 +6274,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
     exclude.release.openshift.io/internal-openshift-hosted: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -6338,7 +6378,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
     exclude.release.openshift.io/internal-openshift-hosted: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -7363,7 +7403,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
     exclude.release.openshift.io/internal-openshift-hosted: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -7642,7 +7682,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
     exclude.release.openshift.io/internal-openshift-hosted: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -7721,7 +7761,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
     exclude.release.openshift.io/internal-openshift-hosted: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -8615,7 +8655,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
     exclude.release.openshift.io/internal-openshift-hosted: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -9257,7 +9297,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
     exclude.release.openshift.io/internal-openshift-hosted: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -9383,7 +9423,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
     exclude.release.openshift.io/internal-openshift-hosted: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -9464,7 +9504,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
     exclude.release.openshift.io/internal-openshift-hosted: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -9603,7 +9643,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
     exclude.release.openshift.io/internal-openshift-hosted: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -9689,7 +9729,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
     exclude.release.openshift.io/internal-openshift-hosted: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -9811,7 +9851,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
     exclude.release.openshift.io/internal-openshift-hosted: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -9902,9 +9942,10 @@ metadata:
     include.release.openshift.io/single-node-developer: "true"
     release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
   labels:
+    cluster.x-k8s.io/aggregate-to-capz-manager: "true"
     cluster.x-k8s.io/provider: infrastructure-azure
     clusterctl.cluster.x-k8s.io: ""
-  name: capz-manager-role
+  name: capz-base-manager-role
 rules:
 - apiGroups:
   - ""
@@ -10400,6 +10441,24 @@ rules:
   - list
   - watch
 ---
+aggregationRule:
+  clusterRoleSelectors:
+  - matchLabels:
+      cluster.x-k8s.io/aggregate-to-capz-manager: "true"
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  annotations:
+    exclude.release.openshift.io/internal-openshift-hosted: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+    release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
+  labels:
+    cluster.x-k8s.io/provider: infrastructure-azure
+    clusterctl.cluster.x-k8s.io: ""
+  name: capz-manager-role
+rules: []
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -10525,7 +10584,7 @@ spec:
         - --leader-elect
         - --diagnostics-address=${CAPZ_DIAGNOSTICS_ADDRESS:=:8443}
         - --insecure-diagnostics=${CAPZ_INSECURE_DIAGNOSTICS:=false}
-        - --feature-gates=MachinePool=${EXP_MACHINE_POOL:=false},AKSResourceHealth=${EXP_AKS_RESOURCE_HEALTH:=false},EdgeZone=${EXP_EDGEZONE:=false},ASOAPI=${EXP_ASO_API:=false}
+        - --feature-gates=MachinePool=${EXP_MACHINE_POOL:=false},AKSResourceHealth=${EXP_AKS_RESOURCE_HEALTH:=false},EdgeZone=${EXP_EDGEZONE:=false},ASOAPI=${EXP_ASO_API:=true}
         - --v=0
         env:
         - name: AZURE_SUBSCRIPTION_ID
@@ -10796,6 +10855,46 @@ webhooks:
     service:
       name: capz-webhook-service
       namespace: openshift-cluster-api
+      path: /validate-infrastructure-cluster-x-k8s-io-v1alpha1-azureasomanagedcontrolplane
+  failurePolicy: Fail
+  name: validation.azureasomanagedcontrolplane.infrastructure.cluster.x-k8s.io
+  rules:
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    resources:
+    - azureasomanagedcontrolplanes
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: capz-webhook-service
+      namespace: openshift-cluster-api
+      path: /validate-infrastructure-cluster-x-k8s-io-v1alpha1-azureasomanagedmachinepool
+  failurePolicy: Fail
+  name: validation.azureasomanagedmachinepool.infrastructure.cluster.x-k8s.io
+  rules:
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    resources:
+    - azureasomanagedmachinepools
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: capz-webhook-service
+      namespace: openshift-cluster-api
       path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-azuremachine
   failurePolicy: Fail
   matchPolicy: Equivalent
@@ -10919,46 +11018,6 @@ webhooks:
     - DELETE
     resources:
     - azuremanagedmachinepooltemplates
-  sideEffects: None
-- admissionReviewVersions:
-  - v1
-  - v1beta1
-  clientConfig:
-    service:
-      name: capz-webhook-service
-      namespace: openshift-cluster-api
-      path: /validate-infrastructure-cluster-x-k8s-io-v1alpha1-azureasomanagedcontrolplane
-  failurePolicy: Fail
-  name: validation.azureasomanagedcontrolplane.infrastructure.cluster.x-k8s.io
-  rules:
-  - apiGroups:
-    - infrastructure.cluster.x-k8s.io
-    apiVersions:
-    - v1alpha1
-    operations:
-    - CREATE
-    resources:
-    - azureasomanagedcontrolplanes
-  sideEffects: None
-- admissionReviewVersions:
-  - v1
-  - v1beta1
-  clientConfig:
-    service:
-      name: capz-webhook-service
-      namespace: openshift-cluster-api
-      path: /validate-infrastructure-cluster-x-k8s-io-v1alpha1-azureasomanagedmachinepool
-  failurePolicy: Fail
-  name: validation.azureasomanagedmachinepool.infrastructure.cluster.x-k8s.io
-  rules:
-  - apiGroups:
-    - infrastructure.cluster.x-k8s.io
-    apiVersions:
-    - v1alpha1
-    operations:
-    - CREATE
-    resources:
-    - azureasomanagedmachinepools
   sideEffects: None
 - admissionReviewVersions:
   - v1

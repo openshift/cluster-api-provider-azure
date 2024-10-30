@@ -67511,7 +67511,7 @@ spec:
         - --health-addr=:8081
         - --enable-leader-election
         - --v=2
-        - --crd-pattern=${ADDITIONAL_ASO_CRDS:= }
+        - --crd-management=none
         - --webhook-port=9443
         - --webhook-cert-dir=/tmp/k8s-webhook-server/serving-certs
         env:

@@ -15620,7 +15620,7 @@ spec:
         - --health-addr=:8081
         - --enable-leader-election
         - --v=2
-        - --crd-pattern=${ADDITIONAL_ASO_CRDS:= }
+        - --crd-management=none
         - --webhook-port=9443
         - --webhook-cert-dir=/tmp/k8s-webhook-server/serving-certs
         env:
@@ -80117,3 +80117,43 @@ status:
     plural: ""
   conditions: null
   storedVersions: null
+---
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: openshift-cluster-api-protect-azurecluster
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups:
+      - infrastructure.cluster.x-k8s.io
+      apiVersions:
+      - '*'
+      operations:
+      - DELETE
+      resources:
+      - azureclusters
+  paramKind:
+    apiVersion: config.openshift.io/v1
+    kind: Infrastructure
+  validations:
+  - expression: '!(oldObject.metadata.name == params.status.infrastructureName)'
+    message: InfraCluster resources with metadata.name corresponding to the cluster
+      infrastructureName cannot be deleted.
+---
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: openshift-cluster-api-protect-azurecluster
+spec:
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: openshift-cluster-api
+  paramRef:
+    name: cluster
+    parameterNotFoundAction: Deny
+  policyName: openshift-cluster-api-protect-azurecluster
+  validationActions:
+  - Deny

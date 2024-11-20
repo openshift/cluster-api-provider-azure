@@ -76,23 +76,9 @@ var _ = Describe("Conformance Tests", func() {
 
 		result = new(clusterctl.ApplyClusterTemplateAndWaitResult)
 
-		spClientSecret := os.Getenv(AzureClientSecret)
-		secret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "cluster-identity-secret",
-				Namespace: namespace.Name,
-			},
-			Type: corev1.SecretTypeOpaque,
-			Data: map[string][]byte{"clientSecret": []byte(spClientSecret)},
-		}
-		err = bootstrapClusterProxy.GetClient().Create(ctx, secret)
-		Expect(err).NotTo(HaveOccurred())
-
 		identityName := e2eConfig.GetVariable(ClusterIdentityName)
 		Expect(os.Setenv(ClusterIdentityName, identityName)).To(Succeed())
 		Expect(os.Setenv(ClusterIdentityNamespace, namespace.Name)).To(Succeed())
-		Expect(os.Setenv(ClusterIdentitySecretName, "cluster-identity-secret")).To(Succeed())
-		Expect(os.Setenv(ClusterIdentitySecretNamespace, namespace.Name)).To(Succeed())
 	})
 
 	It(specName, func() {
@@ -111,21 +97,22 @@ var _ = Describe("Conformance Tests", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(os.Setenv("CI_VERSION", kubernetesVersion)).To(Succeed())
 			Expect(os.Setenv("CLOUD_PROVIDER_AZURE_LABEL", "azure-ci")).To(Succeed())
+		}
 
+		if flavor == "" {
 			if useCIArtifacts {
 				flavor = "conformance-ci-artifacts"
 			} else if usePRArtifacts {
 				flavor = "conformance-presubmit-artifacts"
 			}
-		}
-
-		// use the ipv6 flavor if ipv6 IP family is specified.
-		if e2eConfig.GetVariable(capi_e2e.IPFamily) == "IPv6" {
-			flavor += "-ipv6"
-			kubetestConfigFilePath = strings.Replace(kubetestConfigFilePath, ".yaml", "-ipv6.yaml", 1)
-		} else if e2eConfig.GetVariable(capi_e2e.IPFamily) == "dual" {
-			flavor += "-dual-stack"
-			kubetestConfigFilePath = strings.Replace(kubetestConfigFilePath, ".yaml", "-dual-stack.yaml", 1)
+			// use the ipv6 flavor if ipv6 IP family is specified.
+			if e2eConfig.GetVariable(capi_e2e.IPFamily) == "IPv6" {
+				flavor += "-ipv6"
+				kubetestConfigFilePath = strings.Replace(kubetestConfigFilePath, ".yaml", "-ipv6.yaml", 1)
+			} else if e2eConfig.GetVariable(capi_e2e.IPFamily) == "dual" {
+				flavor += "-dual-stack"
+				kubetestConfigFilePath = strings.Replace(kubetestConfigFilePath, ".yaml", "-dual-stack.yaml", 1)
+			}
 		}
 
 		// Starting with Kubernetes v1.25, the kubetest config file needs to be compatible with Ginkgo V2.

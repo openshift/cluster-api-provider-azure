@@ -88,6 +88,13 @@ Example versions:
     - Move items out of "Uncategorized" into an appropriate section.
     - Change anything attributed to "k8s-cherrypick-robot" to credit the original author.
     - Fix any typos or other errors.
+    - Add a "Details" section with a link to the full diff:
+        ```md
+        ## Details
+        <!-- markdown-link-check-disable-next-line -->
+        https://github.com/kubernetes-sigs/cluster-api-provider-azure/compare/v1.14.4...v1.14.5
+        ```
+      Be sure to replace the versions in the URL with the appropriate tags.
 
 1. Open a pull request against the `main` branch with the release notes.
 
@@ -149,7 +156,7 @@ Note: this step requires access to the Netlify site. If you don't have access, p
 
 #### Minor/Major Releases
 
-1. Follow the communications process for [pre-releases](#pre-releases)
+1. Follow the communications process for [patch-releases](#patch-releases)
 2. An announcement email is sent to `kubernetes-sig-azure@googlegroups.com` and `kubernetes-sig-cluster-lifecycle@googlegroups.com` with the subject `[ANNOUNCE] cluster-api-provider-azure <version> has been released`
 
 [semver]: https://semver.org/#semantic-versioning-200

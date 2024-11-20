@@ -23,8 +23,8 @@ cd "${KUBE_ROOT}" || exit 1
 
 os=$(go env GOOS)
 arch=$(go env GOARCH)
-mdBookVersion="v0.4.35"
-genCRDAPIReferenceDocsVersion="11fe95cbdcb91e9c25446fc99e6f2cdd8cbeb91a"
+mdBookVersion="v0.4.40"
+genCRDAPIReferenceDocsVersion="642c3aa7441d324f54f5a9a6a1841ffffacf5aeb"
 
 # translate arch to rust's conventions (if we can)
 if [[ ${arch} == "amd64" ]]; then
@@ -76,7 +76,7 @@ genCRDAPIReferenceDocs="${genCRDAPIReferenceDocsPath}/gen-crd-api-reference-docs
 
 ${genCRDAPIReferenceDocs} -config "${genCRDAPIReferenceDocsPath}/example-config.json" -template-dir "${genCRDAPIReferenceDocsPath}/template" -api-dir ./api/v1beta1 -out-file ./docs/book/src/reference/v1beta1-api-raw.html
 ${genCRDAPIReferenceDocs} -config "${genCRDAPIReferenceDocsPath}/example-config.json" -template-dir "${genCRDAPIReferenceDocsPath}/template" -api-dir ./exp/api/v1beta1 -out-file ./docs/book/src/reference/v1beta1-exp-api-raw.html
-${genCRDAPIReferenceDocs} -config "${genCRDAPIReferenceDocsPath}/example-config.json" -template-dir "${genCRDAPIReferenceDocsPath}/template" -api-dir ./exp/api/v1alpha1 -out-file ./docs/book/src/reference/v1alpha1-exp-api-raw.html
+${genCRDAPIReferenceDocs} -config "${genCRDAPIReferenceDocsPath}/example-config.json" -template-dir "${genCRDAPIReferenceDocsPath}/template" -api-dir ./api/v1alpha1 -out-file ./docs/book/src/reference/v1alpha1-api-raw.html
 
 # Finally build the book.
 (cd docs/book && /tmp/mdbook build)

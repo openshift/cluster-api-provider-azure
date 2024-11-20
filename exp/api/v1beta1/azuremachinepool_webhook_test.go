@@ -233,6 +233,21 @@ func TestAzureMachinePool_ValidateCreate(t *testing.T) {
 			ownerNotFound: true,
 			wantErr:       true,
 		},
+		{
+			name: "azuremachinepool with invalid DiffDiskSettings",
+			amp: createMachinePoolWithDiffDiskSettings(infrav1.DiffDiskSettings{
+				Placement: ptr.To(infrav1.DiffDiskPlacementResourceDisk),
+			}),
+			wantErr: true,
+		},
+		{
+			name: "azuremachinepool with valid DiffDiskSettings",
+			amp: createMachinePoolWithDiffDiskSettings(infrav1.DiffDiskSettings{
+				Option:    string(armcompute.DiffDiskOptionsLocal),
+				Placement: ptr.To(infrav1.DiffDiskPlacementResourceDisk),
+			}),
+			wantErr: true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -492,6 +507,10 @@ func createMachinePoolWithMarketPlaceImage(publisher, offer, sku, version string
 				Image:                        &image,
 				SSHPublicKey:                 validSSHPublicKey,
 				TerminateNotificationTimeout: terminateNotificationTimeout,
+				OSDisk: infrav1.OSDisk{
+					CachingType: "None",
+					OSType:      "Linux",
+				},
 			},
 		},
 	}
@@ -514,6 +533,10 @@ func createMachinePoolWithSharedImage(subscriptionID, resourceGroup, name, galle
 				Image:                        &image,
 				SSHPublicKey:                 validSSHPublicKey,
 				TerminateNotificationTimeout: terminateNotificationTimeout,
+				OSDisk: infrav1.OSDisk{
+					CachingType: "None",
+					OSType:      "Linux",
+				},
 			},
 		},
 	}
@@ -525,6 +548,10 @@ func createMachinePoolWithNetworkConfig(subnetName string, interfaces []infrav1.
 			Template: AzureMachinePoolMachineTemplate{
 				SubnetName:        subnetName,
 				NetworkInterfaces: interfaces,
+				OSDisk: infrav1.OSDisk{
+					CachingType: "None",
+					OSType:      "Linux",
+				},
 			},
 		},
 	}
@@ -541,6 +568,10 @@ func createMachinePoolWithImageByID(imageID string, terminateNotificationTimeout
 				Image:                        &image,
 				SSHPublicKey:                 validSSHPublicKey,
 				TerminateNotificationTimeout: terminateNotificationTimeout,
+				OSDisk: infrav1.OSDisk{
+					CachingType: "None",
+					OSType:      "Linux",
+				},
 			},
 		},
 	}
@@ -554,6 +585,12 @@ func createMachinePoolWithSystemAssignedIdentity(role string) *AzureMachinePool 
 				Name:         role,
 				Scope:        "scope",
 				DefinitionID: "definitionID",
+			},
+			Template: AzureMachinePoolMachineTemplate{
+				OSDisk: infrav1.OSDisk{
+					CachingType: "None",
+					OSType:      "Linux",
+				},
 			},
 		},
 	}
@@ -578,6 +615,10 @@ func createMachinePoolWithDiagnostics(diagnosticsType infrav1.BootDiagnosticsSto
 		Spec: AzureMachinePoolSpec{
 			Template: AzureMachinePoolMachineTemplate{
 				Diagnostics: diagnostics,
+				OSDisk: infrav1.OSDisk{
+					CachingType: "None",
+					OSType:      "Linux",
+				},
 			},
 		},
 	}
@@ -596,6 +637,12 @@ func createMachinePoolWithUserAssignedIdentity(providerIds []string) *AzureMachi
 		Spec: AzureMachinePoolSpec{
 			Identity:               infrav1.VMIdentityUserAssigned,
 			UserAssignedIdentities: userAssignedIdentities,
+			Template: AzureMachinePoolMachineTemplate{
+				OSDisk: infrav1.OSDisk{
+					CachingType: "None",
+					OSType:      "Linux",
+				},
+			},
 		},
 	}
 }
@@ -613,6 +660,12 @@ func createMachinePoolWithStrategy(strategy AzureMachinePoolDeploymentStrategy) 
 	return &AzureMachinePool{
 		Spec: AzureMachinePoolSpec{
 			Strategy: strategy,
+			Template: AzureMachinePoolMachineTemplate{
+				OSDisk: infrav1.OSDisk{
+					CachingType: "None",
+					OSType:      "Linux",
+				},
+			},
 		},
 	}
 }
@@ -621,6 +674,24 @@ func createMachinePoolWithOrchestrationMode(mode armcompute.OrchestrationMode) *
 	return &AzureMachinePool{
 		Spec: AzureMachinePoolSpec{
 			OrchestrationMode: infrav1.OrchestrationModeType(mode),
+			Template: AzureMachinePoolMachineTemplate{
+				OSDisk: infrav1.OSDisk{
+					CachingType: "None",
+					OSType:      "Linux",
+				},
+			},
+		},
+	}
+}
+
+func createMachinePoolWithDiffDiskSettings(settings infrav1.DiffDiskSettings) *AzureMachinePool {
+	return &AzureMachinePool{
+		Spec: AzureMachinePoolSpec{
+			Template: AzureMachinePoolMachineTemplate{
+				OSDisk: infrav1.OSDisk{
+					DiffDiskSettings: &settings,
+				},
+			},
 		},
 	}
 }
@@ -629,27 +700,29 @@ func TestAzureMachinePool_ValidateCreateFailure(t *testing.T) {
 	g := NewWithT(t)
 
 	tests := []struct {
-		name        string
-		amp         *AzureMachinePool
-		deferFunc   func()
-		expectError bool
+		name               string
+		amp                *AzureMachinePool
+		featureGateEnabled *bool
+		expectError        bool
 	}{
 		{
-			name:        "feature gate explicitly disabled",
-			amp:         getKnownValidAzureMachinePool(),
-			deferFunc:   utilfeature.SetFeatureGateDuringTest(t, feature.Gates, capifeature.MachinePool, false),
-			expectError: true,
+			name:               "feature gate explicitly disabled",
+			amp:                getKnownValidAzureMachinePool(),
+			featureGateEnabled: ptr.To(false),
+			expectError:        true,
 		},
 		{
-			name:        "feature gate implicitly enabled",
-			amp:         getKnownValidAzureMachinePool(),
-			deferFunc:   func() {},
-			expectError: false,
+			name:               "feature gate implicitly enabled",
+			amp:                getKnownValidAzureMachinePool(),
+			featureGateEnabled: nil,
+			expectError:        false,
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			defer tc.deferFunc()
+			if tc.featureGateEnabled != nil {
+				defer utilfeature.SetFeatureGateDuringTest(t, feature.Gates, capifeature.MachinePool, *tc.featureGateEnabled)()
+			}
 			ampw := &azureMachinePoolWebhook{}
 			_, err := ampw.ValidateCreate(context.Background(), tc.amp)
 			if tc.expectError {
@@ -678,6 +751,10 @@ func getKnownValidAzureMachinePool() *AzureMachinePool {
 				Image:                        &image,
 				SSHPublicKey:                 validSSHPublicKey,
 				TerminateNotificationTimeout: ptr.To(10),
+				OSDisk: infrav1.OSDisk{
+					CachingType: "None",
+					OSType:      "Linux",
+				},
 			},
 			Identity: infrav1.VMIdentitySystemAssigned,
 			SystemAssignedIdentityRole: &infrav1.SystemAssignedIdentityRole{

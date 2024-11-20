@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-azure/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/mock_azure"
@@ -45,28 +46,65 @@ func TestAzureMachinePoolMachineReconciler_Reconcile(t *testing.T) {
 	cases := []struct {
 		Name   string
 		Setup  func(cb *fake.ClientBuilder, reconciler *mock_azure.MockReconcilerMockRecorder)
-		Verify func(g *WithT, result ctrl.Result, err error)
+		Verify func(g *WithT, c client.Client, result ctrl.Result, err error)
 	}{
 		{
 			Name: "should successfully reconcile",
 			Setup: func(cb *fake.ClientBuilder, reconciler *mock_azure.MockReconcilerMockRecorder) {
-				objects := getReadyMachinePoolMachineClusterObjects(false)
+				objects := getReadyMachinePoolMachineClusterObjects(false, nil)
 				reconciler.Reconcile(gomock2.AContext()).Return(nil)
 				cb.WithObjects(objects...)
 			},
-			Verify: func(g *WithT, result ctrl.Result, err error) {
+			Verify: func(g *WithT, c client.Client, result ctrl.Result, err error) {
 				g.Expect(err).NotTo(HaveOccurred())
 			},
 		},
 		{
 			Name: "should successfully delete",
 			Setup: func(cb *fake.ClientBuilder, reconciler *mock_azure.MockReconcilerMockRecorder) {
-				objects := getReadyMachinePoolMachineClusterObjects(true)
+				objects := getReadyMachinePoolMachineClusterObjects(true, nil)
 				reconciler.Delete(gomock2.AContext()).Return(nil)
 				cb.WithObjects(objects...)
 			},
-			Verify: func(g *WithT, result ctrl.Result, err error) {
+			Verify: func(g *WithT, c client.Client, result ctrl.Result, err error) {
 				g.Expect(err).NotTo(HaveOccurred())
+			},
+		},
+		{
+			Name: "should delete Machine if VMSS VM has state Deleting",
+			Setup: func(cb *fake.ClientBuilder, reconciler *mock_azure.MockReconcilerMockRecorder) {
+				objects := getReadyMachinePoolMachineClusterObjects(false, ptr.To(infrav1.Deleting))
+				reconciler.Reconcile(gomock2.AContext()).Return(nil)
+				cb.WithObjects(objects...)
+			},
+			Verify: func(g *WithT, c client.Client, result ctrl.Result, err error) {
+				g.Expect(err).NotTo(HaveOccurred())
+
+				machine := &clusterv1.Machine{}
+				err = c.Get(context.Background(), types.NamespacedName{
+					Name:      "ma1",
+					Namespace: "default",
+				}, machine)
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).Should(ContainSubstring("not found"))
+			},
+		},
+		{
+			Name: "should remove finalizer if Machine is not found and AzureMachinePool has deletionTimestamp set",
+			Setup: func(cb *fake.ClientBuilder, reconciler *mock_azure.MockReconcilerMockRecorder) {
+				objects := getDeletingMachinePoolObjects()
+				cb.WithObjects(objects...)
+			},
+			Verify: func(g *WithT, c client.Client, result ctrl.Result, err error) {
+				g.Expect(err).NotTo(HaveOccurred())
+
+				ampm := &infrav1exp.AzureMachinePoolMachine{}
+				err = c.Get(context.Background(), types.NamespacedName{
+					Name:      "ampm1",
+					Namespace: "default",
+				}, ampm)
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).Should(ContainSubstring("not found"))
 			},
 		},
 	}
@@ -97,7 +135,8 @@ func TestAzureMachinePoolMachineReconciler_Reconcile(t *testing.T) {
 			defer mockCtrl.Finish()
 
 			c.Setup(cb, reconciler.EXPECT())
-			controller := NewAzureMachinePoolMachineController(cb.Build(), nil, reconcilerutils.Timeouts{}, "foo")
+			cl := cb.Build()
+			controller := NewAzureMachinePoolMachineController(cl, nil, reconcilerutils.Timeouts{}, "foo")
 			controller.reconcilerFactory = func(_ *scope.MachinePoolMachineScope) (azure.Reconciler, error) {
 				return reconciler, nil
 			}
@@ -107,12 +146,12 @@ func TestAzureMachinePoolMachineReconciler_Reconcile(t *testing.T) {
 					Namespace: "default",
 				},
 			})
-			c.Verify(g, res, err)
+			c.Verify(g, cl, res, err)
 		})
 	}
 }
 
-func getReadyMachinePoolMachineClusterObjects(ampmIsDeleting bool) []client.Object {
+func getReadyMachinePoolMachineClusterObjects(ampmIsDeleting bool, ampmProvisioningState *infrav1.ProvisioningState) []client.Object {
 	azCluster := &infrav1.AzureCluster{
 		TypeMeta: metav1.TypeMeta{
 			Kind: "AzureCluster",
@@ -253,6 +292,139 @@ func getReadyMachinePoolMachineClusterObjects(ampmIsDeleting bool) []client.Obje
 			Time: time.Now(),
 		}
 	}
+	if ampmProvisioningState != nil {
+		ampm.Status = infrav1exp.AzureMachinePoolMachineStatus{
+			ProvisioningState: ampmProvisioningState,
+		}
+	}
 
 	return []client.Object{cluster, azCluster, mp, amp, ma, ampm, fakeIdentity, fakeSecret}
+}
+
+func getDeletingMachinePoolObjects() []client.Object {
+	azCluster := &infrav1.AzureCluster{
+		TypeMeta: metav1.TypeMeta{
+			Kind: "AzureCluster",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "azCluster1",
+			Namespace: "default",
+		},
+		Spec: infrav1.AzureClusterSpec{
+			AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
+				SubscriptionID: "subID",
+				IdentityRef: &corev1.ObjectReference{
+					Name:      "fake-identity",
+					Namespace: "default",
+					Kind:      "AzureClusterIdentity",
+				},
+			},
+		},
+	}
+
+	cluster := &clusterv1.Cluster{
+		TypeMeta: metav1.TypeMeta{
+			Kind: "Cluster",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "cluster1",
+			Namespace: "default",
+		},
+		Spec: clusterv1.ClusterSpec{
+			InfrastructureRef: &corev1.ObjectReference{
+				Name:      azCluster.Name,
+				Namespace: "default",
+				Kind:      "AzureCluster",
+			},
+		},
+		Status: clusterv1.ClusterStatus{
+			InfrastructureReady: true,
+		},
+	}
+
+	mp := &expv1.MachinePool{
+		TypeMeta: metav1.TypeMeta{
+			Kind: "MachinePool",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "mp1",
+			Namespace:  "default",
+			Finalizers: []string{"test"},
+			DeletionTimestamp: &metav1.Time{
+				Time: time.Now(),
+			},
+			Labels: map[string]string{
+				"cluster.x-k8s.io/cluster-name": cluster.Name,
+			},
+		},
+	}
+
+	amp := &infrav1exp.AzureMachinePool{
+		TypeMeta: metav1.TypeMeta{
+			Kind: "AzureMachinePool",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "amp1",
+			Namespace:  "default",
+			Finalizers: []string{"test"},
+			DeletionTimestamp: &metav1.Time{
+				Time: time.Now(),
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					Name:       mp.Name,
+					Kind:       "MachinePool",
+					APIVersion: expv1.GroupVersion.String(),
+				},
+			},
+		},
+	}
+
+	ampm := &infrav1exp.AzureMachinePoolMachine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ampm1",
+			Namespace: "default",
+			DeletionTimestamp: &metav1.Time{
+				Time: time.Now(),
+			},
+			Finalizers: []string{infrav1exp.AzureMachinePoolMachineFinalizer},
+			Labels: map[string]string{
+				clusterv1.ClusterNameLabel: cluster.Name,
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					Name:       amp.Name,
+					Kind:       infrav1.AzureMachinePoolKind,
+					APIVersion: infrav1exp.GroupVersion.String(),
+				},
+			},
+		},
+	}
+
+	fakeIdentity := &infrav1.AzureClusterIdentity{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "fake-identity",
+			Namespace: "default",
+		},
+		Spec: infrav1.AzureClusterIdentitySpec{
+			Type: infrav1.ServicePrincipal,
+			ClientSecret: corev1.SecretReference{
+				Name:      "fooSecret",
+				Namespace: "default",
+			},
+			TenantID: "fake-tenantid",
+		},
+	}
+
+	fakeSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "fooSecret",
+			Namespace: "default",
+		},
+		Data: map[string][]byte{
+			"clientSecret": []byte("fooSecret"),
+		},
+	}
+
+	return []client.Object{cluster, azCluster, mp, amp, ampm, fakeIdentity, fakeSecret}
 }

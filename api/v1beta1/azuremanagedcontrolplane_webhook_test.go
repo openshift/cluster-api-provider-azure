@@ -238,7 +238,7 @@ func TestValidateLoadBalancerProfile(t *testing.T) {
 			},
 			expectedErr: field.Error{
 				Type:     field.ErrorTypeInvalid,
-				Field:    "spec.LoadBalancerProfile.ManagedOutboundIPs",
+				Field:    "spec.loadBalancerProfile.ManagedOutboundIPs",
 				BadValue: ptr.To(200),
 				Detail:   "value should be in between 1 and 100",
 			},
@@ -250,7 +250,7 @@ func TestValidateLoadBalancerProfile(t *testing.T) {
 			},
 			expectedErr: field.Error{
 				Type:     field.ErrorTypeInvalid,
-				Field:    "spec.LoadBalancerProfile.IdleTimeoutInMinutes",
+				Field:    "spec.loadBalancerProfile.IdleTimeoutInMinutes",
 				BadValue: ptr.To(600),
 				Detail:   "value should be in between 4 and 120",
 			},
@@ -265,7 +265,7 @@ func TestValidateLoadBalancerProfile(t *testing.T) {
 			},
 			expectedErr: field.Error{
 				Type:     field.ErrorTypeForbidden,
-				Field:    "spec.LoadBalancerProfile",
+				Field:    "spec.loadBalancerProfile",
 				BadValue: ptr.To(2),
 				Detail:   "load balancer profile must specify at most one of ManagedOutboundIPs, OutboundIPPrefixes and OutboundIPs",
 			},
@@ -275,7 +275,7 @@ func TestValidateLoadBalancerProfile(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			allErrs := validateLoadBalancerProfile(tt.profile, field.NewPath("spec").Child("LoadBalancerProfile"))
+			allErrs := validateLoadBalancerProfile(tt.profile, field.NewPath("spec").Child("loadBalancerProfile"))
 			if tt.expectedErr != (field.Error{}) {
 				g.Expect(allErrs).To(ContainElement(MatchError(tt.expectedErr.Error())))
 			} else {
@@ -467,7 +467,7 @@ func TestValidateAutoScalerProfile(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			allErrs := validateAutoScalerProfile(tt.profile, field.NewPath("spec").Child("AutoScalerProfile"))
+			allErrs := validateAutoScalerProfile(tt.profile, field.NewPath("spec").Child("autoScalerProfile"))
 			if tt.expectErr {
 				g.Expect(allErrs).NotTo(BeNil())
 			} else {
@@ -1662,29 +1662,31 @@ func TestAzureManagedControlPlane_ValidateCreate(t *testing.T) {
 
 func TestAzureManagedControlPlane_ValidateCreateFailure(t *testing.T) {
 	tests := []struct {
-		name        string
-		amcp        *AzureManagedControlPlane
-		deferFunc   func()
-		expectError bool
+		name               string
+		amcp               *AzureManagedControlPlane
+		featureGateEnabled *bool
+		expectError        bool
 	}{
 		{
-			name:        "feature gate explicitly disabled",
-			amcp:        getKnownValidAzureManagedControlPlane(),
-			deferFunc:   utilfeature.SetFeatureGateDuringTest(t, feature.Gates, capifeature.MachinePool, false),
-			expectError: true,
+			name:               "feature gate explicitly disabled",
+			amcp:               getKnownValidAzureManagedControlPlane(),
+			featureGateEnabled: ptr.To(false),
+			expectError:        true,
 		},
 		{
-			name:        "feature gate implicitly enabled",
-			amcp:        getKnownValidAzureManagedControlPlane(),
-			deferFunc:   func() {},
-			expectError: false,
+			name:               "feature gate implicitly enabled",
+			amcp:               getKnownValidAzureManagedControlPlane(),
+			featureGateEnabled: nil,
+			expectError:        false,
 		},
 	}
 	client := mockClient{ReturnError: false}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			defer tc.deferFunc()
+			if tc.featureGateEnabled != nil {
+				defer utilfeature.SetFeatureGateDuringTest(t, feature.Gates, capifeature.MachinePool, *tc.featureGateEnabled)()
+			}
 			mcpw := &azureManagedControlPlaneWebhook{
 				Client: client,
 			}
@@ -3270,7 +3272,7 @@ func TestAzureManagedClusterSecurityProfileValidateCreate(t *testing.T) {
 					},
 				},
 			},
-			wantErr: "Spec.SecurityProfile.WorkloadIdentity: Invalid value: v1beta1.ManagedClusterSecurityProfileWorkloadIdentity{Enabled:true}: Spec.SecurityProfile.WorkloadIdentity cannot be enabled when Spec.OIDCIssuerProfile is disabled",
+			wantErr: "spec.securityProfile.workloadIdentity: Invalid value: v1beta1.ManagedClusterSecurityProfileWorkloadIdentity{Enabled:true}: Spec.SecurityProfile.WorkloadIdentity cannot be enabled when Spec.OIDCIssuerProfile is disabled",
 		},
 		{
 			name: "Cannot enable AzureKms without user assigned identity",
@@ -3286,7 +3288,7 @@ func TestAzureManagedClusterSecurityProfileValidateCreate(t *testing.T) {
 					},
 				},
 			},
-			wantErr: "Spec.SecurityProfile.AzureKeyVaultKms.KeyVaultResourceID: Invalid value: \"null\": Spec.SecurityProfile.AzureKeyVaultKms can be set only when Spec.Identity.Type is UserAssigned",
+			wantErr: "spec.securityProfile.azureKeyVaultKms.keyVaultResourceID: Invalid value: \"null\": Spec.SecurityProfile.AzureKeyVaultKms can be set only when Spec.Identity.Type is UserAssigned",
 		},
 		{
 			name: "When AzureKms.KeyVaultNetworkAccess is private AzureKeyVaultKms.KeyVaultResourceID cannot be empty",
@@ -3308,7 +3310,7 @@ func TestAzureManagedClusterSecurityProfileValidateCreate(t *testing.T) {
 					},
 				},
 			},
-			wantErr: "Spec.SecurityProfile.AzureKeyVaultKms.KeyVaultResourceID: Invalid value: \"null\": Spec.SecurityProfile.AzureKeyVaultKms.KeyVaultResourceID cannot be empty when Spec.SecurityProfile.AzureKeyVaultKms.KeyVaultNetworkAccess is Private",
+			wantErr: "spec.securityProfile.azureKeyVaultKms.keyVaultResourceID: Invalid value: \"null\": Spec.SecurityProfile.AzureKeyVaultKms.KeyVaultResourceID cannot be empty when Spec.SecurityProfile.AzureKeyVaultKms.KeyVaultNetworkAccess is Private",
 		},
 		{
 			name: "When AzureKms.KeyVaultNetworkAccess is public AzureKeyVaultKms.KeyVaultResourceID should be empty",
@@ -3331,7 +3333,7 @@ func TestAzureManagedClusterSecurityProfileValidateCreate(t *testing.T) {
 					},
 				},
 			},
-			wantErr: "Spec.SecurityProfile.AzureKeyVaultKms.KeyVaultResourceID: Invalid value: \"not empty\": Spec.SecurityProfile.AzureKeyVaultKms.KeyVaultResourceID should be empty when Spec.SecurityProfile.AzureKeyVaultKms.KeyVaultNetworkAccess is Public",
+			wantErr: "spec.securityProfile.azureKeyVaultKms.keyVaultResourceID: Invalid value: \"not empty\": Spec.SecurityProfile.AzureKeyVaultKms.KeyVaultResourceID should be empty when Spec.SecurityProfile.AzureKeyVaultKms.KeyVaultNetworkAccess is Public",
 		},
 		{
 			name: "Valid profile",
@@ -3447,7 +3449,7 @@ func TestAzureClusterSecurityProfileValidateUpdate(t *testing.T) {
 					},
 				},
 			},
-			wantErr: "AzureManagedControlPlane.infrastructure.cluster.x-k8s.io \"\" is invalid: Spec.SecurityProfile.Defender: Invalid value: \"null\": cannot unset Spec.SecurityProfile.Defender, to disable defender please set Spec.SecurityProfile.Defender.SecurityMonitoring.Enabled to false",
+			wantErr: "AzureManagedControlPlane.infrastructure.cluster.x-k8s.io \"\" is invalid: spec.securityProfile.defender: Invalid value: \"null\": cannot unset Spec.SecurityProfile.Defender, to disable defender please set Spec.SecurityProfile.Defender.SecurityMonitoring.Enabled to false",
 		},
 		{
 			name: "AzureManagedControlPlane SecurityProfile.Defender is mutable and can be disabled",
@@ -3530,7 +3532,7 @@ func TestAzureClusterSecurityProfileValidateUpdate(t *testing.T) {
 					},
 				},
 			},
-			wantErr: "Spec.SecurityProfile.WorkloadIdentity: Invalid value: v1beta1.ManagedClusterSecurityProfileWorkloadIdentity{Enabled:true}: Spec.SecurityProfile.WorkloadIdentity cannot be enabled when Spec.OIDCIssuerProfile is disabled",
+			wantErr: "spec.securityProfile.workloadIdentity: Invalid value: v1beta1.ManagedClusterSecurityProfileWorkloadIdentity{Enabled:true}: Spec.SecurityProfile.WorkloadIdentity cannot be enabled when Spec.OIDCIssuerProfile is disabled",
 		},
 		{
 			name: "AzureManagedControlPlane SecurityProfile.WorkloadIdentity cannot unset values",
@@ -3559,7 +3561,7 @@ func TestAzureClusterSecurityProfileValidateUpdate(t *testing.T) {
 					},
 				},
 			},
-			wantErr: "AzureManagedControlPlane.infrastructure.cluster.x-k8s.io \"\" is invalid: Spec.SecurityProfile.WorkloadIdentity: Invalid value: \"null\": cannot unset Spec.SecurityProfile.WorkloadIdentity, to disable workloadIdentity please set Spec.SecurityProfile.WorkloadIdentity.Enabled to false",
+			wantErr: "AzureManagedControlPlane.infrastructure.cluster.x-k8s.io \"\" is invalid: spec.securityProfile.workloadIdentity: Invalid value: \"null\": cannot unset Spec.SecurityProfile.WorkloadIdentity, to disable workloadIdentity please set Spec.SecurityProfile.WorkloadIdentity.Enabled to false",
 		},
 		{
 			name: "AzureManagedControlPlane SecurityProfile.WorkloadIdentity can be disabled",
@@ -3737,7 +3739,7 @@ func TestAzureClusterSecurityProfileValidateUpdate(t *testing.T) {
 					},
 				},
 			},
-			wantErr: "AzureManagedControlPlane.infrastructure.cluster.x-k8s.io \"\" is invalid: Spec.SecurityProfile.AzureKeyVaultKms: Invalid value: \"null\": cannot unset Spec.SecurityProfile.AzureKeyVaultKms profile to disable the profile please set Spec.SecurityProfile.AzureKeyVaultKms.Enabled to false",
+			wantErr: "AzureManagedControlPlane.infrastructure.cluster.x-k8s.io \"\" is invalid: spec.securityProfile.azureKeyVaultKms: Invalid value: \"null\": cannot unset Spec.SecurityProfile.AzureKeyVaultKms profile to disable the profile please set Spec.SecurityProfile.AzureKeyVaultKms.Enabled to false",
 		},
 		{
 			name: "AzureManagedControlPlane SecurityProfile.AzureKeyVaultKms cannot be enabled without UserAssigned Identity",
@@ -3763,7 +3765,7 @@ func TestAzureClusterSecurityProfileValidateUpdate(t *testing.T) {
 					},
 				},
 			},
-			wantErr: "Spec.SecurityProfile.AzureKeyVaultKms.KeyVaultResourceID: Invalid value: \"0000-0000-0000-0000\": Spec.SecurityProfile.AzureKeyVaultKms can be set only when Spec.Identity.Type is UserAssigned",
+			wantErr: "spec.securityProfile.azureKeyVaultKms.keyVaultResourceID: Invalid value: \"0000-0000-0000-0000\": Spec.SecurityProfile.AzureKeyVaultKms can be set only when Spec.Identity.Type is UserAssigned",
 		},
 		{
 			name: "AzureManagedControlPlane SecurityProfile.ImageCleaner is mutable",
@@ -3812,7 +3814,7 @@ func TestAzureClusterSecurityProfileValidateUpdate(t *testing.T) {
 					},
 				},
 			},
-			wantErr: "AzureManagedControlPlane.infrastructure.cluster.x-k8s.io \"\" is invalid: Spec.SecurityProfile.ImageCleaner: Invalid value: \"null\": cannot unset Spec.SecurityProfile.ImageCleaner, to disable imageCleaner please set Spec.SecurityProfile.ImageCleaner.Enabled to false",
+			wantErr: "AzureManagedControlPlane.infrastructure.cluster.x-k8s.io \"\" is invalid: spec.securityProfile.imageCleaner: Invalid value: \"null\": cannot unset Spec.SecurityProfile.ImageCleaner, to disable imageCleaner please set Spec.SecurityProfile.ImageCleaner.Enabled to false",
 		},
 		{
 			name: "AzureManagedControlPlane SecurityProfile.ImageCleaner is mutable",
@@ -4248,7 +4250,7 @@ func TestValidateAMCPVirtualNetwork(t *testing.T) {
 			err := mcpw.Default(context.Background(), tc.amcp)
 			g.Expect(err).NotTo(HaveOccurred())
 
-			errs := validateAMCPVirtualNetwork(tc.amcp.Spec.VirtualNetwork, field.NewPath("spec", "VirtualNetwork"))
+			errs := validateAMCPVirtualNetwork(tc.amcp.Spec.VirtualNetwork, field.NewPath("spec", "virtualNetwork"))
 			if tc.wantErr != "" {
 				g.Expect(errs).ToNot(BeEmpty())
 				g.Expect(errs[0].Detail).To(Equal(tc.wantErr))

@@ -3,7 +3,3 @@ kind: Kustomization
 
 resources:
 - ../config/default
-
-# This field is deprecated in Kustomize v5; however, we rely on an earlier version and cannot use `patches` yet.
-patchesStrategicMerge:
-- ./patches/disable-aso.yaml

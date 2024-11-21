@@ -9158,7 +9158,7 @@ spec:
         - --leader-elect
         - --diagnostics-address=${CAPZ_DIAGNOSTICS_ADDRESS:=:8443}
         - --insecure-diagnostics=${CAPZ_INSECURE_DIAGNOSTICS:=false}
-        - --feature-gates=MachinePool=${EXP_MACHINE_POOL:=false},AKSResourceHealth=${EXP_AKS_RESOURCE_HEALTH:=false},EdgeZone=${EXP_EDGEZONE:=false}
+        - --feature-gates=MachinePool=${EXP_MACHINE_POOL:=false},AKSResourceHealth=${EXP_AKS_RESOURCE_HEALTH:=false},EdgeZone=${EXP_EDGEZONE:=false},ASOAPI=false
         - --v=0
         env:
         - name: NODE_NAME

@@ -3,3 +3,6 @@ kind: Kustomization
 
 resources:
 - ../config/default
+
+patchesStrategicMerge:
+- ./patches/turn-off-aso-api.yaml

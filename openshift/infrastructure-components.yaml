@@ -10430,6 +10430,8 @@ spec:
         - --feature-gates=MachinePool=${EXP_MACHINE_POOL:=false},AKSResourceHealth=${EXP_AKS_RESOURCE_HEALTH:=false},EdgeZone=${EXP_EDGEZONE:=false},ASOAPI=${EXP_ASO_API:=true}
         - --v=0
         env:
+        - name: EXP_ASO_API
+          value: "false"
         - name: AZURE_SUBSCRIPTION_ID
           valueFrom:
             secretKeyRef:

@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: azureserviceoperator-controller-manager
+  namespace: azureserviceoperator-system # This patch is processed before manifests-gen updates the namespace
+spec:
+  template:
+    spec:
+     containers:
+     - name: manager
+       args:
+       - --metrics-addr=:8080
+       - --health-addr=:8081
+       - --enable-leader-election
+       - --v=2
+       - --crd-management=none
+       - --webhook-port=9443
+       - --webhook-cert-dir=/tmp/k8s-webhook-server/serving-certs

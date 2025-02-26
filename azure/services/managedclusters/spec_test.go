@@ -27,10 +27,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/cluster-api/util/secret"
+
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-azure/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/agentpools"
-	"sigs.k8s.io/cluster-api/util/secret"
 )
 
 func TestParameters(t *testing.T) {
@@ -57,8 +58,13 @@ func TestParameters(t *testing.T) {
 					&agentpools.AgentPoolSpec{
 						Replicas:  5,
 						Mode:      "mode",
-						AzureName: "agentpool",
+						AzureName: "agentpool-b",
 						Patches:   []string{`{"spec": {"tags": {"from": "patches"}}}`},
+					},
+					&agentpools.AgentPoolSpec{
+						Replicas:  10,
+						Mode:      "mode",
+						AzureName: "agentpool-a",
 					},
 				}, nil
 			},
@@ -141,10 +147,18 @@ func TestParameters(t *testing.T) {
 				},
 				AgentPoolProfiles: []asocontainerservicev1.ManagedClusterAgentPoolProfile{
 					{
+						Count:             ptr.To(10),
+						EnableAutoScaling: ptr.To(false),
+						Mode:              ptr.To(asocontainerservicev1.AgentPoolMode("mode")),
+						Name:              ptr.To("agentpool-a"),
+						OsDiskSizeGB:      ptr.To(asocontainerservicev1.ContainerServiceOSDisk(0)),
+						Type:              ptr.To(asocontainerservicev1.AgentPoolType_VirtualMachineScaleSets),
+					},
+					{
 						Count:             ptr.To(5),
 						EnableAutoScaling: ptr.To(false),
 						Mode:              ptr.To(asocontainerservicev1.AgentPoolMode("mode")),
-						Name:              ptr.To("agentpool"),
+						Name:              ptr.To("agentpool-b"),
 						OsDiskSizeGB:      ptr.To(asocontainerservicev1.ContainerServiceOSDisk(0)),
 						Type:              ptr.To(asocontainerservicev1.AgentPoolType_VirtualMachineScaleSets),
 						Tags:              map[string]string{"from": "patches"},

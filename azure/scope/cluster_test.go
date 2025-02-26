@@ -32,7 +32,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/component-base/featuregate"
+	featuregatetesting "k8s.io/component-base/featuregate/testing"
 	"k8s.io/utils/ptr"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-azure/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/bastionhosts"
@@ -45,12 +50,12 @@ import (
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/securitygroups"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/subnets"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/vnetpeerings"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/cluster-api-provider-azure/feature"
 )
 
 const fakeClientID = "fake-client-id"
 const fakeTenantID = "fake-tenant-id"
+const fakeSubscriptionID = "123"
 
 func specToString(spec any) string {
 	var sb strings.Builder
@@ -71,9 +76,57 @@ func specArrayToString[T any](specs []T) string {
 	return sb.String()
 }
 
-func TestAPIServerHost(t *testing.T) {
-	fakeSubscriptionID := "123"
+func TestNewClusterScope(t *testing.T) {
+	g := NewWithT(t)
 
+	scheme := runtime.NewScheme()
+	_ = clusterv1.AddToScheme(scheme)
+	_ = infrav1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	cluster := &clusterv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-cluster",
+			Namespace: "default",
+		},
+	}
+	azureCluster := &infrav1.AzureCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: cluster.Name,
+		},
+		Spec: infrav1.AzureClusterSpec{
+			AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
+				SubscriptionID: fakeSubscriptionID,
+				IdentityRef: &corev1.ObjectReference{
+					Kind: infrav1.AzureClusterIdentityKind,
+				},
+			},
+		},
+	}
+	azureCluster.Default()
+
+	fakeIdentity := &infrav1.AzureClusterIdentity{
+		Spec: infrav1.AzureClusterIdentitySpec{
+			Type:     infrav1.ServicePrincipal,
+			ClientID: fakeClientID,
+			TenantID: fakeTenantID,
+		},
+	}
+	fakeSecret := &corev1.Secret{Data: map[string][]byte{"clientSecret": []byte("fooSecret")}}
+
+	initObjects := []runtime.Object{cluster, azureCluster, fakeIdentity, fakeSecret}
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
+
+	_, err := NewClusterScope(context.TODO(), ClusterScopeParams{
+		Cluster:         cluster,
+		AzureCluster:    azureCluster,
+		Client:          fakeClient,
+		CredentialCache: azure.NewCredentialCache(),
+	})
+	g.Expect(err).NotTo(HaveOccurred())
+}
+
+func TestAPIServerHost(t *testing.T) {
 	tests := []struct {
 		name         string
 		azureCluster infrav1.AzureCluster
@@ -89,8 +142,9 @@ func TestAPIServerHost(t *testing.T) {
 							Kind: infrav1.AzureClusterIdentityKind,
 						},
 					},
+					ControlPlaneEnabled: true,
 					NetworkSpec: infrav1.NetworkSpec{
-						APIServerLB: infrav1.LoadBalancerSpec{
+						APIServerLB: &infrav1.LoadBalancerSpec{
 							FrontendIPs: []infrav1.FrontendIP{
 								{
 									PublicIP: &infrav1.PublicIPSpec{
@@ -117,8 +171,9 @@ func TestAPIServerHost(t *testing.T) {
 							Kind: infrav1.AzureClusterIdentityKind,
 						},
 					},
+					ControlPlaneEnabled: true,
 					NetworkSpec: infrav1.NetworkSpec{
-						APIServerLB: infrav1.LoadBalancerSpec{
+						APIServerLB: &infrav1.LoadBalancerSpec{
 							FrontendIPs: []infrav1.FrontendIP{
 								{
 									PublicIP: &infrav1.PublicIPSpec{
@@ -145,11 +200,12 @@ func TestAPIServerHost(t *testing.T) {
 							Kind: infrav1.AzureClusterIdentityKind,
 						},
 					},
+					ControlPlaneEnabled: true,
 					NetworkSpec: infrav1.NetworkSpec{
 						NetworkClassSpec: infrav1.NetworkClassSpec{
 							PrivateDNSZoneName: "example.private",
 						},
-						APIServerLB: infrav1.LoadBalancerSpec{
+						APIServerLB: &infrav1.LoadBalancerSpec{
 							LoadBalancerClassSpec: infrav1.LoadBalancerClassSpec{
 								Type: infrav1.Internal,
 							},
@@ -162,12 +218,7 @@ func TestAPIServerHost(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		g := NewWithT(t)
-		scheme := runtime.NewScheme()
-		_ = clusterv1.AddToScheme(scheme)
-		_ = infrav1.AddToScheme(scheme)
-		_ = corev1.AddToScheme(scheme)
 
 		cluster := &clusterv1.Cluster{
 			ObjectMeta: metav1.ObjectMeta{
@@ -178,34 +229,13 @@ func TestAPIServerHost(t *testing.T) {
 
 		tc.azureCluster.ObjectMeta = metav1.ObjectMeta{
 			Name: cluster.Name,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "cluster.x-k8s.io/v1beta1",
-					Kind:       "Cluster",
-					Name:       "my-cluster",
-				},
-			},
 		}
 		tc.azureCluster.Default()
 
-		fakeIdentity := &infrav1.AzureClusterIdentity{
-			Spec: infrav1.AzureClusterIdentitySpec{
-				Type:     infrav1.ServicePrincipal,
-				ClientID: fakeClientID,
-				TenantID: fakeTenantID,
-			},
-		}
-		fakeSecret := &corev1.Secret{Data: map[string][]byte{"clientSecret": []byte("fooSecret")}}
-
-		initObjects := []runtime.Object{cluster, &tc.azureCluster, fakeIdentity, fakeSecret}
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
-
-		clusterScope, err := NewClusterScope(context.TODO(), ClusterScopeParams{
+		clusterScope := &ClusterScope{
 			Cluster:      cluster,
 			AzureCluster: &tc.azureCluster,
-			Client:       fakeClient,
-		})
-		g.Expect(err).NotTo(HaveOccurred())
+		}
 
 		g.Expect(clusterScope.APIServerHost()).Should(Equal(tc.want))
 	}
@@ -213,10 +243,6 @@ func TestAPIServerHost(t *testing.T) {
 
 func TestGettingSecurityRules(t *testing.T) {
 	g := NewWithT(t)
-	scheme := runtime.NewScheme()
-	_ = clusterv1.AddToScheme(scheme)
-	_ = infrav1.AddToScheme(scheme)
-	_ = corev1.AddToScheme(scheme)
 
 	cluster := &clusterv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
@@ -228,13 +254,6 @@ func TestGettingSecurityRules(t *testing.T) {
 	azureCluster := &infrav1.AzureCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "my-azure-cluster",
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "cluster.x-k8s.io/v1beta1",
-					Kind:       "Cluster",
-					Name:       "my-cluster",
-				},
-			},
 		},
 		Spec: infrav1.AzureClusterSpec{
 			AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
@@ -243,6 +262,7 @@ func TestGettingSecurityRules(t *testing.T) {
 					Kind: infrav1.AzureClusterIdentityKind,
 				},
 			},
+			ControlPlaneEnabled: true,
 			NetworkSpec: infrav1.NetworkSpec{
 				Subnets: infrav1.Subnets{
 					{
@@ -257,25 +277,10 @@ func TestGettingSecurityRules(t *testing.T) {
 	}
 	azureCluster.Default()
 
-	fakeIdentity := &infrav1.AzureClusterIdentity{
-		Spec: infrav1.AzureClusterIdentitySpec{
-			Type:     infrav1.ServicePrincipal,
-			ClientID: fakeClientID,
-			TenantID: fakeTenantID,
-		},
-	}
-	fakeSecret := &corev1.Secret{Data: map[string][]byte{"clientSecret": []byte("fooSecret")}}
-
-	initObjects := []runtime.Object{cluster, azureCluster, fakeIdentity, fakeSecret}
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
-
-	clusterScope, err := NewClusterScope(context.TODO(), ClusterScopeParams{
+	clusterScope := &ClusterScope{
 		Cluster:      cluster,
 		AzureCluster: azureCluster,
-		Client:       fakeClient,
-	})
-	g.Expect(err).NotTo(HaveOccurred())
-
+	}
 	clusterScope.SetControlPlaneSecurityRules()
 
 	subnet, err := clusterScope.AzureCluster.Spec.NetworkSpec.GetControlPlaneSubnet()
@@ -294,13 +299,6 @@ func TestPublicIPSpecs(t *testing.T) {
 			azureCluster: &infrav1.AzureCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "my-cluster",
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "cluster.x-k8s.io/v1beta1",
-							Kind:       "Cluster",
-							Name:       "my-cluster",
-						},
-					},
 				},
 				Status: infrav1.AzureClusterStatus{
 					FailureDomains: map[string]clusterv1.FailureDomainSpec{
@@ -312,18 +310,14 @@ func TestPublicIPSpecs(t *testing.T) {
 				Spec: infrav1.AzureClusterSpec{
 					ResourceGroup: "my-rg",
 					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
-						SubscriptionID: "123",
-						Location:       "centralIndia",
+						Location: "centralIndia",
 						AdditionalTags: infrav1.Tags{
 							"Name": "my-publicip-ipv6",
 							"sigs.k8s.io_cluster-api-provider-azure_cluster_my-cluster": "owned",
 						},
-						IdentityRef: &corev1.ObjectReference{
-							Kind: infrav1.AzureClusterIdentityKind,
-						},
 					},
 					NetworkSpec: infrav1.NetworkSpec{
-						APIServerLB: infrav1.LoadBalancerSpec{
+						APIServerLB: &infrav1.LoadBalancerSpec{
 							LoadBalancerClassSpec: infrav1.LoadBalancerClassSpec{
 								Type: infrav1.Internal,
 							},
@@ -338,13 +332,6 @@ func TestPublicIPSpecs(t *testing.T) {
 			azureCluster: &infrav1.AzureCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "my-cluster",
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "cluster.x-k8s.io/v1beta1",
-							Kind:       "Cluster",
-							Name:       "my-cluster",
-						},
-					},
 				},
 				Status: infrav1.AzureClusterStatus{
 					FailureDomains: map[string]clusterv1.FailureDomainSpec{
@@ -354,23 +341,20 @@ func TestPublicIPSpecs(t *testing.T) {
 					},
 				},
 				Spec: infrav1.AzureClusterSpec{
-					ResourceGroup: "my-rg",
+					ResourceGroup:       "my-rg",
+					ControlPlaneEnabled: true,
 					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
-						SubscriptionID: "123",
-						Location:       "centralIndia",
+						Location: "centralIndia",
 						AdditionalTags: infrav1.Tags{
 							"Name": "my-publicip-ipv6",
 							"sigs.k8s.io_cluster-api-provider-azure_cluster_my-cluster": "owned",
-						},
-						IdentityRef: &corev1.ObjectReference{
-							Kind: infrav1.AzureClusterIdentityKind,
 						},
 					},
 					NetworkSpec: infrav1.NetworkSpec{
 						ControlPlaneOutboundLB: &infrav1.LoadBalancerSpec{
 							FrontendIPsCount: ptr.To[int32](0),
 						},
-						APIServerLB: infrav1.LoadBalancerSpec{
+						APIServerLB: &infrav1.LoadBalancerSpec{
 							LoadBalancerClassSpec: infrav1.LoadBalancerClassSpec{
 								Type: infrav1.Internal,
 							},
@@ -385,13 +369,6 @@ func TestPublicIPSpecs(t *testing.T) {
 			azureCluster: &infrav1.AzureCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "my-cluster",
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "cluster.x-k8s.io/v1beta1",
-							Kind:       "Cluster",
-							Name:       "my-cluster",
-						},
-					},
 				},
 				Status: infrav1.AzureClusterStatus{
 					FailureDomains: map[string]clusterv1.FailureDomainSpec{
@@ -401,16 +378,13 @@ func TestPublicIPSpecs(t *testing.T) {
 					},
 				},
 				Spec: infrav1.AzureClusterSpec{
-					ResourceGroup: "my-rg",
+					ResourceGroup:       "my-rg",
+					ControlPlaneEnabled: true,
 					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
-						SubscriptionID: "123",
-						Location:       "centralIndia",
+						Location: "centralIndia",
 						AdditionalTags: infrav1.Tags{
 							"Name": "my-publicip-ipv6",
 							"sigs.k8s.io_cluster-api-provider-azure_cluster_my-cluster": "owned",
-						},
-						IdentityRef: &corev1.ObjectReference{
-							Kind: infrav1.AzureClusterIdentityKind,
 						},
 					},
 					NetworkSpec: infrav1.NetworkSpec{
@@ -426,7 +400,7 @@ func TestPublicIPSpecs(t *testing.T) {
 							},
 							LoadBalancerClassSpec: infrav1.LoadBalancerClassSpec{},
 						},
-						APIServerLB: infrav1.LoadBalancerSpec{
+						APIServerLB: &infrav1.LoadBalancerSpec{
 							LoadBalancerClassSpec: infrav1.LoadBalancerClassSpec{
 								Type: infrav1.Internal,
 							},
@@ -455,13 +429,6 @@ func TestPublicIPSpecs(t *testing.T) {
 			azureCluster: &infrav1.AzureCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "my-cluster",
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "cluster.x-k8s.io/v1beta1",
-							Kind:       "Cluster",
-							Name:       "my-cluster",
-						},
-					},
 				},
 				Status: infrav1.AzureClusterStatus{
 					FailureDomains: map[string]clusterv1.FailureDomainSpec{
@@ -471,16 +438,13 @@ func TestPublicIPSpecs(t *testing.T) {
 					},
 				},
 				Spec: infrav1.AzureClusterSpec{
-					ResourceGroup: "my-rg",
+					ResourceGroup:       "my-rg",
+					ControlPlaneEnabled: true,
 					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
-						SubscriptionID: "123",
-						Location:       "centralIndia",
+						Location: "centralIndia",
 						AdditionalTags: infrav1.Tags{
 							"Name": "my-publicip-ipv6",
 							"sigs.k8s.io_cluster-api-provider-azure_cluster_my-cluster": "owned",
-						},
-						IdentityRef: &corev1.ObjectReference{
-							Kind: infrav1.AzureClusterIdentityKind,
 						},
 					},
 					NetworkSpec: infrav1.NetworkSpec{
@@ -508,7 +472,7 @@ func TestPublicIPSpecs(t *testing.T) {
 							},
 							LoadBalancerClassSpec: infrav1.LoadBalancerClassSpec{},
 						},
-						APIServerLB: infrav1.LoadBalancerSpec{
+						APIServerLB: &infrav1.LoadBalancerSpec{
 							LoadBalancerClassSpec: infrav1.LoadBalancerClassSpec{
 								Type: infrav1.Internal,
 							},
@@ -563,13 +527,6 @@ func TestPublicIPSpecs(t *testing.T) {
 			azureCluster: &infrav1.AzureCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "my-cluster",
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "cluster.x-k8s.io/v1beta1",
-							Kind:       "Cluster",
-							Name:       "my-cluster",
-						},
-					},
 				},
 				Status: infrav1.AzureClusterStatus{
 					FailureDomains: map[string]clusterv1.FailureDomainSpec{
@@ -579,23 +536,20 @@ func TestPublicIPSpecs(t *testing.T) {
 					},
 				},
 				Spec: infrav1.AzureClusterSpec{
-					ResourceGroup: "my-rg",
+					ResourceGroup:       "my-rg",
+					ControlPlaneEnabled: true,
 					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
-						SubscriptionID: "123",
-						Location:       "centralIndia",
+						Location: "centralIndia",
 						AdditionalTags: infrav1.Tags{
 							"Name": "my-publicip-ipv6",
 							"sigs.k8s.io_cluster-api-provider-azure_cluster_my-cluster": "owned",
-						},
-						IdentityRef: &corev1.ObjectReference{
-							Kind: infrav1.AzureClusterIdentityKind,
 						},
 					},
 					NetworkSpec: infrav1.NetworkSpec{
 						ControlPlaneOutboundLB: &infrav1.LoadBalancerSpec{
 							LoadBalancerClassSpec: infrav1.LoadBalancerClassSpec{},
 						},
-						APIServerLB: infrav1.LoadBalancerSpec{
+						APIServerLB: &infrav1.LoadBalancerSpec{
 							LoadBalancerClassSpec: infrav1.LoadBalancerClassSpec{},
 							FrontendIPs: []infrav1.FrontendIP{
 								{
@@ -630,13 +584,6 @@ func TestPublicIPSpecs(t *testing.T) {
 			azureCluster: &infrav1.AzureCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "my-cluster",
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "cluster.x-k8s.io/v1beta1",
-							Kind:       "Cluster",
-							Name:       "my-cluster",
-						},
-					},
 				},
 				Status: infrav1.AzureClusterStatus{
 					FailureDomains: map[string]clusterv1.FailureDomainSpec{
@@ -646,16 +593,13 @@ func TestPublicIPSpecs(t *testing.T) {
 					},
 				},
 				Spec: infrav1.AzureClusterSpec{
-					ResourceGroup: "my-rg",
+					ResourceGroup:       "my-rg",
+					ControlPlaneEnabled: true,
 					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
-						SubscriptionID: "123",
-						Location:       "centralIndia",
+						Location: "centralIndia",
 						AdditionalTags: infrav1.Tags{
 							"Name": "my-publicip-ipv6",
 							"sigs.k8s.io_cluster-api-provider-azure_cluster_my-cluster": "owned",
-						},
-						IdentityRef: &corev1.ObjectReference{
-							Kind: infrav1.AzureClusterIdentityKind,
 						},
 					},
 					NetworkSpec: infrav1.NetworkSpec{
@@ -665,7 +609,7 @@ func TestPublicIPSpecs(t *testing.T) {
 						NodeOutboundLB: &infrav1.LoadBalancerSpec{
 							LoadBalancerClassSpec: infrav1.LoadBalancerClassSpec{},
 						},
-						APIServerLB: infrav1.LoadBalancerSpec{
+						APIServerLB: &infrav1.LoadBalancerSpec{
 							FrontendIPs: []infrav1.FrontendIP{
 								{
 									PublicIP: &infrav1.PublicIPSpec{
@@ -700,13 +644,6 @@ func TestPublicIPSpecs(t *testing.T) {
 			azureCluster: &infrav1.AzureCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "my-cluster",
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "cluster.x-k8s.io/v1beta1",
-							Kind:       "Cluster",
-							Name:       "my-cluster",
-						},
-					},
 				},
 				Status: infrav1.AzureClusterStatus{
 					FailureDomains: map[string]clusterv1.FailureDomainSpec{
@@ -716,7 +653,8 @@ func TestPublicIPSpecs(t *testing.T) {
 					},
 				},
 				Spec: infrav1.AzureClusterSpec{
-					ResourceGroup: "my-rg",
+					ResourceGroup:       "my-rg",
+					ControlPlaneEnabled: true,
 					BastionSpec: infrav1.BastionSpec{
 						AzureBastion: &infrav1.AzureBastion{
 							PublicIP: infrav1.PublicIPSpec{
@@ -726,14 +664,10 @@ func TestPublicIPSpecs(t *testing.T) {
 						},
 					},
 					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
-						SubscriptionID: "123",
-						Location:       "centralIndia",
+						Location: "centralIndia",
 						AdditionalTags: infrav1.Tags{
 							"Name": "my-publicip-ipv6",
 							"sigs.k8s.io_cluster-api-provider-azure_cluster_my-cluster": "owned",
-						},
-						IdentityRef: &corev1.ObjectReference{
-							Kind: infrav1.AzureClusterIdentityKind,
 						},
 					},
 					NetworkSpec: infrav1.NetworkSpec{
@@ -756,7 +690,7 @@ func TestPublicIPSpecs(t *testing.T) {
 						NodeOutboundLB: &infrav1.LoadBalancerSpec{
 							LoadBalancerClassSpec: infrav1.LoadBalancerClassSpec{},
 						},
-						APIServerLB: infrav1.LoadBalancerSpec{
+						APIServerLB: &infrav1.LoadBalancerSpec{
 							FrontendIPs: []infrav1.FrontendIP{
 								{
 									PublicIP: &infrav1.PublicIPSpec{
@@ -803,35 +737,16 @@ func TestPublicIPSpecs(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			g := NewWithT(t)
-			scheme := runtime.NewScheme()
-			_ = infrav1.AddToScheme(scheme)
-			_ = clusterv1.AddToScheme(scheme)
-			_ = corev1.AddToScheme(scheme)
-
 			cluster := &clusterv1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      tc.azureCluster.Name,
 					Namespace: "default",
 				},
 			}
-			fakeIdentity := &infrav1.AzureClusterIdentity{
-				Spec: infrav1.AzureClusterIdentitySpec{
-					Type:     infrav1.ServicePrincipal,
-					ClientID: fakeClientID,
-					TenantID: fakeTenantID,
-				},
-			}
-			fakeSecret := &corev1.Secret{Data: map[string][]byte{"clientSecret": []byte("fooSecret")}}
-
-			initObjects := []runtime.Object{cluster, tc.azureCluster, fakeIdentity, fakeSecret}
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
-			clusterScope, err := NewClusterScope(context.TODO(), ClusterScopeParams{
+			clusterScope := &ClusterScope{
 				Cluster:      cluster,
 				AzureCluster: tc.azureCluster,
-				Client:       fakeClient,
-			})
-			g.Expect(err).NotTo(HaveOccurred())
+			}
 
 			if got := clusterScope.PublicIPSpecs(); !reflect.DeepEqual(got, tc.expectedPublicIPSpec) {
 				t.Errorf("PublicIPSpecs() diff between expected result and actual result (%v): %s", got, cmp.Diff(tc.expectedPublicIPSpec, got))
@@ -872,9 +787,6 @@ func TestRouteTableSpecs(t *testing.T) {
 					Spec: infrav1.AzureClusterSpec{
 						AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
 							Location: "centralIndia",
-							IdentityRef: &corev1.ObjectReference{
-								Kind: infrav1.AzureClusterIdentityKind,
-							},
 						},
 						NetworkSpec: infrav1.NetworkSpec{
 							Vnet: infrav1.VnetSpec{
@@ -919,7 +831,6 @@ func TestRouteTableSpecs(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := tt.clusterScope.RouteTableSpecs(); !reflect.DeepEqual(got, tt.want) {
@@ -975,9 +886,6 @@ func TestNatGatewaySpecs(t *testing.T) {
 						ResourceGroup: "my-rg",
 						AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
 							Location: "centralIndia",
-							IdentityRef: &corev1.ObjectReference{
-								Kind: infrav1.AzureClusterIdentityKind,
-							},
 						},
 						NetworkSpec: infrav1.NetworkSpec{
 							Subnets: infrav1.Subnets{
@@ -1052,9 +960,6 @@ func TestNatGatewaySpecs(t *testing.T) {
 						ResourceGroup: "my-rg",
 						AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
 							Location: "centralIndia",
-							IdentityRef: &corev1.ObjectReference{
-								Kind: infrav1.AzureClusterIdentityKind,
-							},
 						},
 						NetworkSpec: infrav1.NetworkSpec{
 							Subnets: infrav1.Subnets{
@@ -1147,9 +1052,6 @@ func TestNatGatewaySpecs(t *testing.T) {
 						ResourceGroup: "my-rg",
 						AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
 							Location: "centralIndia",
-							IdentityRef: &corev1.ObjectReference{
-								Kind: infrav1.AzureClusterIdentityKind,
-							},
 						},
 						NetworkSpec: infrav1.NetworkSpec{
 							Subnets: infrav1.Subnets{
@@ -1224,7 +1126,6 @@ func TestNatGatewaySpecs(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			fakeIdentity := &infrav1.AzureClusterIdentity{
@@ -1307,7 +1208,6 @@ func TestSetNatGatewayIDInSubnets(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 			t.Parallel()
@@ -1354,9 +1254,6 @@ func TestNSGSpecs(t *testing.T) {
 					Spec: infrav1.AzureClusterSpec{
 						AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
 							Location: "centralIndia",
-							IdentityRef: &corev1.ObjectReference{
-								Kind: infrav1.AzureClusterIdentityKind,
-							},
 						},
 						NetworkSpec: infrav1.NetworkSpec{
 							Vnet: infrav1.VnetSpec{
@@ -1400,7 +1297,6 @@ func TestNSGSpecs(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := tt.clusterScope.NSGSpecs(); !reflect.DeepEqual(got, tt.want) {
@@ -1456,9 +1352,6 @@ func TestSubnetSpecs(t *testing.T) {
 						ResourceGroup: "my-rg",
 						AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
 							Location: "centralIndia",
-							IdentityRef: &corev1.ObjectReference{
-								Kind: infrav1.AzureClusterIdentityKind,
-							},
 						},
 						NetworkSpec: infrav1.NetworkSpec{
 							Vnet: infrav1.VnetSpec{
@@ -1566,9 +1459,6 @@ func TestSubnetSpecs(t *testing.T) {
 						ResourceGroup: "my-rg",
 						AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
 							Location: "centralIndia",
-							IdentityRef: &corev1.ObjectReference{
-								Kind: infrav1.AzureClusterIdentityKind,
-							},
 						},
 						NetworkSpec: infrav1.NetworkSpec{
 							Vnet: infrav1.VnetSpec{
@@ -1643,7 +1533,6 @@ func TestSubnetSpecs(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			fakeIdentity := &infrav1.AzureClusterIdentity{
@@ -1771,7 +1660,6 @@ func TestIsVnetManaged(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			fakeIdentity := &infrav1.AzureClusterIdentity{
@@ -1870,9 +1758,6 @@ func TestAzureBastionSpec(t *testing.T) {
 						ResourceGroup: "my-rg",
 						AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
 							Location: "centralIndia",
-							IdentityRef: &corev1.ObjectReference{
-								Kind: infrav1.AzureClusterIdentityKind,
-							},
 						},
 						NetworkSpec: infrav1.NetworkSpec{
 							Vnet: infrav1.VnetSpec{
@@ -1927,7 +1812,6 @@ func TestAzureBastionSpec(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := tt.clusterScope.AzureBastionSpec(); !reflect.DeepEqual(got, tt.want) {
@@ -1986,56 +1870,19 @@ func TestSubnet(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.clusterName, func(t *testing.T) {
 			g := NewWithT(t)
-			scheme := runtime.NewScheme()
-			_ = infrav1.AddToScheme(scheme)
-			_ = clusterv1.AddToScheme(scheme)
-			_ = corev1.AddToScheme(scheme)
 
-			cluster := &clusterv1.Cluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      tc.clusterName,
-					Namespace: "default",
-				},
-			}
 			azureCluster := &infrav1.AzureCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: tc.clusterName,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "cluster.x-k8s.io/v1beta1",
-							Kind:       "Cluster",
-							Name:       "my-cluster",
-						},
-					},
 				},
 				Spec: infrav1.AzureClusterSpec{
 					NetworkSpec: tc.azureClusterNetworkSpec,
-					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
-						SubscriptionID: "123",
-						IdentityRef: &corev1.ObjectReference{
-							Kind: infrav1.AzureClusterIdentityKind,
-						},
-					},
 				},
 			}
-			fakeIdentity := &infrav1.AzureClusterIdentity{
-				Spec: infrav1.AzureClusterIdentitySpec{
-					Type:     infrav1.ServicePrincipal,
-					ClientID: fakeClientID,
-					TenantID: fakeTenantID,
-				},
-			}
-			fakeSecret := &corev1.Secret{Data: map[string][]byte{"clientSecret": []byte("fooSecret")}}
 
-			initObjects := []runtime.Object{cluster, azureCluster, fakeIdentity, fakeSecret}
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
-
-			clusterScope, err := NewClusterScope(context.TODO(), ClusterScopeParams{
-				Cluster:      cluster,
+			clusterScope := &ClusterScope{
 				AzureCluster: azureCluster,
-				Client:       fakeClient,
-			})
-			g.Expect(err).NotTo(HaveOccurred())
+			}
 			got := clusterScope.Subnet(tc.subnetName)
 			g.Expect(tc.expectSubnet).Should(Equal(got))
 		})
@@ -2095,56 +1942,19 @@ func TestControlPlaneRouteTable(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.clusterName, func(t *testing.T) {
 			g := NewWithT(t)
-			scheme := runtime.NewScheme()
-			_ = infrav1.AddToScheme(scheme)
-			_ = clusterv1.AddToScheme(scheme)
-			_ = corev1.AddToScheme(scheme)
 
-			cluster := &clusterv1.Cluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      tc.clusterName,
-					Namespace: "default",
-				},
-			}
 			azureCluster := &infrav1.AzureCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: tc.clusterName,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "cluster.x-k8s.io/v1beta1",
-							Kind:       "Cluster",
-							Name:       "my-cluster",
-						},
-					},
 				},
 				Spec: infrav1.AzureClusterSpec{
 					NetworkSpec: tc.azureClusterNetworkSpec,
-					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
-						SubscriptionID: "123",
-						IdentityRef: &corev1.ObjectReference{
-							Kind: infrav1.AzureClusterIdentityKind,
-						},
-					},
 				},
 			}
-			fakeIdentity := &infrav1.AzureClusterIdentity{
-				Spec: infrav1.AzureClusterIdentitySpec{
-					Type:     infrav1.ServicePrincipal,
-					ClientID: fakeClientID,
-					TenantID: fakeTenantID,
-				},
-			}
-			fakeSecret := &corev1.Secret{Data: map[string][]byte{"clientSecret": []byte("fooSecret")}}
 
-			initObjects := []runtime.Object{cluster, azureCluster, fakeIdentity, fakeSecret}
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
-
-			clusterScope, err := NewClusterScope(context.TODO(), ClusterScopeParams{
-				Cluster:      cluster,
+			clusterScope := &ClusterScope{
 				AzureCluster: azureCluster,
-				Client:       fakeClient,
-			})
-			g.Expect(err).NotTo(HaveOccurred())
+			}
 			got := clusterScope.ControlPlaneRouteTable()
 			g.Expect(tc.expectRouteTable).Should(Equal(got))
 		})
@@ -2174,10 +1984,6 @@ func TestGetPrivateDNSZoneName(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.clusterName, func(t *testing.T) {
 			g := NewWithT(t)
-			scheme := runtime.NewScheme()
-			_ = infrav1.AddToScheme(scheme)
-			_ = clusterv1.AddToScheme(scheme)
-			_ = corev1.AddToScheme(scheme)
 
 			cluster := &clusterv1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -2188,42 +1994,16 @@ func TestGetPrivateDNSZoneName(t *testing.T) {
 			azureCluster := &infrav1.AzureCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: tc.clusterName,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "cluster.x-k8s.io/v1beta1",
-							Kind:       "Cluster",
-							Name:       "my-cluster",
-						},
-					},
 				},
 				Spec: infrav1.AzureClusterSpec{
 					NetworkSpec: tc.azureClusterNetworkSpec,
-					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
-						SubscriptionID: "123",
-						IdentityRef: &corev1.ObjectReference{
-							Kind: infrav1.AzureClusterIdentityKind,
-						},
-					},
 				},
 			}
-			fakeIdentity := &infrav1.AzureClusterIdentity{
-				Spec: infrav1.AzureClusterIdentitySpec{
-					Type:     infrav1.ServicePrincipal,
-					ClientID: fakeClientID,
-					TenantID: fakeTenantID,
-				},
-			}
-			fakeSecret := &corev1.Secret{Data: map[string][]byte{"clientSecret": []byte("fooSecret")}}
 
-			initObjects := []runtime.Object{cluster, azureCluster, fakeIdentity, fakeSecret}
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
-
-			clusterScope, err := NewClusterScope(context.TODO(), ClusterScopeParams{
+			clusterScope := &ClusterScope{
 				Cluster:      cluster,
 				AzureCluster: azureCluster,
-				Client:       fakeClient,
-			})
-			g.Expect(err).NotTo(HaveOccurred())
+			}
 			got := clusterScope.GetPrivateDNSZoneName()
 			g.Expect(tc.expectPrivateDNSZoneName).Should(Equal(got))
 		})
@@ -2250,61 +2030,24 @@ func TestAPIServerLBPoolName(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.lbName, func(t *testing.T) {
 			g := NewWithT(t)
-			scheme := runtime.NewScheme()
-			_ = infrav1.AddToScheme(scheme)
-			_ = clusterv1.AddToScheme(scheme)
-			_ = corev1.AddToScheme(scheme)
 
-			cluster := &clusterv1.Cluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      tc.clusterName,
-					Namespace: "default",
-				},
-			}
 			azureCluster := &infrav1.AzureCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: tc.clusterName,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "cluster.x-k8s.io/v1beta1",
-							Kind:       "Cluster",
-							Name:       "my-cluster",
-						},
-					},
 				},
 				Spec: infrav1.AzureClusterSpec{
 					NetworkSpec: infrav1.NetworkSpec{
-						APIServerLB: infrav1.LoadBalancerSpec{
+						APIServerLB: &infrav1.LoadBalancerSpec{
 							Name: tc.lbName,
 						},
 					},
-					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
-						SubscriptionID: "123",
-						IdentityRef: &corev1.ObjectReference{
-							Kind: infrav1.AzureClusterIdentityKind,
-						},
-					},
 				},
 			}
-			fakeIdentity := &infrav1.AzureClusterIdentity{
-				Spec: infrav1.AzureClusterIdentitySpec{
-					Type:     infrav1.ServicePrincipal,
-					ClientID: fakeClientID,
-					TenantID: fakeTenantID,
-				},
-			}
-			fakeSecret := &corev1.Secret{Data: map[string][]byte{"clientSecret": []byte("fooSecret")}}
 
-			initObjects := []runtime.Object{cluster, azureCluster, fakeIdentity, fakeSecret}
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
-
-			clusterScope, err := NewClusterScope(context.TODO(), ClusterScopeParams{
-				Cluster:      cluster,
+			clusterScope := &ClusterScope{
 				AzureCluster: azureCluster,
-				Client:       fakeClient,
-			})
+			}
 			clusterScope.AzureCluster.SetBackendPoolNameDefault()
-			g.Expect(err).NotTo(HaveOccurred())
 			got := clusterScope.APIServerLBPoolName()
 			g.Expect(tc.expectLBpoolName).Should(Equal(got))
 		})
@@ -2380,30 +2123,13 @@ func TestOutboundLBName(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			scheme := runtime.NewScheme()
-			_ = infrav1.AddToScheme(scheme)
-			_ = clusterv1.AddToScheme(scheme)
-			_ = corev1.AddToScheme(scheme)
-
-			cluster := &clusterv1.Cluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      tc.clusterName,
-					Namespace: "default",
-				},
-			}
 
 			azureCluster := &infrav1.AzureCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: tc.clusterName,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "cluster.x-k8s.io/v1beta1",
-							Kind:       "Cluster",
-							Name:       "my-cluster",
-						},
-					},
 				},
 				Spec: infrav1.AzureClusterSpec{
+					ControlPlaneEnabled: true,
 					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
 						SubscriptionID: "123",
 						IdentityRef: &corev1.ObjectReference{
@@ -2424,7 +2150,7 @@ func TestOutboundLBName(t *testing.T) {
 			}
 
 			if tc.apiServerLB != nil {
-				azureCluster.Spec.NetworkSpec.APIServerLB = *tc.apiServerLB
+				azureCluster.Spec.NetworkSpec.APIServerLB = tc.apiServerLB
 			}
 
 			if tc.controlPlaneOutboundLB != nil {
@@ -2437,25 +2163,10 @@ func TestOutboundLBName(t *testing.T) {
 
 			azureCluster.Default()
 
-			fakeIdentity := &infrav1.AzureClusterIdentity{
-				Spec: infrav1.AzureClusterIdentitySpec{
-					Type:     infrav1.ServicePrincipal,
-					ClientID: fakeClientID,
-					TenantID: fakeTenantID,
-				},
-			}
-			fakeSecret := &corev1.Secret{Data: map[string][]byte{"clientSecret": []byte("fooSecret")}}
-
-			initObjects := []runtime.Object{cluster, azureCluster, fakeIdentity, fakeSecret}
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
-
-			clusterScope, err := NewClusterScope(context.TODO(), ClusterScopeParams{
-				Cluster:      cluster,
+			clusterScope := &ClusterScope{
 				AzureCluster: azureCluster,
-				Client:       fakeClient,
-			})
+			}
 			clusterScope.AzureCluster.SetBackendPoolNameDefault()
-			g.Expect(err).NotTo(HaveOccurred())
 			got := clusterScope.OutboundLBName(tc.role)
 			g.Expect(tc.expected).Should(Equal(got))
 		})
@@ -2466,6 +2177,7 @@ func TestBackendPoolName(t *testing.T) {
 	tests := []struct {
 		name        string
 		clusterName string
+		featureGate featuregate.Feature
 
 		customAPIServerBackendPoolName    string
 		customNodeBackendPoolName         string
@@ -2478,6 +2190,14 @@ func TestBackendPoolName(t *testing.T) {
 		{
 			name:                                "With default backend pool names",
 			clusterName:                         "my-cluster",
+			expectedAPIServerBackendPoolName:    "APIServerLBName-backendPool",
+			expectedNodeBackendPoolName:         "NodeOutboundLBName-outboundBackendPool",
+			expectedControlPlaneBackendPoolName: "my-cluster-outbound-lb-outboundBackendPool",
+		},
+		{
+			name:                                "With default backend pool names feature gate enabled",
+			clusterName:                         "my-cluster",
+			featureGate:                         feature.APIServerILB,
 			expectedAPIServerBackendPoolName:    "APIServerLBName-backendPool",
 			expectedNodeBackendPoolName:         "NodeOutboundLBName-outboundBackendPool",
 			expectedControlPlaneBackendPoolName: "my-cluster-outbound-lb-outboundBackendPool",
@@ -2510,10 +2230,9 @@ func TestBackendPoolName(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			scheme := runtime.NewScheme()
-			_ = infrav1.AddToScheme(scheme)
-			_ = clusterv1.AddToScheme(scheme)
-			_ = corev1.AddToScheme(scheme)
+			if tc.featureGate == feature.APIServerILB {
+				featuregatetesting.SetFeatureGateDuringTest(t, feature.Gates, tc.featureGate, true)
+			}
 
 			cluster := &clusterv1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -2525,13 +2244,6 @@ func TestBackendPoolName(t *testing.T) {
 			azureCluster := &infrav1.AzureCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: tc.clusterName,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "cluster.x-k8s.io/v1beta1",
-							Kind:       "Cluster",
-							Name:       tc.clusterName,
-						},
-					},
 				},
 				Spec: infrav1.AzureClusterSpec{
 					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
@@ -2540,6 +2252,7 @@ func TestBackendPoolName(t *testing.T) {
 							Kind: infrav1.AzureClusterIdentityKind,
 						},
 					},
+					ControlPlaneEnabled: true,
 					NetworkSpec: infrav1.NetworkSpec{
 						Subnets: infrav1.Subnets{
 							{
@@ -2549,7 +2262,7 @@ func TestBackendPoolName(t *testing.T) {
 								},
 							},
 						},
-						APIServerLB: infrav1.LoadBalancerSpec{
+						APIServerLB: &infrav1.LoadBalancerSpec{
 							Name: "APIServerLBName",
 						},
 						ControlPlaneOutboundLB: &infrav1.LoadBalancerSpec{
@@ -2564,15 +2277,6 @@ func TestBackendPoolName(t *testing.T) {
 
 			azureCluster.Default()
 
-			fakeIdentity := &infrav1.AzureClusterIdentity{
-				Spec: infrav1.AzureClusterIdentitySpec{
-					Type:     infrav1.ServicePrincipal,
-					ClientID: fakeClientID,
-					TenantID: fakeTenantID,
-				},
-			}
-			fakeSecret := &corev1.Secret{Data: map[string][]byte{"clientSecret": []byte("fooSecret")}}
-
 			if tc.customAPIServerBackendPoolName != "" {
 				azureCluster.Spec.NetworkSpec.APIServerLB.BackendPool.Name = tc.customAPIServerBackendPoolName
 			}
@@ -2585,33 +2289,49 @@ func TestBackendPoolName(t *testing.T) {
 				azureCluster.Spec.NetworkSpec.ControlPlaneOutboundLB.BackendPool.Name = tc.customControlPlaneBackendPoolName
 			}
 
-			initObjects := []runtime.Object{cluster, azureCluster, fakeIdentity, fakeSecret}
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
-
-			clusterScope, err := NewClusterScope(context.TODO(), ClusterScopeParams{
+			clusterScope := &ClusterScope{
 				Cluster:      cluster,
 				AzureCluster: azureCluster,
-				Client:       fakeClient,
-			})
+			}
 			clusterScope.AzureCluster.SetBackendPoolNameDefault()
-			g.Expect(err).NotTo(HaveOccurred())
 			got := clusterScope.LBSpecs()
-			g.Expect(got).To(HaveLen(3))
+			if tc.featureGate == feature.APIServerILB {
+				g.Expect(got).To(HaveLen(4))
+			} else {
+				g.Expect(got).To(HaveLen(3))
+			}
 
 			// API server backend pool name
 			apiServerLBSpec := got[0].(*loadbalancers.LBSpec)
 			g.Expect(apiServerLBSpec.BackendPoolName).To(Equal(tc.expectedAPIServerBackendPoolName))
 			g.Expect(apiServerLBSpec.Role).To(Equal(infrav1.APIServerRole))
 
-			// Node backend pool name
-			NodeLBSpec := got[1].(*loadbalancers.LBSpec)
-			g.Expect(NodeLBSpec.BackendPoolName).To(Equal(tc.expectedNodeBackendPoolName))
-			g.Expect(NodeLBSpec.Role).To(Equal(infrav1.NodeOutboundRole))
+			if tc.featureGate == feature.APIServerILB {
+				// API server backend pool name
+				apiServerILBSpec := got[1].(*loadbalancers.LBSpec)
+				g.Expect(apiServerILBSpec.BackendPoolName).To(Equal(tc.expectedAPIServerBackendPoolName + "-internal"))
+				g.Expect(apiServerILBSpec.Role).To(Equal(infrav1.APIServerRoleInternal))
 
-			// Control Plane backend pool name
-			controlPlaneLBSpec := got[2].(*loadbalancers.LBSpec)
-			g.Expect(controlPlaneLBSpec.BackendPoolName).To(Equal(tc.expectedControlPlaneBackendPoolName))
-			g.Expect(controlPlaneLBSpec.Role).To(Equal(infrav1.ControlPlaneOutboundRole))
+				// Node backend pool name
+				NodeLBSpec := got[2].(*loadbalancers.LBSpec)
+				g.Expect(NodeLBSpec.BackendPoolName).To(Equal(tc.expectedNodeBackendPoolName))
+				g.Expect(NodeLBSpec.Role).To(Equal(infrav1.NodeOutboundRole))
+
+				// Control Plane backend pool name
+				controlPlaneLBSpec := got[3].(*loadbalancers.LBSpec)
+				g.Expect(controlPlaneLBSpec.BackendPoolName).To(Equal(tc.expectedControlPlaneBackendPoolName))
+				g.Expect(controlPlaneLBSpec.Role).To(Equal(infrav1.ControlPlaneOutboundRole))
+			} else {
+				// Node backend pool name
+				NodeLBSpec := got[1].(*loadbalancers.LBSpec)
+				g.Expect(NodeLBSpec.BackendPoolName).To(Equal(tc.expectedNodeBackendPoolName))
+				g.Expect(NodeLBSpec.Role).To(Equal(infrav1.NodeOutboundRole))
+
+				// Control Plane backend pool name
+				controlPlaneLBSpec := got[2].(*loadbalancers.LBSpec)
+				g.Expect(controlPlaneLBSpec.BackendPoolName).To(Equal(tc.expectedControlPlaneBackendPoolName))
+				g.Expect(controlPlaneLBSpec.Role).To(Equal(infrav1.ControlPlaneOutboundRole))
+			}
 		})
 	}
 }
@@ -2639,17 +2359,7 @@ func TestOutboundPoolName(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			scheme := runtime.NewScheme()
-			_ = infrav1.AddToScheme(scheme)
-			_ = clusterv1.AddToScheme(scheme)
-			_ = corev1.AddToScheme(scheme)
 
-			cluster := &clusterv1.Cluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      tc.clusterName,
-					Namespace: "default",
-				},
-			}
 			azureCluster := &infrav1.AzureCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: tc.clusterName,
@@ -2662,6 +2372,7 @@ func TestOutboundPoolName(t *testing.T) {
 					},
 				},
 				Spec: infrav1.AzureClusterSpec{
+					ControlPlaneEnabled: true,
 					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
 						SubscriptionID: "123",
 						IdentityRef: &corev1.ObjectReference{
@@ -2670,14 +2381,6 @@ func TestOutboundPoolName(t *testing.T) {
 					},
 				},
 			}
-			fakeIdentity := &infrav1.AzureClusterIdentity{
-				Spec: infrav1.AzureClusterIdentitySpec{
-					Type:     infrav1.ServicePrincipal,
-					ClientID: fakeClientID,
-					TenantID: fakeTenantID,
-				},
-			}
-			fakeSecret := &corev1.Secret{Data: map[string][]byte{"clientSecret": []byte("fooSecret")}}
 
 			if tc.loadBalancerName != "" {
 				azureCluster.Spec.NetworkSpec.NodeOutboundLB = &infrav1.LoadBalancerSpec{
@@ -2685,18 +2388,12 @@ func TestOutboundPoolName(t *testing.T) {
 				}
 			}
 
-			initObjects := []runtime.Object{cluster, azureCluster, fakeIdentity, fakeSecret}
 			azureCluster.Default()
 
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
-
-			clusterScope, err := NewClusterScope(context.TODO(), ClusterScopeParams{
-				Cluster:      cluster,
+			clusterScope := &ClusterScope{
 				AzureCluster: azureCluster,
-				Client:       fakeClient,
-			})
+			}
 			clusterScope.AzureCluster.SetBackendPoolNameDefault()
-			g.Expect(err).NotTo(HaveOccurred())
 			got := clusterScope.OutboundPoolName(infrav1.Node)
 			g.Expect(tc.expectOutboundPoolName).Should(Equal(got))
 		})
@@ -2737,10 +2434,6 @@ func TestGenerateFQDN(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.clusterName, func(t *testing.T) {
 			g := NewWithT(t)
-			scheme := runtime.NewScheme()
-			_ = infrav1.AddToScheme(scheme)
-			_ = clusterv1.AddToScheme(scheme)
-			_ = corev1.AddToScheme(scheme)
 
 			cluster := &clusterv1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -2751,43 +2444,19 @@ func TestGenerateFQDN(t *testing.T) {
 			azureCluster := &infrav1.AzureCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: tc.clusterName,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "cluster.x-k8s.io/v1beta1",
-							Kind:       "Cluster",
-							Name:       "my-cluster",
-						},
-					},
 				},
 				Spec: infrav1.AzureClusterSpec{
 					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
-						SubscriptionID: "123",
-						Location:       tc.location,
-						IdentityRef: &corev1.ObjectReference{
-							Kind: infrav1.AzureClusterIdentityKind,
-						},
+						Location: tc.location,
 					},
 					ResourceGroup: tc.resourceGroup,
 				},
 			}
-			fakeIdentity := &infrav1.AzureClusterIdentity{
-				Spec: infrav1.AzureClusterIdentitySpec{
-					Type:     infrav1.ServicePrincipal,
-					ClientID: fakeClientID,
-					TenantID: fakeTenantID,
-				},
-			}
-			fakeSecret := &corev1.Secret{Data: map[string][]byte{"clientSecret": []byte("fooSecret")}}
 
-			initObjects := []runtime.Object{cluster, azureCluster, fakeIdentity, fakeSecret}
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
-
-			clusterScope, err := NewClusterScope(context.TODO(), ClusterScopeParams{
+			clusterScope := &ClusterScope{
 				Cluster:      cluster,
 				AzureCluster: azureCluster,
-				Client:       fakeClient,
-			})
-			g.Expect(err).NotTo(HaveOccurred())
+			}
 			got := clusterScope.GenerateFQDN(tc.ipName)
 			g.Expect(got).Should(ContainSubstring(tc.clusterName))
 			g.Expect(got).Should(ContainSubstring(tc.location))
@@ -2836,56 +2505,21 @@ func TestAdditionalTags(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			scheme := runtime.NewScheme()
-			_ = infrav1.AddToScheme(scheme)
-			_ = clusterv1.AddToScheme(scheme)
-			_ = corev1.AddToScheme(scheme)
 
-			cluster := &clusterv1.Cluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      tc.clusterName,
-					Namespace: "default",
-				},
-			}
 			azureCluster := &infrav1.AzureCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: tc.clusterName,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "cluster.x-k8s.io/v1beta1",
-							Kind:       "Cluster",
-							Name:       "my-cluster",
-						},
-					},
 				},
 				Spec: infrav1.AzureClusterSpec{
 					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
-						SubscriptionID: "123",
 						AdditionalTags: tc.azureClusterAdditionalTags,
-						IdentityRef: &corev1.ObjectReference{
-							Kind: infrav1.AzureClusterIdentityKind,
-						},
 					},
 				},
 			}
-			fakeIdentity := &infrav1.AzureClusterIdentity{
-				Spec: infrav1.AzureClusterIdentitySpec{
-					Type:     infrav1.ServicePrincipal,
-					ClientID: fakeClientID,
-					TenantID: fakeTenantID,
-				},
-			}
-			fakeSecret := &corev1.Secret{Data: map[string][]byte{"clientSecret": []byte("fooSecret")}}
 
-			initObjects := []runtime.Object{cluster, azureCluster, fakeIdentity, fakeSecret}
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
-
-			clusterScope, err := NewClusterScope(context.TODO(), ClusterScopeParams{
-				Cluster:      cluster,
+			clusterScope := &ClusterScope{
 				AzureCluster: azureCluster,
-				Client:       fakeClient,
-			})
-			g.Expect(err).NotTo(HaveOccurred())
+			}
 			got := clusterScope.AdditionalTags()
 			g.Expect(tc.expectTags).Should(Equal(got))
 		})
@@ -2923,10 +2557,6 @@ func TestAPIServerPort(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			scheme := runtime.NewScheme()
-			_ = infrav1.AddToScheme(scheme)
-			_ = clusterv1.AddToScheme(scheme)
-			_ = corev1.AddToScheme(scheme)
 
 			cluster := &clusterv1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -2940,41 +2570,13 @@ func TestAPIServerPort(t *testing.T) {
 			azureCluster := &infrav1.AzureCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: tc.clusterName,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "cluster.x-k8s.io/v1beta1",
-							Kind:       "Cluster",
-							Name:       "my-cluster",
-						},
-					},
-				},
-				Spec: infrav1.AzureClusterSpec{
-					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
-						SubscriptionID: "123",
-						IdentityRef: &corev1.ObjectReference{
-							Kind: infrav1.AzureClusterIdentityKind,
-						},
-					},
 				},
 			}
-			fakeIdentity := &infrav1.AzureClusterIdentity{
-				Spec: infrav1.AzureClusterIdentitySpec{
-					Type:     infrav1.ServicePrincipal,
-					ClientID: fakeClientID,
-					TenantID: fakeTenantID,
-				},
-			}
-			fakeSecret := &corev1.Secret{Data: map[string][]byte{"clientSecret": []byte("fooSecret")}}
 
-			initObjects := []runtime.Object{cluster, azureCluster, fakeIdentity, fakeSecret}
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
-
-			clusterScope, err := NewClusterScope(context.TODO(), ClusterScopeParams{
+			clusterScope := &ClusterScope{
 				Cluster:      cluster,
 				AzureCluster: azureCluster,
-				Client:       fakeClient,
-			})
-			g.Expect(err).NotTo(HaveOccurred())
+			}
 			got := clusterScope.APIServerPort()
 			g.Expect(tc.expectAPIServerPort).Should(Equal(got))
 		})
@@ -3020,56 +2622,17 @@ func TestFailureDomains(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			scheme := runtime.NewScheme()
-			_ = infrav1.AddToScheme(scheme)
-			_ = clusterv1.AddToScheme(scheme)
-			_ = corev1.AddToScheme(scheme)
 
-			cluster := &clusterv1.Cluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      tc.clusterName,
-					Namespace: "default",
-				},
-			}
 			azureCluster := &infrav1.AzureCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: tc.clusterName,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "cluster.x-k8s.io/v1beta1",
-							Kind:       "Cluster",
-							Name:       "my-cluster",
-						},
-					},
-				},
-				Spec: infrav1.AzureClusterSpec{
-					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
-						SubscriptionID: "123",
-						IdentityRef: &corev1.ObjectReference{
-							Kind: infrav1.AzureClusterIdentityKind,
-						},
-					},
 				},
 				Status: tc.azureClusterStatus,
 			}
-			fakeIdentity := &infrav1.AzureClusterIdentity{
-				Spec: infrav1.AzureClusterIdentitySpec{
-					Type:     infrav1.ServicePrincipal,
-					ClientID: fakeClientID,
-					TenantID: fakeTenantID,
-				},
-			}
-			fakeSecret := &corev1.Secret{Data: map[string][]byte{"clientSecret": []byte("fooSecret")}}
 
-			initObjects := []runtime.Object{cluster, azureCluster, fakeIdentity, fakeSecret}
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
-
-			clusterScope, err := NewClusterScope(context.TODO(), ClusterScopeParams{
-				Cluster:      cluster,
+			clusterScope := &ClusterScope{
 				AzureCluster: azureCluster,
-				Client:       fakeClient,
-			})
-			g.Expect(err).NotTo(HaveOccurred())
+			}
 			got := clusterScope.FailureDomains()
 			g.Expect(tc.expectFailureDomains).Should(ConsistOf(got))
 		})
@@ -3079,6 +2642,7 @@ func TestFailureDomains(t *testing.T) {
 func TestClusterScope_LBSpecs(t *testing.T) {
 	tests := []struct {
 		name         string
+		featureGate  featuregate.Feature
 		azureCluster *infrav1.AzureCluster
 		want         []azure.ResourceSpecGetter
 	}{
@@ -3095,11 +2659,9 @@ func TestClusterScope_LBSpecs(t *testing.T) {
 						},
 						SubscriptionID: "123",
 						Location:       "westus2",
-						IdentityRef: &corev1.ObjectReference{
-							Kind: infrav1.AzureClusterIdentityKind,
-						},
 					},
-					ResourceGroup: "my-rg",
+					ControlPlaneEnabled: true,
+					ResourceGroup:       "my-rg",
 					NetworkSpec: infrav1.NetworkSpec{
 						Vnet: infrav1.VnetSpec{
 							Name:          "my-vnet",
@@ -3119,7 +2681,7 @@ func TestClusterScope_LBSpecs(t *testing.T) {
 								},
 							},
 						},
-						APIServerLB: infrav1.LoadBalancerSpec{
+						APIServerLB: &infrav1.LoadBalancerSpec{
 							Name: "api-server-lb",
 							BackendPool: infrav1.BackendPool{
 								Name: "api-server-lb-backend-pool",
@@ -3260,20 +2822,22 @@ func TestClusterScope_LBSpecs(t *testing.T) {
 			},
 		},
 		{
-			name: "Private API Server LB",
+			name:        "API Server LB, Control Plane Oubound LB, and Node Outbound LB with feature gate",
+			featureGate: feature.APIServerILB,
 			azureCluster: &infrav1.AzureCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "my-cluster",
 				},
 				Spec: infrav1.AzureClusterSpec{
 					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
+						AdditionalTags: infrav1.Tags{
+							"foo": "bar",
+						},
 						SubscriptionID: "123",
 						Location:       "westus2",
-						IdentityRef: &corev1.ObjectReference{
-							Kind: infrav1.AzureClusterIdentityKind,
-						},
 					},
-					ResourceGroup: "my-rg",
+					ControlPlaneEnabled: true,
+					ResourceGroup:       "my-rg",
 					NetworkSpec: infrav1.NetworkSpec{
 						Vnet: infrav1.VnetSpec{
 							Name:          "my-vnet",
@@ -3293,7 +2857,273 @@ func TestClusterScope_LBSpecs(t *testing.T) {
 								},
 							},
 						},
-						APIServerLB: infrav1.LoadBalancerSpec{
+						APIServerLB: &infrav1.LoadBalancerSpec{
+							Name: "api-server-lb",
+							BackendPool: infrav1.BackendPool{
+								Name: "api-server-lb-backend-pool",
+							},
+							LoadBalancerClassSpec: infrav1.LoadBalancerClassSpec{
+								Type:                 infrav1.Public,
+								IdleTimeoutInMinutes: ptr.To[int32](30),
+								SKU:                  infrav1.SKUStandard,
+							},
+							FrontendIPs: []infrav1.FrontendIP{
+								{
+									Name: "api-server-lb-frontend-ip",
+									PublicIP: &infrav1.PublicIPSpec{
+										Name: "api-server-lb-frontend-ip",
+									},
+								},
+							},
+						},
+						ControlPlaneOutboundLB: &infrav1.LoadBalancerSpec{
+							Name: "cp-outbound-lb",
+							BackendPool: infrav1.BackendPool{
+								Name: "cp-outbound-backend-pool",
+							},
+							LoadBalancerClassSpec: infrav1.LoadBalancerClassSpec{
+								Type:                 infrav1.Public,
+								IdleTimeoutInMinutes: ptr.To[int32](15),
+								SKU:                  infrav1.SKUStandard,
+							},
+							FrontendIPs: []infrav1.FrontendIP{
+								{
+									Name: "cp-outbound-lb-frontend-ip",
+									PublicIP: &infrav1.PublicIPSpec{
+										Name: "cp-outbound-lb-frontend-ip",
+									},
+								},
+							},
+						},
+						NodeOutboundLB: &infrav1.LoadBalancerSpec{
+							Name: "node-outbound-lb",
+							BackendPool: infrav1.BackendPool{
+								Name: "node-outbound-backend-pool",
+							},
+							LoadBalancerClassSpec: infrav1.LoadBalancerClassSpec{
+								Type:                 infrav1.Public,
+								IdleTimeoutInMinutes: ptr.To[int32](50),
+								SKU:                  infrav1.SKUStandard,
+							},
+							FrontendIPs: []infrav1.FrontendIP{
+								{
+									Name: "node-outbound-lb-frontend-ip",
+									PublicIP: &infrav1.PublicIPSpec{
+										Name: "node-outbound-lb-frontend-ip",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: []azure.ResourceSpecGetter{
+				&loadbalancers.LBSpec{
+					Name:              "api-server-lb",
+					ResourceGroup:     "my-rg",
+					SubscriptionID:    "123",
+					ClusterName:       "my-cluster",
+					Location:          "westus2",
+					VNetName:          "my-vnet",
+					VNetResourceGroup: "my-rg",
+					SubnetName:        "cp-subnet",
+					FrontendIPConfigs: []infrav1.FrontendIP{
+						{
+							Name: "api-server-lb-frontend-ip",
+							PublicIP: &infrav1.PublicIPSpec{
+								Name: "api-server-lb-frontend-ip",
+							},
+						},
+					},
+					APIServerPort:        6443,
+					Type:                 infrav1.Public,
+					SKU:                  infrav1.SKUStandard,
+					Role:                 infrav1.APIServerRole,
+					BackendPoolName:      "api-server-lb-backend-pool",
+					IdleTimeoutInMinutes: ptr.To[int32](30),
+					AdditionalTags: infrav1.Tags{
+						"foo": "bar",
+					},
+				},
+				&loadbalancers.LBSpec{
+					Name:              "api-server-lb-internal",
+					ResourceGroup:     "my-rg",
+					SubscriptionID:    "123",
+					ClusterName:       "my-cluster",
+					Location:          "westus2",
+					VNetName:          "my-vnet",
+					VNetResourceGroup: "my-rg",
+					SubnetName:        "cp-subnet",
+					FrontendIPConfigs: []infrav1.FrontendIP{
+						{
+							Name: "api-server-lb-internal-ip",
+							FrontendIPClass: infrav1.FrontendIPClass{
+								PrivateIPAddress: infrav1.DefaultInternalLBIPAddress,
+							},
+						},
+					},
+					APIServerPort:        6443,
+					Type:                 infrav1.Internal,
+					SKU:                  infrav1.SKUStandard,
+					Role:                 infrav1.APIServerRoleInternal,
+					BackendPoolName:      "api-server-lb-backend-pool-internal",
+					IdleTimeoutInMinutes: ptr.To[int32](30),
+					AdditionalTags: infrav1.Tags{
+						"foo": "bar",
+					},
+				},
+				&loadbalancers.LBSpec{
+					Name:              "node-outbound-lb",
+					ResourceGroup:     "my-rg",
+					SubscriptionID:    "123",
+					ClusterName:       "my-cluster",
+					Location:          "westus2",
+					VNetName:          "my-vnet",
+					VNetResourceGroup: "my-rg",
+					FrontendIPConfigs: []infrav1.FrontendIP{
+						{
+							Name: "node-outbound-lb-frontend-ip",
+							PublicIP: &infrav1.PublicIPSpec{
+								Name: "node-outbound-lb-frontend-ip",
+							},
+						},
+					},
+					Type:                 infrav1.Public,
+					SKU:                  infrav1.SKUStandard,
+					Role:                 infrav1.NodeOutboundRole,
+					BackendPoolName:      "node-outbound-backend-pool",
+					IdleTimeoutInMinutes: ptr.To[int32](50),
+					AdditionalTags: infrav1.Tags{
+						"foo": "bar",
+					},
+				},
+				&loadbalancers.LBSpec{
+					Name:              "cp-outbound-lb",
+					ResourceGroup:     "my-rg",
+					SubscriptionID:    "123",
+					ClusterName:       "my-cluster",
+					Location:          "westus2",
+					VNetName:          "my-vnet",
+					VNetResourceGroup: "my-rg",
+					FrontendIPConfigs: []infrav1.FrontendIP{
+						{
+							Name: "cp-outbound-lb-frontend-ip",
+							PublicIP: &infrav1.PublicIPSpec{
+								Name: "cp-outbound-lb-frontend-ip",
+							},
+						},
+					},
+					Type:                 infrav1.Public,
+					SKU:                  infrav1.SKUStandard,
+					BackendPoolName:      "cp-outbound-backend-pool",
+					IdleTimeoutInMinutes: ptr.To[int32](15),
+					Role:                 infrav1.ControlPlaneOutboundRole,
+					AdditionalTags: infrav1.Tags{
+						"foo": "bar",
+					},
+				},
+			},
+		},
+		{
+			name: "Private API Server LB",
+			azureCluster: &infrav1.AzureCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "my-cluster",
+				},
+				Spec: infrav1.AzureClusterSpec{
+					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
+						SubscriptionID: "123",
+						Location:       "westus2",
+					},
+					ControlPlaneEnabled: true,
+					ResourceGroup:       "my-rg",
+					NetworkSpec: infrav1.NetworkSpec{
+						Vnet: infrav1.VnetSpec{
+							Name:          "my-vnet",
+							ResourceGroup: "my-rg",
+						},
+						Subnets: []infrav1.SubnetSpec{
+							{
+								SubnetClassSpec: infrav1.SubnetClassSpec{
+									Name: "cp-subnet",
+									Role: infrav1.SubnetControlPlane,
+								},
+							},
+							{
+								SubnetClassSpec: infrav1.SubnetClassSpec{
+									Name: "node-subnet",
+									Role: infrav1.SubnetNode,
+								},
+							},
+						},
+						APIServerLB: &infrav1.LoadBalancerSpec{
+							Name: "api-server-lb",
+							BackendPool: infrav1.BackendPool{
+								Name: "api-server-lb-backend-pool",
+							},
+							LoadBalancerClassSpec: infrav1.LoadBalancerClassSpec{
+								Type:                 infrav1.Internal,
+								IdleTimeoutInMinutes: ptr.To[int32](30),
+								SKU:                  infrav1.SKUStandard,
+							},
+						},
+					},
+				},
+			},
+			want: []azure.ResourceSpecGetter{
+				&loadbalancers.LBSpec{
+					Name:                 "api-server-lb",
+					ResourceGroup:        "my-rg",
+					SubscriptionID:       "123",
+					ClusterName:          "my-cluster",
+					Location:             "westus2",
+					VNetName:             "my-vnet",
+					VNetResourceGroup:    "my-rg",
+					SubnetName:           "cp-subnet",
+					APIServerPort:        6443,
+					Type:                 infrav1.Internal,
+					SKU:                  infrav1.SKUStandard,
+					Role:                 infrav1.APIServerRole,
+					BackendPoolName:      "api-server-lb-backend-pool",
+					IdleTimeoutInMinutes: ptr.To[int32](30),
+					AdditionalTags:       infrav1.Tags{},
+				},
+			},
+		},
+		{
+			name:        "Private API Server LB",
+			featureGate: feature.APIServerILB,
+			azureCluster: &infrav1.AzureCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "my-cluster",
+				},
+				Spec: infrav1.AzureClusterSpec{
+					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
+						SubscriptionID: "123",
+						Location:       "westus2",
+					},
+					ControlPlaneEnabled: true,
+					ResourceGroup:       "my-rg",
+					NetworkSpec: infrav1.NetworkSpec{
+						Vnet: infrav1.VnetSpec{
+							Name:          "my-vnet",
+							ResourceGroup: "my-rg",
+						},
+						Subnets: []infrav1.SubnetSpec{
+							{
+								SubnetClassSpec: infrav1.SubnetClassSpec{
+									Name: "cp-subnet",
+									Role: infrav1.SubnetControlPlane,
+								},
+							},
+							{
+								SubnetClassSpec: infrav1.SubnetClassSpec{
+									Name: "node-subnet",
+									Role: infrav1.SubnetNode,
+								},
+							},
+						},
+						APIServerLB: &infrav1.LoadBalancerSpec{
 							Name: "api-server-lb",
 							BackendPool: infrav1.BackendPool{
 								Name: "api-server-lb-backend-pool",
@@ -3329,39 +3159,28 @@ func TestClusterScope_LBSpecs(t *testing.T) {
 		},
 	}
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			g := NewWithT(t)
-			scheme := runtime.NewScheme()
-			_ = infrav1.AddToScheme(scheme)
-			_ = clusterv1.AddToScheme(scheme)
-			_ = corev1.AddToScheme(scheme)
-
+			if tc.featureGate == feature.APIServerILB {
+				featuregatetesting.SetFeatureGateDuringTest(t, feature.Gates, tc.featureGate, true)
+			}
 			cluster := &clusterv1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      tc.azureCluster.Name,
 					Namespace: "default",
 				},
 			}
-			fakeIdentity := &infrav1.AzureClusterIdentity{
-				Spec: infrav1.AzureClusterIdentitySpec{
-					Type:     infrav1.ServicePrincipal,
-					ClientID: fakeClientID,
-					TenantID: fakeTenantID,
-				},
-			}
-			fakeSecret := &corev1.Secret{Data: map[string][]byte{"clientSecret": []byte("fooSecret")}}
 
-			initObjects := []runtime.Object{cluster, tc.azureCluster, fakeIdentity, fakeSecret}
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
-
-			clusterScope, err := NewClusterScope(context.TODO(), ClusterScopeParams{
+			clusterScope := &ClusterScope{
 				Cluster:      cluster,
 				AzureCluster: tc.azureCluster,
-				Client:       fakeClient,
-			})
-			g.Expect(err).NotTo(HaveOccurred())
+				AzureClients: AzureClients{
+					EnvironmentSettings: auth.EnvironmentSettings{
+						Values: map[string]string{
+							auth.SubscriptionID: tc.azureCluster.Spec.SubscriptionID,
+						},
+					},
+				},
+			}
 			if got := clusterScope.LBSpecs(); !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("LBSpecs() diff between expected result and actual result (%v): %s", got, cmp.Diff(tc.want, got))
 			}
@@ -3395,61 +3214,25 @@ func TestExtendedLocationName(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			scheme := runtime.NewScheme()
-			_ = infrav1.AddToScheme(scheme)
-			_ = clusterv1.AddToScheme(scheme)
-			_ = corev1.AddToScheme(scheme)
-
-			cluster := &clusterv1.Cluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      tc.clusterName,
-					Namespace: "default",
-				},
-			}
 
 			azureCluster := &infrav1.AzureCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: tc.clusterName,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "cluster.x-k8s.io/v1beta1",
-							Kind:       "Cluster",
-							Name:       "my-cluster",
-						},
-					},
 				},
 				Spec: infrav1.AzureClusterSpec{
 					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
-						SubscriptionID: "123",
 						ExtendedLocation: &infrav1.ExtendedLocationSpec{
 							Name: tc.extendedLocation.Name,
 							Type: tc.extendedLocation.Type,
 						},
-						IdentityRef: &corev1.ObjectReference{
-							Kind: infrav1.AzureClusterIdentityKind,
-						},
 					},
 				},
 			}
-			fakeIdentity := &infrav1.AzureClusterIdentity{
-				Spec: infrav1.AzureClusterIdentitySpec{
-					Type:     infrav1.ServicePrincipal,
-					ClientID: fakeClientID,
-					TenantID: fakeTenantID,
-				},
-			}
-			fakeSecret := &corev1.Secret{Data: map[string][]byte{"clientSecret": []byte("fooSecret")}}
 
-			initObjects := []runtime.Object{cluster, azureCluster, fakeIdentity, fakeSecret}
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
-
-			clusterScope, err := NewClusterScope(context.TODO(), ClusterScopeParams{
-				Cluster:      cluster,
+			clusterScope := &ClusterScope{
 				AzureCluster: azureCluster,
-				Client:       fakeClient,
-			})
+			}
 
-			g.Expect(err).NotTo(HaveOccurred())
 			got := clusterScope.ExtendedLocationName()
 			g.Expect(tc.extendedLocation.Name).Should(Equal(got))
 		})
@@ -3482,61 +3265,25 @@ func TestExtendedLocationType(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			scheme := runtime.NewScheme()
-			_ = infrav1.AddToScheme(scheme)
-			_ = clusterv1.AddToScheme(scheme)
-			_ = corev1.AddToScheme(scheme)
-
-			cluster := &clusterv1.Cluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      tc.clusterName,
-					Namespace: "default",
-				},
-			}
 
 			azureCluster := &infrav1.AzureCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: tc.clusterName,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "cluster.x-k8s.io/v1beta1",
-							Kind:       "Cluster",
-							Name:       "my-cluster",
-						},
-					},
 				},
 				Spec: infrav1.AzureClusterSpec{
 					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
-						SubscriptionID: "123",
 						ExtendedLocation: &infrav1.ExtendedLocationSpec{
 							Name: tc.extendedLocation.Name,
 							Type: tc.extendedLocation.Type,
 						},
-						IdentityRef: &corev1.ObjectReference{
-							Kind: infrav1.AzureClusterIdentityKind,
-						},
 					},
 				},
 			}
-			fakeIdentity := &infrav1.AzureClusterIdentity{
-				Spec: infrav1.AzureClusterIdentitySpec{
-					Type:     infrav1.ServicePrincipal,
-					ClientID: fakeClientID,
-					TenantID: fakeTenantID,
-				},
-			}
-			fakeSecret := &corev1.Secret{Data: map[string][]byte{"clientSecret": []byte("fooSecret")}}
 
-			initObjects := []runtime.Object{cluster, azureCluster, fakeIdentity, fakeSecret}
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
-
-			clusterScope, err := NewClusterScope(context.TODO(), ClusterScopeParams{
-				Cluster:      cluster,
+			clusterScope := &ClusterScope{
 				AzureCluster: azureCluster,
-				Client:       fakeClient,
-			})
+			}
 
-			g.Expect(err).NotTo(HaveOccurred())
 			got := clusterScope.ExtendedLocationType()
 			g.Expect(tc.extendedLocation.Type).Should(Equal(got))
 		})
@@ -3722,10 +3469,6 @@ func TestVNetPeerings(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			scheme := runtime.NewScheme()
-			_ = infrav1.AddToScheme(scheme)
-			_ = clusterv1.AddToScheme(scheme)
-			_ = corev1.AddToScheme(scheme)
 
 			clusterName := "my-cluster"
 			clusterNamespace := "default"
@@ -3740,49 +3483,26 @@ func TestVNetPeerings(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      clusterName,
 					Namespace: clusterNamespace,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: "cluster.x-k8s.io/v1beta1",
-							Kind:       "Cluster",
-							Name:       clusterName,
-						},
-					},
 				},
 				Spec: infrav1.AzureClusterSpec{
 					ResourceGroup: "rg1",
-					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
-						SubscriptionID: tc.subscriptionID,
-						IdentityRef: &corev1.ObjectReference{
-							Kind:      infrav1.AzureClusterIdentityKind,
-							Namespace: clusterNamespace,
-						},
-					},
 					NetworkSpec: infrav1.NetworkSpec{
 						Vnet: tc.azureClusterVNetSpec,
 					},
 				},
 			}
-			fakeIdentity := &infrav1.AzureClusterIdentity{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: clusterNamespace,
-				},
-				Spec: infrav1.AzureClusterIdentitySpec{
-					Type:     infrav1.ServicePrincipal,
-					ClientID: fakeClientID,
-					TenantID: fakeTenantID,
-				},
-			}
-			fakeSecret := &corev1.Secret{Data: map[string][]byte{"clientSecret": []byte("fooSecret")}}
 
-			initObjects := []runtime.Object{cluster, azureCluster, fakeIdentity, fakeSecret}
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
-
-			clusterScope, err := NewClusterScope(context.TODO(), ClusterScopeParams{
+			clusterScope := &ClusterScope{
 				Cluster:      cluster,
 				AzureCluster: azureCluster,
-				Client:       fakeClient,
-			})
-			g.Expect(err).NotTo(HaveOccurred())
+				AzureClients: AzureClients{
+					EnvironmentSettings: auth.EnvironmentSettings{
+						Values: map[string]string{
+							auth.SubscriptionID: tc.subscriptionID,
+						},
+					},
+				},
+			}
 			got := clusterScope.VnetPeeringSpecs()
 			g.Expect(tc.want).To(Equal(got))
 		})
@@ -4019,7 +3739,6 @@ func TestPrivateEndpointSpecs(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := tt.clusterScope.PrivateEndpointSpecs(); !reflect.DeepEqual(got, tt.want) {
@@ -4068,7 +3787,6 @@ func TestSetFailureDomain(t *testing.T) {
 	}
 
 	for name, tc := range cases {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
@@ -4244,7 +3962,6 @@ func TestGroupSpecs(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		c := c
 		t.Run(c.name, func(t *testing.T) {
 			s := &ClusterScope{
 				AzureCluster: c.input.AzureCluster,

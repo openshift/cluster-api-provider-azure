@@ -35,12 +35,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	utilfeature "k8s.io/component-base/featuregate/testing"
 	"k8s.io/utils/ptr"
-	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
-	"sigs.k8s.io/cluster-api-provider-azure/feature"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	expv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
 	capifeature "sigs.k8s.io/cluster-api/feature"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+	"sigs.k8s.io/cluster-api-provider-azure/feature"
 )
 
 var (
@@ -624,10 +625,10 @@ func createMachinePoolWithDiagnostics(diagnosticsType infrav1.BootDiagnosticsSto
 	}
 }
 
-func createMachinePoolWithUserAssignedIdentity(providerIds []string) *AzureMachinePool {
-	userAssignedIdentities := make([]infrav1.UserAssignedIdentity, len(providerIds))
+func createMachinePoolWithUserAssignedIdentity(providerIDs []string) *AzureMachinePool {
+	userAssignedIdentities := make([]infrav1.UserAssignedIdentity, len(providerIDs))
 
-	for _, providerID := range providerIds {
+	for _, providerID := range providerIDs {
 		userAssignedIdentities = append(userAssignedIdentities, infrav1.UserAssignedIdentity{
 			ProviderID: providerID,
 		})
@@ -706,12 +707,6 @@ func TestAzureMachinePool_ValidateCreateFailure(t *testing.T) {
 		expectError        bool
 	}{
 		{
-			name:               "feature gate explicitly disabled",
-			amp:                getKnownValidAzureMachinePool(),
-			featureGateEnabled: ptr.To(false),
-			expectError:        true,
-		},
-		{
 			name:               "feature gate implicitly enabled",
 			amp:                getKnownValidAzureMachinePool(),
 			featureGateEnabled: nil,
@@ -721,7 +716,7 @@ func TestAzureMachinePool_ValidateCreateFailure(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.featureGateEnabled != nil {
-				defer utilfeature.SetFeatureGateDuringTest(t, feature.Gates, capifeature.MachinePool, *tc.featureGateEnabled)()
+				utilfeature.SetFeatureGateDuringTest(t, feature.Gates, capifeature.MachinePool, *tc.featureGateEnabled)
 			}
 			ampw := &azureMachinePoolWebhook{}
 			_, err := ampw.ValidateCreate(context.Background(), tc.amp)

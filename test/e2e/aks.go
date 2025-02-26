@@ -28,13 +28,14 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
-	infrav1alpha "sigs.k8s.io/cluster-api-provider-azure/api/v1alpha1"
-	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	expv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
 	"sigs.k8s.io/cluster-api/test/framework"
 	"sigs.k8s.io/cluster-api/test/framework/clusterctl"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	infrav1alpha "sigs.k8s.io/cluster-api-provider-azure/api/v1alpha1"
+	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 )
 
 // DiscoverAndWaitForAKSControlPlaneInput contains the fields the required for checking the status of azure managed control plane.
@@ -48,20 +49,11 @@ type DiscoverAndWaitForAKSControlPlaneInput struct {
 // This will be invoked by cluster api e2e framework.
 func WaitForAKSControlPlaneInitialized(ctx context.Context, input clusterctl.ApplyCustomClusterTemplateAndWaitInput, result *clusterctl.ApplyCustomClusterTemplateAndWaitResult) {
 	client := input.ClusterProxy.GetClient()
-	cluster := framework.GetClusterByName(ctx, framework.GetClusterByNameInput{
-		Getter:    client,
-		Name:      input.ClusterName,
-		Namespace: input.Namespace,
-	})
-
 	DiscoverAndWaitForAKSControlPlaneInitialized(ctx, DiscoverAndWaitForAKSControlPlaneInput{
 		Lister:  client,
 		Getter:  client,
 		Cluster: result.Cluster,
 	}, input.WaitForControlPlaneIntervals...)
-	if cluster.Spec.ClusterNetwork != nil && cluster.Spec.ClusterNetwork.Services != nil {
-		InstallCNIManifest(ctx, input, cluster.Spec.ClusterNetwork.Services.CIDRBlocks, true)
-	}
 }
 
 // WaitForAKSControlPlaneReady waits for the azure managed control plane to be ready.

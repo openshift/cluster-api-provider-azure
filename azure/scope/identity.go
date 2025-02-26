@@ -24,13 +24,17 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/tracing/azotel"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
-	"sigs.k8s.io/cluster-api-provider-azure/util/tele"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+	"sigs.k8s.io/cluster-api-provider-azure/azure"
+	"sigs.k8s.io/cluster-api-provider-azure/pkg/ot"
+	"sigs.k8s.io/cluster-api-provider-azure/util/tele"
 )
 
 // AzureSecretKey is the value for they client secret key.
@@ -49,10 +53,12 @@ type CredentialsProvider interface {
 type AzureCredentialsProvider struct {
 	Client   client.Client
 	Identity *infrav1.AzureClusterIdentity
+
+	cache azure.CredentialCache
 }
 
 // NewAzureCredentialsProvider creates a new AzureClusterCredentialsProvider from the supplied inputs.
-func NewAzureCredentialsProvider(ctx context.Context, kubeClient client.Client, identityRef *corev1.ObjectReference, defaultNamespace string) (*AzureCredentialsProvider, error) {
+func NewAzureCredentialsProvider(ctx context.Context, cache azure.CredentialCache, kubeClient client.Client, identityRef *corev1.ObjectReference, defaultNamespace string) (*AzureCredentialsProvider, error) {
 	if identityRef == nil {
 		return nil, errors.New("failed to generate new AzureClusterCredentialsProvider from empty identityName")
 	}
@@ -71,6 +77,7 @@ func NewAzureCredentialsProvider(ctx context.Context, kubeClient client.Client, 
 	return &AzureCredentialsProvider{
 		Client:   kubeClient,
 		Identity: identity,
+		cache:    cache,
 	}, nil
 }
 
@@ -82,16 +89,22 @@ func (p *AzureCredentialsProvider) GetTokenCredential(ctx context.Context, resou
 	var authErr error
 	var cred azcore.TokenCredential
 
+	otelTP, err := ot.OTLPTracerProvider(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tracingProvider := azotel.NewTracingProvider(otelTP, nil)
+
 	switch p.Identity.Spec.Type {
 	case infrav1.WorkloadIdentity:
-		azwiCredOptions, err := NewWorkloadIdentityCredentialOptions().
-			WithTenantID(p.Identity.Spec.TenantID).
-			WithClientID(p.Identity.Spec.ClientID).
-			WithDefaults()
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to setup azwi options for identity %s", p.Identity.Name)
-		}
-		cred, authErr = NewWorkloadIdentityCredential(azwiCredOptions)
+		cred, authErr = p.cache.GetOrStoreWorkloadIdentity(&azidentity.WorkloadIdentityCredentialOptions{
+			ClientOptions: azcore.ClientOptions{
+				TracingProvider: tracingProvider,
+			},
+			TenantID:      p.Identity.Spec.TenantID,
+			ClientID:      p.Identity.Spec.ClientID,
+			TokenFilePath: GetProjectedTokenPath(),
+		})
 
 	case infrav1.ManualServicePrincipal:
 		log.Info("Identity type ManualServicePrincipal is deprecated and will be removed in a future release. See https://capz.sigs.k8s.io/topics/identities to find a supported identity type.")
@@ -103,6 +116,7 @@ func (p *AzureCredentialsProvider) GetTokenCredential(ctx context.Context, resou
 		}
 		options := azidentity.ClientSecretCredentialOptions{
 			ClientOptions: azcore.ClientOptions{
+				TracingProvider: tracingProvider,
 				Cloud: cloud.Configuration{
 					ActiveDirectoryAuthorityHost: activeDirectoryEndpoint,
 					Services: map[cloud.ServiceName]cloud.ServiceConfiguration{
@@ -114,13 +128,10 @@ func (p *AzureCredentialsProvider) GetTokenCredential(ctx context.Context, resou
 				},
 			},
 		}
-		cred, authErr = azidentity.NewClientSecretCredential(p.GetTenantID(), p.Identity.Spec.ClientID, clientSecret, &options)
+		cred, authErr = p.cache.GetOrStoreClientSecret(p.GetTenantID(), p.Identity.Spec.ClientID, clientSecret, &options)
 
 	case infrav1.ServicePrincipalCertificate:
-		var (
-			certsContent []byte
-			err          error
-		)
+		var certsContent []byte
 		if p.Identity.Spec.CertPath != "" {
 			certsContent, err = os.ReadFile(p.Identity.Spec.CertPath)
 			if err != nil {
@@ -133,17 +144,20 @@ func (p *AzureCredentialsProvider) GetTokenCredential(ctx context.Context, resou
 			}
 			certsContent = []byte(clientSecret)
 		}
-		certs, key, err := azidentity.ParseCertificates(certsContent, nil)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to parse certificate data")
-		}
-		cred, authErr = azidentity.NewClientCertificateCredential(p.GetTenantID(), p.Identity.Spec.ClientID, certs, key, nil)
+		cred, authErr = p.cache.GetOrStoreClientCert(p.GetTenantID(), p.Identity.Spec.ClientID, certsContent, nil, &azidentity.ClientCertificateCredentialOptions{
+			ClientOptions: azcore.ClientOptions{
+				TracingProvider: tracingProvider,
+			},
+		})
 
 	case infrav1.UserAssignedMSI:
 		options := azidentity.ManagedIdentityCredentialOptions{
+			ClientOptions: azcore.ClientOptions{
+				TracingProvider: tracingProvider,
+			},
 			ID: azidentity.ClientID(p.Identity.Spec.ClientID),
 		}
-		cred, authErr = azidentity.NewManagedIdentityCredential(&options)
+		cred, authErr = p.cache.GetOrStoreManagedIdentity(&options)
 
 	default:
 		return nil, errors.Errorf("identity type %s not supported", p.Identity.Spec.Type)
@@ -197,6 +211,8 @@ func (p *AzureCredentialsProvider) hasClientSecret() bool {
 	switch p.Identity.Spec.Type {
 	case infrav1.ServicePrincipal, infrav1.ManualServicePrincipal:
 		return true
+	case infrav1.ServicePrincipalCertificate:
+		return p.Identity.Spec.CertPath == ""
 	default:
 		return false
 	}

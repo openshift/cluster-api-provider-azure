@@ -84,7 +84,6 @@ spec:
           cluster-cidr: 10.244.0.0/16,2001:1234:5678:9a40::/58
           cluster-name: ${CLUSTER_NAME}
           configure-cloud-routes: "true"
-          feature-gates: HPAContainerMetrics=true
           v: "4"
       etcd:
         local:
@@ -306,6 +305,8 @@ metadata:
 spec:
   template:
     spec:
+      additionalTags:
+        monitoring: virtualmachine
       enableIPForwarding: true
       identity: UserAssigned
       image:

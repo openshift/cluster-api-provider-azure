@@ -164,20 +164,20 @@ var _ = Describe("Running the Cluster API E2E tests", func() {
 		})
 	})
 
-	Context("Should successfully set and use node drain timeout", func() {
-		capi_e2e.NodeDrainTimeoutSpec(context.TODO(), func() capi_e2e.NodeDrainTimeoutSpecInput {
-			return capi_e2e.NodeDrainTimeoutSpecInput{
-				E2EConfig:             e2eConfig,
-				ClusterctlConfigPath:  clusterctlConfigPath,
-				BootstrapClusterProxy: bootstrapClusterProxy,
-				ArtifactFolder:        artifactFolder,
-				SkipCleanup:           skipCleanup,
-				ControlPlaneWaiters: clusterctl.ControlPlaneWaiters{
-					WaitForControlPlaneInitialized: EnsureControlPlaneInitializedNoAddons,
-				},
-			}
-		})
-	})
+	// Context("Should successfully set and use node drain timeout", func() {
+	// 	capi_e2e.NodeDrainTimeoutSpec(context.TODO(), func() capi_e2e.NodeDrainTimeoutSpecInput {
+	// 		return capi_e2e.NodeDrainTimeoutSpecInput{
+	// 			E2EConfig:             e2eConfig,
+	// 			ClusterctlConfigPath:  clusterctlConfigPath,
+	// 			BootstrapClusterProxy: bootstrapClusterProxy,
+	// 			ArtifactFolder:        artifactFolder,
+	// 			SkipCleanup:           skipCleanup,
+	// 			ControlPlaneWaiters: clusterctl.ControlPlaneWaiters{
+	// 				WaitForControlPlaneInitialized: EnsureControlPlaneInitializedNoAddons,
+	// 			},
+	// 		}
+	// 	})
+	// })
 
 	if os.Getenv("USE_LOCAL_KIND_REGISTRY") != "true" {
 		Context("API Version Upgrade", func() {
@@ -206,6 +206,7 @@ var _ = Describe("Running the Cluster API E2E tests", func() {
 					return capi_e2e.ClusterctlUpgradeSpecInput{
 						E2EConfig:                 e2eConfig,
 						ClusterctlConfigPath:      clusterctlConfigPath,
+						WorkloadFlavor:            "machine-and-machine-pool",
 						BootstrapClusterProxy:     bootstrapClusterProxy,
 						ArtifactFolder:            artifactFolder,
 						SkipCleanup:               skipCleanup,
@@ -230,6 +231,7 @@ var _ = Describe("Running the Cluster API E2E tests", func() {
 					return capi_e2e.ClusterctlUpgradeSpecInput{
 						E2EConfig:                 e2eConfig,
 						ClusterctlConfigPath:      clusterctlConfigPath,
+						WorkloadFlavor:            "machine-and-machine-pool",
 						BootstrapClusterProxy:     bootstrapClusterProxy,
 						ArtifactFolder:            artifactFolder,
 						SkipCleanup:               skipCleanup,

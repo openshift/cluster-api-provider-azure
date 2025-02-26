@@ -26,11 +26,12 @@ import (
 	"go.uber.org/mock/gomock"
 	utilfeature "k8s.io/component-base/featuregate/testing"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/cluster-api/util/conditions"
+
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/resourcehealth/mock_resourcehealth"
 	"sigs.k8s.io/cluster-api-provider-azure/feature"
 	gomockinternal "sigs.k8s.io/cluster-api-provider-azure/internal/test/matchers/gomock"
-	"sigs.k8s.io/cluster-api/util/conditions"
 )
 
 func TestReconcileResourceHealth(t *testing.T) {
@@ -125,7 +126,7 @@ func TestReconcileResourceHealth(t *testing.T) {
 				}{scopeMock, filtererMock}
 			}
 
-			defer utilfeature.SetFeatureGateDuringTest(t, feature.Gates, feature.AKSResourceHealth, !tc.featureDisabled)()
+			utilfeature.SetFeatureGateDuringTest(t, feature.Gates, feature.AKSResourceHealth, !tc.featureDisabled)
 
 			err := s.Reconcile(context.TODO())
 

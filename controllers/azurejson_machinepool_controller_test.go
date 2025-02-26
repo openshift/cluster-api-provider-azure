@@ -31,16 +31,17 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	expv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-azure/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/identities"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/identities/mock_identities"
 	infrav1exp "sigs.k8s.io/cluster-api-provider-azure/exp/api/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-azure/util/reconciler"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	expv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestAzureJSONPoolReconciler(t *testing.T) {
@@ -219,8 +220,9 @@ func TestAzureJSONPoolReconciler(t *testing.T) {
 			client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(tc.objects...).Build()
 
 			reconciler := &AzureJSONMachinePoolReconciler{
-				Client:   client,
-				Recorder: record.NewFakeRecorder(128),
+				Client:          client,
+				Recorder:        record.NewFakeRecorder(128),
+				CredentialCache: azure.NewCredentialCache(),
 			}
 
 			_, err := reconciler.Reconcile(context.Background(), ctrl.Request{
@@ -374,9 +376,10 @@ func TestAzureJSONPoolReconcilerUserAssignedIdentities(t *testing.T) {
 
 	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(azureMP, ownerMP, cluster, azureCluster, sec, fakeIdentity).Build()
 	rec := AzureJSONMachinePoolReconciler{
-		Client:   client,
-		Recorder: record.NewFakeRecorder(42),
-		Timeouts: reconciler.Timeouts{},
+		Client:          client,
+		Recorder:        record.NewFakeRecorder(42),
+		Timeouts:        reconciler.Timeouts{},
+		CredentialCache: azure.NewCredentialCache(),
 	}
 	id := "azure:///subscriptions/123/resourceGroups/test-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/fake-provider-id"
 	getClient = func(auth azure.Authorizer) (identities.Client, error) {

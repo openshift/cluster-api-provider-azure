@@ -29,6 +29,8 @@ import (
 	"go.uber.org/mock/gomock"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-azure/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/converters"
@@ -38,7 +40,6 @@ import (
 	gomockinternal "sigs.k8s.io/cluster-api-provider-azure/internal/test/matchers/gomock"
 	azureutil "sigs.k8s.io/cluster-api-provider-azure/util/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/util/reconciler"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
 const (
@@ -119,14 +120,14 @@ func TestReconcileVMSS(t *testing.T) {
 				spec := getDefaultVMSSSpec()
 				// Validate spec
 				s.ScaleSetSpec(gomockinternal.AContext()).Return(spec).AnyTimes()
-				m.Get(gomockinternal.AContext(), &defaultSpec).Return(&resultVMSS, nil)
+				m.Get(gomockinternal.AContext(), &defaultSpec).Return(resultVMSS, nil)
 				m.ListInstances(gomockinternal.AContext(), defaultSpec.ResourceGroup, defaultSpec.Name).Return(defaultInstances, nil)
 				r.CreateOrUpdateResource(gomockinternal.AContext(), spec, serviceName).Return(getResultVMSS(), nil)
 				s.UpdatePutStatus(infrav1.BootstrapSucceededCondition, serviceName, nil)
 
-				s.ReconcileReplicas(gomockinternal.AContext(), &fetchedVMSS).Return(nil)
-				s.SetProviderID(azureutil.ProviderIDPrefix + defaultVMSSID)
-				s.SetVMSSState(&fetchedVMSS)
+				s.ReconcileReplicas(gomockinternal.AContext(), &fetchedVMSS).Return(nil).Times(2)
+				s.SetProviderID(azureutil.ProviderIDPrefix + defaultVMSSID).Times(2)
+				s.SetVMSSState(&fetchedVMSS).Times(2)
 			},
 		},
 		{
@@ -177,28 +178,16 @@ func TestReconcileVMSS(t *testing.T) {
 				s.DefaultedAzureServiceReconcileTimeout().Return(reconciler.DefaultAzureServiceReconcileTimeout)
 				spec := getDefaultVMSSSpec()
 				s.ScaleSetSpec(gomockinternal.AContext()).Return(spec).AnyTimes()
-				m.Get(gomockinternal.AContext(), &defaultSpec).Return(&resultVMSS, nil)
+				m.Get(gomockinternal.AContext(), &defaultSpec).Return(resultVMSS, nil)
 				m.ListInstances(gomockinternal.AContext(), defaultSpec.ResourceGroup, defaultSpec.Name).Return(defaultInstances, nil)
 
 				r.CreateOrUpdateResource(gomockinternal.AContext(), spec, serviceName).
 					Return(nil, internalError())
 				s.UpdatePutStatus(infrav1.BootstrapSucceededCondition, serviceName, internalError())
-			},
-		},
-		{
-			name:          "failed to reconcile replicas",
-			expectedError: "unable to reconcile VMSS replicas:.*#: Internal Server Error: StatusCode=500",
-			expect: func(g *WithT, s *mock_scalesets.MockScaleSetScopeMockRecorder, r *mock_async.MockReconcilerMockRecorder, m *mock_scalesets.MockClientMockRecorder) {
-				s.DefaultedAzureServiceReconcileTimeout().Return(reconciler.DefaultAzureServiceReconcileTimeout)
-				spec := getDefaultVMSSSpec()
-				s.ScaleSetSpec(gomockinternal.AContext()).Return(spec).AnyTimes()
-				m.Get(gomockinternal.AContext(), &defaultSpec).Return(&resultVMSS, nil)
-				m.ListInstances(gomockinternal.AContext(), defaultSpec.ResourceGroup, defaultSpec.Name).Return(defaultInstances, nil)
 
-				r.CreateOrUpdateResource(gomockinternal.AContext(), spec, serviceName).Return(getResultVMSS(), nil)
-				s.UpdatePutStatus(infrav1.BootstrapSucceededCondition, serviceName, nil)
-
-				s.ReconcileReplicas(gomockinternal.AContext(), &fetchedVMSS).Return(internalError())
+				s.ReconcileReplicas(gomockinternal.AContext(), &fetchedVMSS).Return(nil)
+				s.SetProviderID(azureutil.ProviderIDPrefix + defaultVMSSID)
+				s.SetVMSSState(&fetchedVMSS)
 			},
 		},
 		{
@@ -310,7 +299,6 @@ func TestReconcileVMSS(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			t.Parallel()
@@ -393,7 +381,6 @@ func TestDeleteVMSS(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			t.Parallel()

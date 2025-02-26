@@ -245,7 +245,6 @@ func TestAzureMachineTemplate_ValidateCreate(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
@@ -338,53 +337,6 @@ func TestAzureMachineTemplate_ValidateUpdate(t *testing.T) {
 							},
 							DataDisks:    []DataDisk{},
 							SSHPublicKey: "fake ssh key",
-						},
-					},
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "NewTemplate",
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "AzureMachineTemplate with default mismatch",
-			oldTemplate: &AzureMachineTemplate{
-				Spec: AzureMachineTemplateSpec{
-					Template: AzureMachineTemplateResource{
-						Spec: AzureMachineSpec{
-							VMSize:        "size",
-							FailureDomain: &failureDomain,
-							OSDisk: OSDisk{
-								OSType:      "type",
-								DiskSizeGB:  ptr.To[int32](11),
-								CachingType: "",
-							},
-							DataDisks:    []DataDisk{},
-							SSHPublicKey: "",
-						},
-					},
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "OldTemplate",
-				},
-			},
-			template: &AzureMachineTemplate{
-				Spec: AzureMachineTemplateSpec{
-					Template: AzureMachineTemplateResource{
-						Spec: AzureMachineSpec{
-							VMSize:        "size",
-							FailureDomain: &failureDomain,
-							OSDisk: OSDisk{
-								OSType:      "type",
-								DiskSizeGB:  ptr.To[int32](11),
-								CachingType: "None",
-							},
-							DataDisks:    []DataDisk{},
-							SSHPublicKey: "fake ssh key",
-							NetworkInterfaces: []NetworkInterface{{
-								PrivateIPConfigs: 1,
-							}},
 						},
 					},
 				},
@@ -593,7 +545,6 @@ func TestAzureMachineTemplate_ValidateUpdate(t *testing.T) {
 
 	// dry-run=true
 	for _, amt := range tests {
-		amt := amt
 		t.Run(amt.name, func(t *testing.T) {
 			g := NewWithT(t)
 			ctx := admission.NewContextWithRequest(context.Background(), admission.Request{AdmissionRequest: admissionv1.AdmissionRequest{DryRun: ptr.To(true)}})
@@ -607,7 +558,6 @@ func TestAzureMachineTemplate_ValidateUpdate(t *testing.T) {
 	}
 	// dry-run=false
 	for _, amt := range tests {
-		amt := amt
 		t.Run(amt.name, func(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)

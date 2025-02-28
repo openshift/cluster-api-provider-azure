@@ -26,12 +26,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilfeature "k8s.io/component-base/featuregate/testing"
 	"k8s.io/utils/ptr"
-	"sigs.k8s.io/cluster-api-provider-azure/feature"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	clusterctlv1alpha3 "sigs.k8s.io/cluster-api/cmd/clusterctl/api/v1alpha3"
 	capifeature "sigs.k8s.io/cluster-api/feature"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"sigs.k8s.io/cluster-api-provider-azure/feature"
 )
 
 func TestAzureManagedMachinePoolDefaultingWebhook(t *testing.T) {
@@ -61,7 +62,6 @@ func TestAzureManagedMachinePoolDefaultingWebhook(t *testing.T) {
 	g.Expect(ok).To(BeTrue())
 	g.Expect(val).To(Equal("System"))
 	g.Expect(*ammp.Spec.Name).To(Equal("fooname"))
-	g.Expect(*ammp.Spec.OSType).To(Equal(LinuxOS))
 
 	t.Logf("Testing ammp defaulting webhook with empty string name specified in Spec")
 	emptyName := ""
@@ -636,7 +636,6 @@ func TestAzureManagedMachinePoolUpdatingWebhook(t *testing.T) {
 	}
 	var client client.Client
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
@@ -1313,12 +1312,6 @@ func TestAzureManagedMachinePool_ValidateCreateFailure(t *testing.T) {
 		expectError        bool
 	}{
 		{
-			name:               "feature gate explicitly disabled",
-			ammp:               getKnownValidAzureManagedMachinePool(),
-			featureGateEnabled: ptr.To(false),
-			expectError:        true,
-		},
-		{
 			name:               "feature gate implicitly enabled",
 			ammp:               getKnownValidAzureManagedMachinePool(),
 			featureGateEnabled: nil,
@@ -1328,7 +1321,7 @@ func TestAzureManagedMachinePool_ValidateCreateFailure(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.featureGateEnabled != nil {
-				defer utilfeature.SetFeatureGateDuringTest(t, feature.Gates, capifeature.MachinePool, *tc.featureGateEnabled)()
+				utilfeature.SetFeatureGateDuringTest(t, feature.Gates, capifeature.MachinePool, *tc.featureGateEnabled)
 			}
 			g := NewWithT(t)
 			mw := &azureManagedMachinePoolWebhook{}

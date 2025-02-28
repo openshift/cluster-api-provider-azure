@@ -26,15 +26,17 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
-	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
-	infrav1exp "sigs.k8s.io/cluster-api-provider-azure/exp/api/v1beta1"
-	"sigs.k8s.io/cluster-api-provider-azure/internal/test"
-	"sigs.k8s.io/cluster-api-provider-azure/util/reconciler"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	expv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+	"sigs.k8s.io/cluster-api-provider-azure/azure"
+	infrav1exp "sigs.k8s.io/cluster-api-provider-azure/exp/api/v1beta1"
+	"sigs.k8s.io/cluster-api-provider-azure/internal/test"
+	"sigs.k8s.io/cluster-api-provider-azure/util/reconciler"
 )
 
 var _ = Describe("AzureMachinePoolReconciler", func() {
@@ -44,7 +46,7 @@ var _ = Describe("AzureMachinePoolReconciler", func() {
 	Context("Reconcile an AzureMachinePool", func() {
 		It("should not error with minimal set up", func() {
 			reconciler := NewAzureMachinePoolReconciler(testEnv, testEnv.GetEventRecorderFor("azuremachinepool-reconciler"),
-				reconciler.Timeouts{}, "", "")
+				reconciler.Timeouts{}, "", "", testEnv.CredentialCache)
 			By("Calling reconcile")
 			instance := &infrav1exp.AzureMachinePool{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
 			result, err := reconciler.Reconcile(context.Background(), ctrl.Request{
@@ -79,7 +81,7 @@ func TestAzureMachinePoolReconcilePaused(t *testing.T) {
 
 	recorder := record.NewFakeRecorder(1)
 
-	reconciler := NewAzureMachinePoolReconciler(c, recorder, reconciler.Timeouts{}, "", "")
+	reconciler := NewAzureMachinePoolReconciler(c, recorder, reconciler.Timeouts{}, "", "", azure.NewCredentialCache())
 	name := test.RandomName("paused", 10)
 	namespace := "default"
 

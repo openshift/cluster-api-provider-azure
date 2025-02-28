@@ -29,24 +29,24 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-azure/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/scope"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/resourceskus"
 	"sigs.k8s.io/cluster-api-provider-azure/util/reconciler"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	capierrors "sigs.k8s.io/cluster-api/errors"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 type TestMachineReconcileInput struct {
 	createAzureMachineService func(*scope.MachineScope) (*azureMachineService, error)
 	azureMachineOptions       func(am *infrav1.AzureMachine)
 	expectedErr               string
-	machineScopeFailureReason capierrors.MachineStatusError
+	machineScopeFailureReason string
 	ready                     bool
 	cache                     *scope.MachineCache
 	skuCache                  scope.SKUCacher
@@ -146,8 +146,9 @@ func TestAzureMachineReconcile(t *testing.T) {
 			g.Expect(fakeClient.Get(context.TODO(), key, resultIdentity)).To(Succeed())
 
 			reconciler := &AzureMachineReconciler{
-				Client:   fakeClient,
-				Recorder: record.NewFakeRecorder(128),
+				Client:          fakeClient,
+				Recorder:        record.NewFakeRecorder(128),
+				CredentialCache: azure.NewCredentialCache(),
 			}
 
 			_, err := reconciler.Reconcile(context.Background(), ctrl.Request{
@@ -183,8 +184,7 @@ func TestAzureMachineReconcileNormal(t *testing.T) {
 		},
 		"should skip reconciliation if error state is detected on azure machine": {
 			azureMachineOptions: func(am *infrav1.AzureMachine) {
-				updateError := capierrors.UpdateMachineError
-				am.Status.FailureReason = &updateError
+				am.Status.FailureReason = ptr.To(azure.UpdateError)
 			},
 			createAzureMachineService: getFakeAzureMachineService,
 		},
@@ -217,13 +217,13 @@ func TestAzureMachineReconcileNormal(t *testing.T) {
 		},
 		"should fail if VM is deleted": {
 			createAzureMachineService: getFakeAzureMachineServiceWithVMDeleted,
-			machineScopeFailureReason: capierrors.UpdateMachineError,
+			machineScopeFailureReason: azure.UpdateError,
 			cache:                     &scope.MachineCache{},
 			expectedErr:               "failed to reconcile AzureMachine",
 		},
 		"should reconcile if terminal error is received": {
 			createAzureMachineService: getFakeAzureMachineServiceWithTerminalError,
-			machineScopeFailureReason: capierrors.CreateMachineError,
+			machineScopeFailureReason: azure.CreateError,
 			cache:                     &scope.MachineCache{},
 		},
 		"should requeue if transient error is received": {
@@ -401,16 +401,19 @@ func getMachineReconcileInputs(tc TestMachineReconcileInput) (*AzureMachineRecon
 		).
 		Build()
 
+	credCache := azure.NewCredentialCache()
 	reconciler := &AzureMachineReconciler{
 		Client:                    client,
 		Recorder:                  record.NewFakeRecorder(128),
 		createAzureMachineService: tc.createAzureMachineService,
+		CredentialCache:           credCache,
 	}
 
 	clusterScope, err := scope.NewClusterScope(context.Background(), scope.ClusterScopeParams{
-		Client:       client,
-		Cluster:      cluster,
-		AzureCluster: azureCluster,
+		Client:          client,
+		Cluster:         cluster,
+		AzureCluster:    azureCluster,
+		CredentialCache: credCache,
 	})
 	if err != nil {
 		return nil, nil, nil, err
@@ -560,6 +563,7 @@ func getFakeAzureCluster(changes ...func(*infrav1.AzureCluster)) *infrav1.AzureC
 					Kind:      "AzureClusterIdentity",
 				},
 			},
+			ControlPlaneEnabled: true,
 			NetworkSpec: infrav1.NetworkSpec{
 				Subnets: infrav1.Subnets{
 					{
@@ -569,7 +573,7 @@ func getFakeAzureCluster(changes ...func(*infrav1.AzureCluster)) *infrav1.AzureC
 						},
 					},
 				},
-				APIServerLB: infrav1.LoadBalancerSpec{
+				APIServerLB: &infrav1.LoadBalancerSpec{
 					Name: "my-cluster-public-lb",
 					FrontendIPs: []infrav1.FrontendIP{
 						{
@@ -784,12 +788,14 @@ func TestConditions(t *testing.T) {
 			g.Expect(fakeClient.Get(context.TODO(), key, resultIdentity)).To(Succeed())
 			recorder := record.NewFakeRecorder(10)
 
-			reconciler := NewAzureMachineReconciler(fakeClient, recorder, reconciler.Timeouts{}, "")
+			credCache := azure.NewCredentialCache()
+			reconciler := NewAzureMachineReconciler(fakeClient, recorder, reconciler.Timeouts{}, "", credCache)
 
 			clusterScope, err := scope.NewClusterScope(context.TODO(), scope.ClusterScopeParams{
-				Client:       fakeClient,
-				Cluster:      cluster,
-				AzureCluster: azureCluster,
+				Client:          fakeClient,
+				Cluster:         cluster,
+				AzureCluster:    azureCluster,
+				CredentialCache: credCache,
 			})
 			g.Expect(err).NotTo(HaveOccurred())
 

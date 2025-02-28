@@ -32,25 +32,25 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterctlv1 "sigs.k8s.io/cluster-api/cmd/clusterctl/api/v1alpha3"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-azure/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/scope"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/resourceskus"
 	"sigs.k8s.io/cluster-api-provider-azure/internal/test"
 	"sigs.k8s.io/cluster-api-provider-azure/util/reconciler"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	clusterctlv1 "sigs.k8s.io/cluster-api/cmd/clusterctl/api/v1alpha3"
-	capierrors "sigs.k8s.io/cluster-api/errors"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 type TestClusterReconcileInput struct {
 	createAzureClusterService func(*scope.ClusterScope) (*azureClusterService, error)
 	azureClusterOptions       func(ac *infrav1.AzureCluster)
-	clusterScopeFailureReason capierrors.ClusterStatusError
+	clusterScopeFailureReason string
 	cache                     *scope.ClusterCache
 	expectedResult            reconcile.Result
 	expectedErr               string
@@ -68,7 +68,7 @@ var _ = Describe("AzureClusterReconciler", func() {
 
 	Context("Reconcile an AzureCluster", func() {
 		It("should not error with minimal set up", func() {
-			reconciler := NewAzureClusterReconciler(testEnv, testEnv.GetEventRecorderFor("azurecluster-reconciler"), reconciler.Timeouts{}, "")
+			reconciler := NewAzureClusterReconciler(testEnv, testEnv.GetEventRecorderFor("azurecluster-reconciler"), reconciler.Timeouts{}, "", azure.NewCredentialCache())
 			By("Calling reconcile")
 			name := test.RandomName("foo", 10)
 			instance := &infrav1.AzureCluster{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace}}
@@ -181,7 +181,7 @@ func TestAzureClusterReconcileNormal(t *testing.T) {
 					acs.scope = cs
 				}), nil
 			},
-			clusterScopeFailureReason: capierrors.CreateClusterError,
+			clusterScopeFailureReason: azure.CreateError,
 			cache:                     &scope.ClusterCache{},
 		},
 		"should requeue if transient error is received": {
@@ -275,7 +275,7 @@ func TestAzureClusterReconcilePaused(t *testing.T) {
 
 	recorder := record.NewFakeRecorder(1)
 
-	reconciler := NewAzureClusterReconciler(c, recorder, reconciler.Timeouts{}, "")
+	reconciler := NewAzureClusterReconciler(c, recorder, reconciler.Timeouts{}, "", azure.NewCredentialCache())
 	name := test.RandomName("paused", 10)
 	namespace := namespace
 
@@ -505,10 +505,11 @@ func getClusterReconcileInputs(tc TestClusterReconcileInput) (*AzureClusterRecon
 	}
 
 	clusterScope, err := scope.NewClusterScope(context.Background(), scope.ClusterScopeParams{
-		Client:       client,
-		Cluster:      cluster,
-		AzureCluster: azureCluster,
-		Cache:        tc.cache,
+		Client:          client,
+		Cluster:         cluster,
+		AzureCluster:    azureCluster,
+		Cache:           tc.cache,
+		CredentialCache: azure.NewCredentialCache(),
 	})
 	if err != nil {
 		return nil, nil, err

@@ -38,9 +38,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
-	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
-	"sigs.k8s.io/cluster-api-provider-azure/azure"
-	e2e_namespace "sigs.k8s.io/cluster-api-provider-azure/test/e2e/kubernetes/namespace"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	kubeadmv1 "sigs.k8s.io/cluster-api/controlplane/kubeadm/api/v1beta1"
 	capi_e2e "sigs.k8s.io/cluster-api/test/e2e"
@@ -48,6 +45,10 @@ import (
 	"sigs.k8s.io/cluster-api/test/framework/clusterctl"
 	"sigs.k8s.io/cluster-api/util/kubeconfig"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+	"sigs.k8s.io/cluster-api-provider-azure/azure"
+	e2e_namespace "sigs.k8s.io/cluster-api-provider-azure/test/e2e/kubernetes/namespace"
 )
 
 // Test suite constants for e2e config variables
@@ -80,13 +81,12 @@ const (
 	AKSKubernetesVersionUpgradeFrom   = "AKS_KUBERNETES_VERSION_UPGRADE_FROM"
 	FlatcarKubernetesVersion          = "FLATCAR_KUBERNETES_VERSION"
 	FlatcarVersion                    = "FLATCAR_VERSION"
-	SecurityScanFailThreshold         = "SECURITY_SCAN_FAIL_THRESHOLD"
-	SecurityScanContainer             = "SECURITY_SCAN_CONTAINER"
 	CalicoVersion                     = "CALICO_VERSION"
 	ManagedClustersResourceType       = "managedClusters"
 	capiImagePublisher                = "cncf-upstream"
 	capiOfferName                     = "capi"
 	capiWindowsOfferName              = "capi-windows"
+	capiCommunityGallery              = "ClusterAPI-f72ceb4f-5159-4c26-a0fe-2ea738f0d019"
 	aksClusterNameSuffix              = "aks"
 	flatcarCAPICommunityGallery       = "flatcar4capi-742ef0cb-dcaa-4ecb-9cb0-bfd2e43dccc0"
 	defaultNamespace                  = "default"

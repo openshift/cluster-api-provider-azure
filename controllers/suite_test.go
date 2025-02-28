@@ -23,9 +23,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+
 	"sigs.k8s.io/cluster-api-provider-azure/internal/test/env"
 	"sigs.k8s.io/cluster-api-provider-azure/util/reconciler"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
@@ -44,10 +45,10 @@ func TestAPIs(t *testing.T) {
 var _ = BeforeSuite(func() {
 	By("bootstrapping test environment")
 	testEnv = env.NewTestEnvironment()
-	Expect(NewAzureClusterReconciler(testEnv, testEnv.GetEventRecorderFor("azurecluster-reconciler"), reconciler.Timeouts{}, "").
+	Expect(NewAzureClusterReconciler(testEnv, testEnv.GetEventRecorderFor("azurecluster-reconciler"), reconciler.Timeouts{}, "", testEnv.CredentialCache).
 		SetupWithManager(context.Background(), testEnv.Manager, Options{Options: controller.Options{MaxConcurrentReconciles: 1}})).To(Succeed())
 
-	Expect(NewAzureMachineReconciler(testEnv, testEnv.GetEventRecorderFor("azuremachine-reconciler"), reconciler.Timeouts{}, "").
+	Expect(NewAzureMachineReconciler(testEnv, testEnv.GetEventRecorderFor("azuremachine-reconciler"), reconciler.Timeouts{}, "", testEnv.CredentialCache).
 		SetupWithManager(context.Background(), testEnv.Manager, Options{Options: controller.Options{MaxConcurrentReconciles: 1}})).To(Succeed())
 
 	Expect((&AzureManagedClusterReconciler{
@@ -56,12 +57,13 @@ var _ = BeforeSuite(func() {
 	}).SetupWithManager(context.Background(), testEnv.Manager, Options{Options: controller.Options{MaxConcurrentReconciles: 1}})).To(Succeed())
 
 	Expect((&AzureManagedControlPlaneReconciler{
-		Client:   testEnv,
-		Recorder: testEnv.GetEventRecorderFor("azuremanagedcontrolplane-reconciler"),
+		Client:          testEnv,
+		Recorder:        testEnv.GetEventRecorderFor("azuremanagedcontrolplane-reconciler"),
+		CredentialCache: testEnv.CredentialCache,
 	}).SetupWithManager(context.Background(), testEnv.Manager, Options{Options: controller.Options{MaxConcurrentReconciles: 1}})).To(Succeed())
 
 	Expect(NewAzureManagedMachinePoolReconciler(testEnv, testEnv.GetEventRecorderFor("azuremanagedmachinepool-reconciler"),
-		reconciler.Timeouts{}, "").SetupWithManager(context.Background(), testEnv.Manager, Options{Options: controller.Options{MaxConcurrentReconciles: 1}})).To(Succeed())
+		reconciler.Timeouts{}, "", testEnv.CredentialCache).SetupWithManager(context.Background(), testEnv.Manager, Options{Options: controller.Options{MaxConcurrentReconciles: 1}})).To(Succeed())
 
 	// +kubebuilder:scaffold:scheme
 

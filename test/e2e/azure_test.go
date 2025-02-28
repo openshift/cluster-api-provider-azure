@@ -393,6 +393,44 @@ var _ = Describe("Workload cluster creation", func() {
 		})
 	})
 
+	Context("Creating a Flatcar sysext cluster [OPTIONAL]", func() {
+		It("With Flatcar control-plane and worker nodes", func() {
+			clusterName = getClusterName(clusterNamePrefix, "flatcar-sysext")
+			clusterctl.ApplyClusterTemplateAndWait(ctx, createApplyClusterTemplateInput(
+				specName,
+				withFlavor("flatcar-sysext"),
+				withNamespace(namespace.Name),
+				withClusterName(clusterName),
+				withKubernetesVersion(e2eConfig.GetVariable(capi_e2e.KubernetesVersion)),
+				withControlPlaneMachineCount(1),
+				withWorkerMachineCount(1),
+				withControlPlaneWaiters(clusterctl.ControlPlaneWaiters{
+					WaitForControlPlaneInitialized: EnsureControlPlaneInitializedNoAddons,
+				}),
+				withPostMachinesProvisioned(func() {
+					EnsureDaemonsets(ctx, func() DaemonsetsSpecInput {
+						return DaemonsetsSpecInput{
+							BootstrapClusterProxy: bootstrapClusterProxy,
+							Namespace:             namespace,
+							ClusterName:           clusterName,
+						}
+					})
+				}),
+			), result)
+
+			By("can create and access a load balancer", func() {
+				AzureLBSpec(ctx, func() AzureLBSpecInput {
+					return AzureLBSpecInput{
+						BootstrapClusterProxy: bootstrapClusterProxy,
+						Namespace:             namespace,
+						ClusterName:           clusterName,
+						SkipCleanup:           skipCleanup,
+					}
+				})
+			})
+		})
+	})
+
 	Context("Creating a cluster with spot vms [OPTIONAL]", func() {
 		It("With spot vm machine deployments", func() {
 			clusterName = getClusterName(clusterNamePrefix, "spot")
@@ -687,7 +725,6 @@ var _ = Describe("Workload cluster creation", func() {
 			clusterTemplate := createApplyClusterTemplateInput(
 				specName,
 				withFlavor("aks"),
-				withAzureCNIv1Manifest(e2eConfig.GetVariable(AzureCNIv1Manifest)),
 				withNamespace(namespace.Name),
 				withClusterName(clusterName),
 				withKubernetesVersion(kubernetesVersionUpgradeFrom),
@@ -853,17 +890,16 @@ var _ = Describe("Workload cluster creation", func() {
 				})
 			})
 
-			// TODO: restore when new CAPZ reference images are published
-			// By("creating a byo nodepool", func() {
-			// 	AKSBYONodeSpec(ctx, func() AKSBYONodeSpecInput {
-			// 		return AKSBYONodeSpecInput{
-			// 			Cluster:             result.Cluster,
-			// 			KubernetesVersion:   kubernetesVersion,
-			// 			WaitIntervals:       e2eConfig.GetIntervals(specName, "wait-worker-nodes"),
-			// 			ExpectedWorkerNodes: result.ExpectedWorkerNodes(),
-			// 		}
-			// 	})
-			// })
+			By("creating a byo nodepool", func() {
+				AKSBYONodeSpec(ctx, func() AKSBYONodeSpecInput {
+					return AKSBYONodeSpecInput{
+						Cluster:             result.Cluster,
+						KubernetesVersion:   kubernetesVersion,
+						WaitIntervals:       e2eConfig.GetIntervals(specName, "wait-worker-nodes"),
+						ExpectedWorkerNodes: result.ExpectedWorkerNodes(),
+					}
+				})
+			})
 
 			By("modifying custom patches", func() {
 				AKSPatchSpec(ctx, func() AKSPatchSpecInput {
@@ -895,7 +931,6 @@ var _ = Describe("Workload cluster creation", func() {
 			clusterctl.ApplyClusterTemplateAndWait(ctx, createApplyClusterTemplateInput(
 				specName,
 				withFlavor("aks-topology"),
-				withAzureCNIv1Manifest(e2eConfig.GetVariable(AzureCNIv1Manifest)),
 				withNamespace(namespace.Name),
 				withClusterName(clusterName),
 				withKubernetesVersion(kubernetesVersionUpgradeFrom),
@@ -1029,7 +1064,7 @@ var _ = Describe("Workload cluster creation", func() {
 	Context("Creating clusters using clusterclass [OPTIONAL]", func() {
 		It("with a single control plane node, one linux worker node, and one windows worker node", func() {
 			// Use ci-default as the clusterclass name so test infra can find the clusterclass template
-			os.Setenv("CLUSTER_CLASS_NAME", "ci-default")
+			Expect(os.Setenv("CLUSTER_CLASS_NAME", "ci-default")).To(Succeed())
 
 			// Use "cc" as spec name because NAT gateway pip name exceeds limit.
 			clusterName = getClusterName(clusterNamePrefix, "cc")
@@ -1118,4 +1153,103 @@ var _ = Describe("Workload cluster creation", func() {
 			By("PASSED!")
 		})
 	})
+
+	Context("Creating a self-managed VM based cluster using API Server ILB feature gate using default template [OPTIONAL][API-Server-ILB]", func() {
+		It("with three controlplane node and three worker nodes", func() {
+			clusterName = getClusterName(clusterNamePrefix, "apiserver-ilb")
+
+			// Enable the API Server ILB feature gate
+			Expect(os.Setenv("EXP_APISERVER_ILB", "true")).To(Succeed())
+
+			clusterctl.ApplyClusterTemplateAndWait(ctx, createApplyClusterTemplateInput(
+				specName,
+				withNamespace(namespace.Name),
+				withClusterName(clusterName),
+				withControlPlaneMachineCount(3),
+				withWorkerMachineCount(2),
+				withControlPlaneInterval(specName, "wait-control-plane-ha"),
+				withControlPlaneWaiters(clusterctl.ControlPlaneWaiters{
+					WaitForControlPlaneInitialized: EnsureControlPlaneInitializedNoAddons,
+				}),
+				withPostMachinesProvisioned(func() {
+					EnsureDaemonsets(ctx, func() DaemonsetsSpecInput {
+						return DaemonsetsSpecInput{
+							BootstrapClusterProxy: bootstrapClusterProxy,
+							Namespace:             namespace,
+							ClusterName:           clusterName,
+						}
+					})
+				}),
+			), result)
+
+			By("Probing workload cluster with APIServerILB feature gate", func() {
+				AzureAPIServerILBSpec(ctx, func() AzureAPIServerILBSpecInput {
+					return AzureAPIServerILBSpecInput{
+						BootstrapClusterProxy:                   bootstrapClusterProxy,
+						Cluster:                                 result.Cluster,
+						Namespace:                               namespace,
+						ClusterName:                             clusterName,
+						ExpectedWorkerNodes:                     result.ExpectedWorkerNodes(),
+						WaitIntervals:                           e2eConfig.GetIntervals(specName, "wait-worker-nodes"),
+						TemplateHasPrivateIPCustomDNSResolution: false,
+					}
+				})
+			})
+
+			By("PASSED!")
+		})
+	})
+
+	Context("Creating a self-managed VM based cluster using API Server ILB feature gate and fully spec-ed out APIServer ILB template [OPTIONAL][API-Server-ILB]", func() {
+		It("with three controlplane node and three worker nodes", func() {
+			clusterName = getClusterName(clusterNamePrefix, "apiserver-ilb")
+
+			// Set the environment variables required for the API Server ILB feature gate
+			Expect(os.Setenv("EXP_APISERVER_ILB", "true")).To(Succeed())
+			Expect(os.Setenv("AZURE_INTERNAL_LB_PRIVATE_IP", "40.0.0.100")).To(Succeed())
+			Expect(os.Setenv("AZURE_VNET_CIDR", "40.0.0.0/8")).To(Succeed())
+			Expect(os.Setenv("AZURE_CP_SUBNET_CIDR", "40.0.0.0/16")).To(Succeed())
+			Expect(os.Setenv("AZURE_NODE_SUBNET_CIDR", "40.1.0.0/16")).To(Succeed())
+
+			clusterctl.ApplyClusterTemplateAndWait(ctx, createApplyClusterTemplateInput(
+				specName,
+				withFlavor("apiserver-ilb"),
+				withNamespace(namespace.Name),
+				withClusterName(clusterName),
+				withControlPlaneMachineCount(3),
+				withWorkerMachineCount(2),
+				withControlPlaneInterval(specName, "wait-control-plane-ha"),
+				withControlPlaneWaiters(clusterctl.ControlPlaneWaiters{
+					WaitForControlPlaneInitialized: EnsureControlPlaneInitializedNoAddons,
+				}),
+				withPostMachinesProvisioned(func() {
+					EnsureDaemonsets(ctx, func() DaemonsetsSpecInput {
+						return DaemonsetsSpecInput{
+							BootstrapClusterProxy: bootstrapClusterProxy,
+							Namespace:             namespace,
+							ClusterName:           clusterName,
+						}
+					})
+				}),
+			), result)
+
+			By("Probing workload cluster with APIServerILB feature gate", func() {
+				AzureAPIServerILBSpec(ctx, func() AzureAPIServerILBSpecInput {
+					return AzureAPIServerILBSpecInput{
+						BootstrapClusterProxy:                   bootstrapClusterProxy,
+						Cluster:                                 result.Cluster,
+						Namespace:                               namespace,
+						ClusterName:                             clusterName,
+						ExpectedWorkerNodes:                     result.ExpectedWorkerNodes(),
+						WaitIntervals:                           e2eConfig.GetIntervals(specName, "wait-worker-nodes"),
+						TemplateHasPrivateIPCustomDNSResolution: true,
+					}
+				})
+			})
+
+			By("PASSED!")
+		})
+	})
+
+	// TODO: add a same test as above for a windows cluster
 })

@@ -38,6 +38,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	expv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-azure/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/mock_azure"
@@ -45,10 +50,6 @@ import (
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/roleassignments"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/scalesets"
 	infrav1exp "sigs.k8s.io/cluster-api-provider-azure/exp/api/v1beta1"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	expv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestMachinePoolScope_Name(t *testing.T) {
@@ -424,14 +425,10 @@ func TestMachinePoolScope_GetVMImage(t *testing.T) {
 			Verify: func(g *WithT, amp *infrav1exp.AzureMachinePool, vmImage *infrav1.Image, err error) {
 				g.Expect(err).NotTo(HaveOccurred())
 				image := &infrav1.Image{
-					Marketplace: &infrav1.AzureMarketplaceImage{
-						ImagePlan: infrav1.ImagePlan{
-							Publisher: "cncf-upstream",
-							Offer:     "capi",
-							SKU:       "k8s-1dot19dot11-ubuntu-1804",
-						},
-						Version:         "latest",
-						ThirdPartyImage: false,
+					ComputeGallery: &infrav1.AzureComputeGalleryImage{
+						Gallery: "ClusterAPI-f72ceb4f-5159-4c26-a0fe-2ea738f0d019",
+						Name:    "capi-ubun2-2404",
+						Version: "1.19.11",
 					},
 				}
 				g.Expect(vmImage).To(Equal(image))
@@ -1334,7 +1331,6 @@ func TestMachinePoolScope_SetInfrastructureMachineKind(t *testing.T) {
 	}
 
 	for _, tt := range testcases {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 

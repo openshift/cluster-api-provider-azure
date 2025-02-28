@@ -68,11 +68,12 @@ export AZURE_CLUSTER_IDENTITY_SECRET_NAMESPACE="default"
 export CLUSTER_IDENTITY_NAME="cluster-identity"
 ```
 
-Managed clusters require the Cluster API "MachinePool" feature flag enabled. You can do that via an environment variable thusly:
+Managed clusters require the Cluster API "MachinePool" feature flag enabled. The feature flag is enabled by default, but you can configure it using the following environment variable:
 
 ```bash
-export EXP_MACHINE_POOL=true  
+export EXP_MACHINE_POOL=true
 ```
+
 
 Create a local kind cluster to run the management cluster components:
 
@@ -304,6 +305,14 @@ spec:
 The `managerName` and `managerResourceGroup` fields are the name and resource group of your AKS fleet manager. The `group` field is the name of the update group for the cluster, not to be confused with the resource group.
 
 When the `fleetMember` field is included, CAPZ will create an AKS fleet member resource which will join the CAPZ cluster to the AKS fleet. The AKS fleet member resource will be created in the same resource group as the CAPZ cluster.
+
+<aside class="note">
+
+<h1> Note </h1>
+
+When attempting to create a cluster using `AzureASOManagedControlPlane` and adding it to an AKS fleet, the fleet manager should be referenced by the `armId` field in the ASO owner reference. See [#5333](https://github.com/kubernetes-sigs/cluster-api-provider-azure/issues/5333#issuecomment-2539303793) for more information.
+
+</aside>
 
 ### AKS Extensions
 

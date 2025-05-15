@@ -1815,6 +1815,11 @@ spec:
                     description: PrivateDNSZoneName defines the zone name for the
                       Azure Private DNS.
                     type: string
+                  privateDNSZoneResourceGroup:
+                    description: |-
+                      PrivateDNSZoneResourceGroup defines the resource group to be used for Azure Private DNS Zone.
+                      If not specified, the resource group of the cluster will be used to create the Azure Private DNS Zone.
+                    type: string
                   subnets:
                     description: Subnets is the configuration for the control-plane
                       subnet and the node subnet.
@@ -2947,6 +2952,11 @@ spec:
                           privateDNSZoneName:
                             description: PrivateDNSZoneName defines the zone name
                               for the Azure Private DNS.
+                            type: string
+                          privateDNSZoneResourceGroup:
+                            description: |-
+                              PrivateDNSZoneResourceGroup defines the resource group to be used for Azure Private DNS Zone.
+                              If not specified, the resource group of the cluster will be used to create the Azure Private DNS Zone.
                             type: string
                           subnets:
                             description: Subnets is the configuration for the control-plane
@@ -4259,13 +4269,26 @@ spec:
               type:
                 description: |-
                   Type is the type of Azure Identity used.
-                  ServicePrincipal, ServicePrincipalCertificate, UserAssignedMSI, ManualServicePrincipal or WorkloadIdentity.
+                  ServicePrincipal, ServicePrincipalCertificate, UserAssignedMSI, ManualServicePrincipal, UserAssignedIdentityCredential, or WorkloadIdentity.
                 enum:
                 - ServicePrincipal
                 - UserAssignedMSI
                 - ManualServicePrincipal
                 - ServicePrincipalCertificate
                 - WorkloadIdentity
+                - UserAssignedIdentityCredential
+                type: string
+              userAssignedIdentityCredentialsCloudType:
+                description: |-
+                  UserAssignedIdentityCredentialsCloudType is used with UserAssignedIdentityCredentialsPath to specify the Cloud
+                  type. Can only be one of the following values: public, china, or usgovernment
+                  If a value is not specified, defaults to public
+                type: string
+              userAssignedIdentityCredentialsPath:
+                description: |-
+                  UserAssignedIdentityCredentialsPath is the path where an existing JSON file exists containing the JSON format of
+                  a UserAssignedIdentityCredentials struct.
+                  See the msi-dataplane for more details on UserAssignedIdentityCredentials - https://github.com/Azure/msi-dataplane/blob/main/pkg/dataplane/internal/client/models.go#L125
                 type: string
             required:
             - clientID
@@ -10002,8 +10025,7 @@ rules:
 - apiGroups:
   - bootstrap.cluster.x-k8s.io
   resources:
-  - kubeadmconfigs
-  - kubeadmconfigs/status
+  - '*'
   verbs:
   - get
   - list
@@ -10379,6 +10401,10 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
         image: to.be/replaced:v99
         imagePullPolicy: Always
         livenessProbe:
@@ -10858,7 +10884,7 @@ spec:
   selector:
     cluster.x-k8s.io/provider: infrastructure-azure
 ---
-apiVersion: admissionregistration.k8s.io/v1beta1
+apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
   name: openshift-cluster-api-protect-azurecluster
@@ -10882,7 +10908,7 @@ spec:
     message: InfraCluster resources with metadata.name corresponding to the cluster
       infrastructureName cannot be deleted.
 ---
-apiVersion: admissionregistration.k8s.io/v1beta1
+apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
 metadata:
   name: openshift-cluster-api-protect-azurecluster

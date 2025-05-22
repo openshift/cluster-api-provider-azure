@@ -1815,6 +1815,11 @@ spec:
                     description: PrivateDNSZoneName defines the zone name for the
                       Azure Private DNS.
                     type: string
+                  privateDNSZoneResourceGroup:
+                    description: |-
+                      PrivateDNSZoneResourceGroup defines the resource group to be used for Azure Private DNS Zone.
+                      If not specified, the resource group of the cluster will be used to create the Azure Private DNS Zone.
+                    type: string
                   subnets:
                     description: Subnets is the configuration for the control-plane
                       subnet and the node subnet.
@@ -2947,6 +2952,11 @@ spec:
                           privateDNSZoneName:
                             description: PrivateDNSZoneName defines the zone name
                               for the Azure Private DNS.
+                            type: string
+                          privateDNSZoneResourceGroup:
+                            description: |-
+                              PrivateDNSZoneResourceGroup defines the resource group to be used for Azure Private DNS Zone.
+                              If not specified, the resource group of the cluster will be used to create the Azure Private DNS Zone.
                             type: string
                           subnets:
                             description: Subnets is the configuration for the control-plane
@@ -10015,8 +10025,7 @@ rules:
 - apiGroups:
   - bootstrap.cluster.x-k8s.io
   resources:
-  - kubeadmconfigs
-  - kubeadmconfigs/status
+  - '*'
   verbs:
   - get
   - list
@@ -10392,6 +10401,10 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
         image: to.be/replaced:v99
         imagePullPolicy: Always
         livenessProbe:

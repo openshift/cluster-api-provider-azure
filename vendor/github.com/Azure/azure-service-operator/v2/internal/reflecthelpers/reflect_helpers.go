@@ -199,9 +199,7 @@ func FindOptionalConfigMapReferences(obj interface{}) ([]*configmaps.OptionalRef
 	// Translate our collector into a simple list
 	var result []*configmaps.OptionalReferencePair
 	for _, values := range collector {
-		for _, val := range values {
-			result = append(result, val)
-		}
+		result = append(result, values...)
 	}
 
 	return result, nil
@@ -380,4 +378,20 @@ func setPropertyCore(obj any, propertyPath []string, value any) (err error) {
 
 	field.Set(reflect.ValueOf(value))
 	return nil
+}
+
+// GetJSONTags returns a set of JSON keys used in the `json` annotation of a struct
+func GetJSONTags(t reflect.Type) set.Set[string] {
+	tags := set.Make[string]()
+
+	for i := 0; i < t.NumField(); i++ {
+		fieldType := t.Field(i)
+		tag := fieldType.Tag.Get("json")
+		if tag != "" {
+			// Split the tag to handle omitempty and other options
+			tags.Add(strings.Split(tag, ",")[0])
+		}
+	}
+
+	return tags
 }

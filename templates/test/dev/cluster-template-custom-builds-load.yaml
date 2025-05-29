@@ -64,7 +64,6 @@ spec:
     clusterConfiguration:
       apiServer:
         extraArgs:
-          cloud-provider: external
           feature-gates: ${K8S_FEATURE_GATES:-""}
         timeoutForControlPlane: 20m
       controllerManager:
@@ -228,6 +227,8 @@ metadata:
 spec:
   template:
     spec:
+      additionalTags:
+        monitoring: load
       dataDisks:
       - diskSizeGB: 256
         lun: 0
@@ -282,7 +283,7 @@ spec:
   template:
     spec:
       additionalTags:
-        monitoring: virtualmachine
+        monitoring: load
       identity: UserAssigned
       image:
         marketplace:

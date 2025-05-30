@@ -6,12 +6,14 @@ package v1api20240402preview
 import (
 	"context"
 	"fmt"
+	arm "github.com/Azure/azure-service-operator/v2/api/containerservice/v1api20240402preview/arm"
 	storage "github.com/Azure/azure-service-operator/v2/api/containerservice/v1api20240402preview/storage"
 	"github.com/Azure/azure-service-operator/v2/internal/genericarmclient"
 	"github.com/Azure/azure-service-operator/v2/internal/reflecthelpers"
 	"github.com/Azure/azure-service-operator/v2/pkg/genruntime"
 	"github.com/Azure/azure-service-operator/v2/pkg/genruntime/conditions"
 	"github.com/Azure/azure-service-operator/v2/pkg/genruntime/configmaps"
+	"github.com/Azure/azure-service-operator/v2/pkg/genruntime/core"
 	"github.com/Azure/azure-service-operator/v2/pkg/genruntime/secrets"
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
@@ -110,10 +112,30 @@ func (cluster *ManagedCluster) defaultAzureName() {
 // defaultImpl applies the code generated defaults to the ManagedCluster resource
 func (cluster *ManagedCluster) defaultImpl() { cluster.defaultAzureName() }
 
-var _ genruntime.KubernetesExporter = &ManagedCluster{}
+var _ configmaps.Exporter = &ManagedCluster{}
 
-// ExportKubernetesResources defines a resource which can create other resources in Kubernetes.
-func (cluster *ManagedCluster) ExportKubernetesResources(_ context.Context, _ genruntime.MetaObject, _ *genericarmclient.GenericClient, _ logr.Logger) ([]client.Object, error) {
+// ConfigMapDestinationExpressions returns the Spec.OperatorSpec.ConfigMapExpressions property
+func (cluster *ManagedCluster) ConfigMapDestinationExpressions() []*core.DestinationExpression {
+	if cluster.Spec.OperatorSpec == nil {
+		return nil
+	}
+	return cluster.Spec.OperatorSpec.ConfigMapExpressions
+}
+
+var _ secrets.Exporter = &ManagedCluster{}
+
+// SecretDestinationExpressions returns the Spec.OperatorSpec.SecretExpressions property
+func (cluster *ManagedCluster) SecretDestinationExpressions() []*core.DestinationExpression {
+	if cluster.Spec.OperatorSpec == nil {
+		return nil
+	}
+	return cluster.Spec.OperatorSpec.SecretExpressions
+}
+
+var _ genruntime.KubernetesConfigExporter = &ManagedCluster{}
+
+// ExportKubernetesConfigMaps defines a resource which can create ConfigMaps in Kubernetes.
+func (cluster *ManagedCluster) ExportKubernetesConfigMaps(_ context.Context, _ genruntime.MetaObject, _ *genericarmclient.GenericClient, _ logr.Logger) ([]client.Object, error) {
 	collector := configmaps.NewCollector(cluster.Namespace)
 	if cluster.Spec.OperatorSpec != nil && cluster.Spec.OperatorSpec.ConfigMaps != nil {
 		if cluster.Status.OidcIssuerProfile != nil {
@@ -138,7 +160,7 @@ func (cluster *ManagedCluster) AzureName() string {
 
 // GetAPIVersion returns the ARM API version of the resource. This is always "2024-04-02-preview"
 func (cluster ManagedCluster) GetAPIVersion() string {
-	return string(APIVersion_Value)
+	return "2024-04-02-preview"
 }
 
 // GetResourceScope returns the scope of the resource
@@ -268,13 +290,13 @@ func (cluster *ManagedCluster) validateConfigMapDestinations() (admission.Warnin
 	if cluster.Spec.OperatorSpec == nil {
 		return nil, nil
 	}
-	if cluster.Spec.OperatorSpec.ConfigMaps == nil {
-		return nil, nil
+	var toValidate []*genruntime.ConfigMapDestination
+	if cluster.Spec.OperatorSpec.ConfigMaps != nil {
+		toValidate = []*genruntime.ConfigMapDestination{
+			cluster.Spec.OperatorSpec.ConfigMaps.OIDCIssuerProfile,
+		}
 	}
-	toValidate := []*genruntime.ConfigMapDestination{
-		cluster.Spec.OperatorSpec.ConfigMaps.OIDCIssuerProfile,
-	}
-	return configmaps.ValidateDestinations(toValidate)
+	return configmaps.ValidateDestinations(cluster, toValidate, cluster.Spec.OperatorSpec.ConfigMapExpressions)
 }
 
 // validateOwnerReference validates the owner field
@@ -296,14 +318,14 @@ func (cluster *ManagedCluster) validateSecretDestinations() (admission.Warnings,
 	if cluster.Spec.OperatorSpec == nil {
 		return nil, nil
 	}
-	if cluster.Spec.OperatorSpec.Secrets == nil {
-		return nil, nil
+	var toValidate []*genruntime.SecretDestination
+	if cluster.Spec.OperatorSpec.Secrets != nil {
+		toValidate = []*genruntime.SecretDestination{
+			cluster.Spec.OperatorSpec.Secrets.AdminCredentials,
+			cluster.Spec.OperatorSpec.Secrets.UserCredentials,
+		}
 	}
-	toValidate := []*genruntime.SecretDestination{
-		cluster.Spec.OperatorSpec.Secrets.AdminCredentials,
-		cluster.Spec.OperatorSpec.Secrets.UserCredentials,
-	}
-	return secrets.ValidateDestinations(toValidate)
+	return secrets.ValidateDestinations(cluster, toValidate, cluster.Spec.OperatorSpec.SecretExpressions)
 }
 
 // validateWriteOnceProperties validates all WriteOnce properties
@@ -570,7 +592,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 	if cluster == nil {
 		return nil, nil
 	}
-	result := &ManagedCluster_Spec_ARM{}
+	result := &arm.ManagedCluster_Spec{}
 
 	// Set property "ExtendedLocation":
 	if cluster.ExtendedLocation != nil {
@@ -578,7 +600,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		extendedLocation := *extendedLocation_ARM.(*ExtendedLocation_ARM)
+		extendedLocation := *extendedLocation_ARM.(*arm.ExtendedLocation)
 		result.ExtendedLocation = &extendedLocation
 	}
 
@@ -588,7 +610,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		identity := *identity_ARM.(*ManagedClusterIdentity_ARM)
+		identity := *identity_ARM.(*arm.ManagedClusterIdentity)
 		result.Identity = &identity
 	}
 
@@ -648,24 +670,24 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		cluster.UpgradeSettings != nil ||
 		cluster.WindowsProfile != nil ||
 		cluster.WorkloadAutoScalerProfile != nil {
-		result.Properties = &ManagedClusterProperties_ARM{}
+		result.Properties = &arm.ManagedClusterProperties{}
 	}
 	if cluster.AadProfile != nil {
 		aadProfile_ARM, err := (*cluster.AadProfile).ConvertToARM(resolved)
 		if err != nil {
 			return nil, err
 		}
-		aadProfile := *aadProfile_ARM.(*ManagedClusterAADProfile_ARM)
+		aadProfile := *aadProfile_ARM.(*arm.ManagedClusterAADProfile)
 		result.Properties.AadProfile = &aadProfile
 	}
 	if cluster.AddonProfiles != nil {
-		result.Properties.AddonProfiles = make(map[string]ManagedClusterAddonProfile_ARM, len(cluster.AddonProfiles))
+		result.Properties.AddonProfiles = make(map[string]arm.ManagedClusterAddonProfile, len(cluster.AddonProfiles))
 		for key, value := range cluster.AddonProfiles {
 			value_ARM, err := value.ConvertToARM(resolved)
 			if err != nil {
 				return nil, err
 			}
-			result.Properties.AddonProfiles[key] = *value_ARM.(*ManagedClusterAddonProfile_ARM)
+			result.Properties.AddonProfiles[key] = *value_ARM.(*arm.ManagedClusterAddonProfile)
 		}
 	}
 	for _, item := range cluster.AgentPoolProfiles {
@@ -673,14 +695,14 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		result.Properties.AgentPoolProfiles = append(result.Properties.AgentPoolProfiles, *item_ARM.(*ManagedClusterAgentPoolProfile_ARM))
+		result.Properties.AgentPoolProfiles = append(result.Properties.AgentPoolProfiles, *item_ARM.(*arm.ManagedClusterAgentPoolProfile))
 	}
 	if cluster.AiToolchainOperatorProfile != nil {
 		aiToolchainOperatorProfile_ARM, err := (*cluster.AiToolchainOperatorProfile).ConvertToARM(resolved)
 		if err != nil {
 			return nil, err
 		}
-		aiToolchainOperatorProfile := *aiToolchainOperatorProfile_ARM.(*ManagedClusterAIToolchainOperatorProfile_ARM)
+		aiToolchainOperatorProfile := *aiToolchainOperatorProfile_ARM.(*arm.ManagedClusterAIToolchainOperatorProfile)
 		result.Properties.AiToolchainOperatorProfile = &aiToolchainOperatorProfile
 	}
 	if cluster.ApiServerAccessProfile != nil {
@@ -688,7 +710,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		apiServerAccessProfile := *apiServerAccessProfile_ARM.(*ManagedClusterAPIServerAccessProfile_ARM)
+		apiServerAccessProfile := *apiServerAccessProfile_ARM.(*arm.ManagedClusterAPIServerAccessProfile)
 		result.Properties.ApiServerAccessProfile = &apiServerAccessProfile
 	}
 	if cluster.AutoScalerProfile != nil {
@@ -696,7 +718,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		autoScalerProfile := *autoScalerProfile_ARM.(*ManagedClusterProperties_AutoScalerProfile_ARM)
+		autoScalerProfile := *autoScalerProfile_ARM.(*arm.ManagedClusterProperties_AutoScalerProfile)
 		result.Properties.AutoScalerProfile = &autoScalerProfile
 	}
 	if cluster.AutoUpgradeProfile != nil {
@@ -704,7 +726,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		autoUpgradeProfile := *autoUpgradeProfile_ARM.(*ManagedClusterAutoUpgradeProfile_ARM)
+		autoUpgradeProfile := *autoUpgradeProfile_ARM.(*arm.ManagedClusterAutoUpgradeProfile)
 		result.Properties.AutoUpgradeProfile = &autoUpgradeProfile
 	}
 	if cluster.AzureMonitorProfile != nil {
@@ -712,7 +734,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		azureMonitorProfile := *azureMonitorProfile_ARM.(*ManagedClusterAzureMonitorProfile_ARM)
+		azureMonitorProfile := *azureMonitorProfile_ARM.(*arm.ManagedClusterAzureMonitorProfile)
 		result.Properties.AzureMonitorProfile = &azureMonitorProfile
 	}
 	if cluster.BootstrapProfile != nil {
@@ -720,7 +742,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		bootstrapProfile := *bootstrapProfile_ARM.(*ManagedClusterBootstrapProfile_ARM)
+		bootstrapProfile := *bootstrapProfile_ARM.(*arm.ManagedClusterBootstrapProfile)
 		result.Properties.BootstrapProfile = &bootstrapProfile
 	}
 	if cluster.CreationData != nil {
@@ -728,7 +750,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		creationData := *creationData_ARM.(*CreationData_ARM)
+		creationData := *creationData_ARM.(*arm.CreationData)
 		result.Properties.CreationData = &creationData
 	}
 	if cluster.DisableLocalAccounts != nil {
@@ -768,17 +790,17 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		httpProxyConfig := *httpProxyConfig_ARM.(*ManagedClusterHTTPProxyConfig_ARM)
+		httpProxyConfig := *httpProxyConfig_ARM.(*arm.ManagedClusterHTTPProxyConfig)
 		result.Properties.HttpProxyConfig = &httpProxyConfig
 	}
 	if cluster.IdentityProfile != nil {
-		result.Properties.IdentityProfile = make(map[string]UserAssignedIdentity_ARM, len(cluster.IdentityProfile))
+		result.Properties.IdentityProfile = make(map[string]arm.UserAssignedIdentity, len(cluster.IdentityProfile))
 		for key, value := range cluster.IdentityProfile {
 			value_ARM, err := value.ConvertToARM(resolved)
 			if err != nil {
 				return nil, err
 			}
-			result.Properties.IdentityProfile[key] = *value_ARM.(*UserAssignedIdentity_ARM)
+			result.Properties.IdentityProfile[key] = *value_ARM.(*arm.UserAssignedIdentity)
 		}
 	}
 	if cluster.IngressProfile != nil {
@@ -786,7 +808,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		ingressProfile := *ingressProfile_ARM.(*ManagedClusterIngressProfile_ARM)
+		ingressProfile := *ingressProfile_ARM.(*arm.ManagedClusterIngressProfile)
 		result.Properties.IngressProfile = &ingressProfile
 	}
 	if cluster.KubernetesVersion != nil {
@@ -798,7 +820,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		linuxProfile := *linuxProfile_ARM.(*ContainerServiceLinuxProfile_ARM)
+		linuxProfile := *linuxProfile_ARM.(*arm.ContainerServiceLinuxProfile)
 		result.Properties.LinuxProfile = &linuxProfile
 	}
 	if cluster.MetricsProfile != nil {
@@ -806,7 +828,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		metricsProfile := *metricsProfile_ARM.(*ManagedClusterMetricsProfile_ARM)
+		metricsProfile := *metricsProfile_ARM.(*arm.ManagedClusterMetricsProfile)
 		result.Properties.MetricsProfile = &metricsProfile
 	}
 	if cluster.NetworkProfile != nil {
@@ -814,7 +836,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		networkProfile := *networkProfile_ARM.(*ContainerServiceNetworkProfile_ARM)
+		networkProfile := *networkProfile_ARM.(*arm.ContainerServiceNetworkProfile)
 		result.Properties.NetworkProfile = &networkProfile
 	}
 	if cluster.NodeProvisioningProfile != nil {
@@ -822,7 +844,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		nodeProvisioningProfile := *nodeProvisioningProfile_ARM.(*ManagedClusterNodeProvisioningProfile_ARM)
+		nodeProvisioningProfile := *nodeProvisioningProfile_ARM.(*arm.ManagedClusterNodeProvisioningProfile)
 		result.Properties.NodeProvisioningProfile = &nodeProvisioningProfile
 	}
 	if cluster.NodeResourceGroup != nil {
@@ -834,7 +856,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		nodeResourceGroupProfile := *nodeResourceGroupProfile_ARM.(*ManagedClusterNodeResourceGroupProfile_ARM)
+		nodeResourceGroupProfile := *nodeResourceGroupProfile_ARM.(*arm.ManagedClusterNodeResourceGroupProfile)
 		result.Properties.NodeResourceGroupProfile = &nodeResourceGroupProfile
 	}
 	if cluster.OidcIssuerProfile != nil {
@@ -842,7 +864,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		oidcIssuerProfile := *oidcIssuerProfile_ARM.(*ManagedClusterOIDCIssuerProfile_ARM)
+		oidcIssuerProfile := *oidcIssuerProfile_ARM.(*arm.ManagedClusterOIDCIssuerProfile)
 		result.Properties.OidcIssuerProfile = &oidcIssuerProfile
 	}
 	if cluster.PodIdentityProfile != nil {
@@ -850,7 +872,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		podIdentityProfile := *podIdentityProfile_ARM.(*ManagedClusterPodIdentityProfile_ARM)
+		podIdentityProfile := *podIdentityProfile_ARM.(*arm.ManagedClusterPodIdentityProfile)
 		result.Properties.PodIdentityProfile = &podIdentityProfile
 	}
 	for _, item := range cluster.PrivateLinkResources {
@@ -858,10 +880,12 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		result.Properties.PrivateLinkResources = append(result.Properties.PrivateLinkResources, *item_ARM.(*PrivateLinkResource_ARM))
+		result.Properties.PrivateLinkResources = append(result.Properties.PrivateLinkResources, *item_ARM.(*arm.PrivateLinkResource))
 	}
 	if cluster.PublicNetworkAccess != nil {
-		publicNetworkAccess := *cluster.PublicNetworkAccess
+		var temp string
+		temp = string(*cluster.PublicNetworkAccess)
+		publicNetworkAccess := arm.ManagedClusterProperties_PublicNetworkAccess(temp)
 		result.Properties.PublicNetworkAccess = &publicNetworkAccess
 	}
 	if cluster.SafeguardsProfile != nil {
@@ -869,7 +893,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		safeguardsProfile := *safeguardsProfile_ARM.(*SafeguardsProfile_ARM)
+		safeguardsProfile := *safeguardsProfile_ARM.(*arm.SafeguardsProfile)
 		result.Properties.SafeguardsProfile = &safeguardsProfile
 	}
 	if cluster.SecurityProfile != nil {
@@ -877,7 +901,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		securityProfile := *securityProfile_ARM.(*ManagedClusterSecurityProfile_ARM)
+		securityProfile := *securityProfile_ARM.(*arm.ManagedClusterSecurityProfile)
 		result.Properties.SecurityProfile = &securityProfile
 	}
 	if cluster.ServiceMeshProfile != nil {
@@ -885,7 +909,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		serviceMeshProfile := *serviceMeshProfile_ARM.(*ServiceMeshProfile_ARM)
+		serviceMeshProfile := *serviceMeshProfile_ARM.(*arm.ServiceMeshProfile)
 		result.Properties.ServiceMeshProfile = &serviceMeshProfile
 	}
 	if cluster.ServicePrincipalProfile != nil {
@@ -893,7 +917,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		servicePrincipalProfile := *servicePrincipalProfile_ARM.(*ManagedClusterServicePrincipalProfile_ARM)
+		servicePrincipalProfile := *servicePrincipalProfile_ARM.(*arm.ManagedClusterServicePrincipalProfile)
 		result.Properties.ServicePrincipalProfile = &servicePrincipalProfile
 	}
 	if cluster.StorageProfile != nil {
@@ -901,11 +925,13 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		storageProfile := *storageProfile_ARM.(*ManagedClusterStorageProfile_ARM)
+		storageProfile := *storageProfile_ARM.(*arm.ManagedClusterStorageProfile)
 		result.Properties.StorageProfile = &storageProfile
 	}
 	if cluster.SupportPlan != nil {
-		supportPlan := *cluster.SupportPlan
+		var temp string
+		temp = string(*cluster.SupportPlan)
+		supportPlan := arm.KubernetesSupportPlan(temp)
 		result.Properties.SupportPlan = &supportPlan
 	}
 	if cluster.UpgradeSettings != nil {
@@ -913,7 +939,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		upgradeSettings := *upgradeSettings_ARM.(*ClusterUpgradeSettings_ARM)
+		upgradeSettings := *upgradeSettings_ARM.(*arm.ClusterUpgradeSettings)
 		result.Properties.UpgradeSettings = &upgradeSettings
 	}
 	if cluster.WindowsProfile != nil {
@@ -921,7 +947,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		windowsProfile := *windowsProfile_ARM.(*ManagedClusterWindowsProfile_ARM)
+		windowsProfile := *windowsProfile_ARM.(*arm.ManagedClusterWindowsProfile)
 		result.Properties.WindowsProfile = &windowsProfile
 	}
 	if cluster.WorkloadAutoScalerProfile != nil {
@@ -929,7 +955,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		workloadAutoScalerProfile := *workloadAutoScalerProfile_ARM.(*ManagedClusterWorkloadAutoScalerProfile_ARM)
+		workloadAutoScalerProfile := *workloadAutoScalerProfile_ARM.(*arm.ManagedClusterWorkloadAutoScalerProfile)
 		result.Properties.WorkloadAutoScalerProfile = &workloadAutoScalerProfile
 	}
 
@@ -939,7 +965,7 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 		if err != nil {
 			return nil, err
 		}
-		sku := *sku_ARM.(*ManagedClusterSKU_ARM)
+		sku := *sku_ARM.(*arm.ManagedClusterSKU)
 		result.Sku = &sku
 	}
 
@@ -958,14 +984,14 @@ func (cluster *ManagedCluster_Spec) ConvertToARM(resolved genruntime.ConvertToAR
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (cluster *ManagedCluster_Spec) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedCluster_Spec_ARM{}
+	return &arm.ManagedCluster_Spec{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (cluster *ManagedCluster_Spec) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedCluster_Spec_ARM)
+	typedInput, ok := armInput.(arm.ManagedCluster_Spec)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedCluster_Spec_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedCluster_Spec, got %T", armInput)
 	}
 
 	// Set property "AadProfile":
@@ -1387,7 +1413,9 @@ func (cluster *ManagedCluster_Spec) PopulateFromARM(owner genruntime.ArbitraryOw
 	// copying flattened property:
 	if typedInput.Properties != nil {
 		if typedInput.Properties.PublicNetworkAccess != nil {
-			publicNetworkAccess := *typedInput.Properties.PublicNetworkAccess
+			var temp string
+			temp = string(*typedInput.Properties.PublicNetworkAccess)
+			publicNetworkAccess := ManagedClusterProperties_PublicNetworkAccess(temp)
 			cluster.PublicNetworkAccess = &publicNetworkAccess
 		}
 	}
@@ -1477,7 +1505,9 @@ func (cluster *ManagedCluster_Spec) PopulateFromARM(owner genruntime.ArbitraryOw
 	// copying flattened property:
 	if typedInput.Properties != nil {
 		if typedInput.Properties.SupportPlan != nil {
-			supportPlan := *typedInput.Properties.SupportPlan
+			var temp string
+			temp = string(*typedInput.Properties.SupportPlan)
+			supportPlan := KubernetesSupportPlan(temp)
 			cluster.SupportPlan = &supportPlan
 		}
 	}
@@ -1488,6 +1518,9 @@ func (cluster *ManagedCluster_Spec) PopulateFromARM(owner genruntime.ArbitraryOw
 		for key, value := range typedInput.Tags {
 			cluster.Tags[key] = value
 		}
+	} else {
+		// Set property to empty map, as this resource is set to serialize all collections explicitly
+		cluster.Tags = make(map[string]string)
 	}
 
 	// Set property "UpgradeSettings":
@@ -2894,14 +2927,14 @@ var _ genruntime.FromARMConverter = &ManagedCluster_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (cluster *ManagedCluster_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedCluster_STATUS_ARM{}
+	return &arm.ManagedCluster_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (cluster *ManagedCluster_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedCluster_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedCluster_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedCluster_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedCluster_STATUS, got %T", armInput)
 	}
 
 	// Set property "AadProfile":
@@ -3407,7 +3440,9 @@ func (cluster *ManagedCluster_STATUS) PopulateFromARM(owner genruntime.Arbitrary
 	// copying flattened property:
 	if typedInput.Properties != nil {
 		if typedInput.Properties.PublicNetworkAccess != nil {
-			publicNetworkAccess := *typedInput.Properties.PublicNetworkAccess
+			var temp string
+			temp = string(*typedInput.Properties.PublicNetworkAccess)
+			publicNetworkAccess := ManagedClusterProperties_PublicNetworkAccess_STATUS(temp)
 			cluster.PublicNetworkAccess = &publicNetworkAccess
 		}
 	}
@@ -3506,7 +3541,9 @@ func (cluster *ManagedCluster_STATUS) PopulateFromARM(owner genruntime.Arbitrary
 	// copying flattened property:
 	if typedInput.Properties != nil {
 		if typedInput.Properties.SupportPlan != nil {
-			supportPlan := *typedInput.Properties.SupportPlan
+			var temp string
+			temp = string(*typedInput.Properties.SupportPlan)
+			supportPlan := KubernetesSupportPlan_STATUS(temp)
 			cluster.SupportPlan = &supportPlan
 		}
 	}
@@ -4700,7 +4737,7 @@ func (settings *ClusterUpgradeSettings) ConvertToARM(resolved genruntime.Convert
 	if settings == nil {
 		return nil, nil
 	}
-	result := &ClusterUpgradeSettings_ARM{}
+	result := &arm.ClusterUpgradeSettings{}
 
 	// Set property "OverrideSettings":
 	if settings.OverrideSettings != nil {
@@ -4708,7 +4745,7 @@ func (settings *ClusterUpgradeSettings) ConvertToARM(resolved genruntime.Convert
 		if err != nil {
 			return nil, err
 		}
-		overrideSettings := *overrideSettings_ARM.(*UpgradeOverrideSettings_ARM)
+		overrideSettings := *overrideSettings_ARM.(*arm.UpgradeOverrideSettings)
 		result.OverrideSettings = &overrideSettings
 	}
 	return result, nil
@@ -4716,14 +4753,14 @@ func (settings *ClusterUpgradeSettings) ConvertToARM(resolved genruntime.Convert
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (settings *ClusterUpgradeSettings) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ClusterUpgradeSettings_ARM{}
+	return &arm.ClusterUpgradeSettings{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (settings *ClusterUpgradeSettings) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ClusterUpgradeSettings_ARM)
+	typedInput, ok := armInput.(arm.ClusterUpgradeSettings)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ClusterUpgradeSettings_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ClusterUpgradeSettings, got %T", armInput)
 	}
 
 	// Set property "OverrideSettings":
@@ -4798,14 +4835,14 @@ var _ genruntime.FromARMConverter = &ClusterUpgradeSettings_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (settings *ClusterUpgradeSettings_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ClusterUpgradeSettings_STATUS_ARM{}
+	return &arm.ClusterUpgradeSettings_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (settings *ClusterUpgradeSettings_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ClusterUpgradeSettings_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ClusterUpgradeSettings_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ClusterUpgradeSettings_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ClusterUpgradeSettings_STATUS, got %T", armInput)
 	}
 
 	// Set property "OverrideSettings":
@@ -4889,7 +4926,7 @@ func (profile *ContainerServiceLinuxProfile) ConvertToARM(resolved genruntime.Co
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ContainerServiceLinuxProfile_ARM{}
+	result := &arm.ContainerServiceLinuxProfile{}
 
 	// Set property "AdminUsername":
 	if profile.AdminUsername != nil {
@@ -4903,7 +4940,7 @@ func (profile *ContainerServiceLinuxProfile) ConvertToARM(resolved genruntime.Co
 		if err != nil {
 			return nil, err
 		}
-		ssh := *ssh_ARM.(*ContainerServiceSshConfiguration_ARM)
+		ssh := *ssh_ARM.(*arm.ContainerServiceSshConfiguration)
 		result.Ssh = &ssh
 	}
 	return result, nil
@@ -4911,14 +4948,14 @@ func (profile *ContainerServiceLinuxProfile) ConvertToARM(resolved genruntime.Co
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ContainerServiceLinuxProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ContainerServiceLinuxProfile_ARM{}
+	return &arm.ContainerServiceLinuxProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ContainerServiceLinuxProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ContainerServiceLinuxProfile_ARM)
+	typedInput, ok := armInput.(arm.ContainerServiceLinuxProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ContainerServiceLinuxProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ContainerServiceLinuxProfile, got %T", armInput)
 	}
 
 	// Set property "AdminUsername":
@@ -5018,14 +5055,14 @@ var _ genruntime.FromARMConverter = &ContainerServiceLinuxProfile_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ContainerServiceLinuxProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ContainerServiceLinuxProfile_STATUS_ARM{}
+	return &arm.ContainerServiceLinuxProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ContainerServiceLinuxProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ContainerServiceLinuxProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ContainerServiceLinuxProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ContainerServiceLinuxProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ContainerServiceLinuxProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "AdminUsername":
@@ -5185,7 +5222,7 @@ func (profile *ContainerServiceNetworkProfile) ConvertToARM(resolved genruntime.
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ContainerServiceNetworkProfile_ARM{}
+	result := &arm.ContainerServiceNetworkProfile{}
 
 	// Set property "AdvancedNetworking":
 	if profile.AdvancedNetworking != nil {
@@ -5193,7 +5230,7 @@ func (profile *ContainerServiceNetworkProfile) ConvertToARM(resolved genruntime.
 		if err != nil {
 			return nil, err
 		}
-		advancedNetworking := *advancedNetworking_ARM.(*AdvancedNetworking_ARM)
+		advancedNetworking := *advancedNetworking_ARM.(*arm.AdvancedNetworking)
 		result.AdvancedNetworking = &advancedNetworking
 	}
 
@@ -5205,7 +5242,9 @@ func (profile *ContainerServiceNetworkProfile) ConvertToARM(resolved genruntime.
 
 	// Set property "IpFamilies":
 	for _, item := range profile.IpFamilies {
-		result.IpFamilies = append(result.IpFamilies, item)
+		var temp string
+		temp = string(item)
+		result.IpFamilies = append(result.IpFamilies, arm.IpFamily(temp))
 	}
 
 	// Set property "KubeProxyConfig":
@@ -5214,7 +5253,7 @@ func (profile *ContainerServiceNetworkProfile) ConvertToARM(resolved genruntime.
 		if err != nil {
 			return nil, err
 		}
-		kubeProxyConfig := *kubeProxyConfig_ARM.(*ContainerServiceNetworkProfile_KubeProxyConfig_ARM)
+		kubeProxyConfig := *kubeProxyConfig_ARM.(*arm.ContainerServiceNetworkProfile_KubeProxyConfig)
 		result.KubeProxyConfig = &kubeProxyConfig
 	}
 
@@ -5224,13 +5263,15 @@ func (profile *ContainerServiceNetworkProfile) ConvertToARM(resolved genruntime.
 		if err != nil {
 			return nil, err
 		}
-		loadBalancerProfile := *loadBalancerProfile_ARM.(*ManagedClusterLoadBalancerProfile_ARM)
+		loadBalancerProfile := *loadBalancerProfile_ARM.(*arm.ManagedClusterLoadBalancerProfile)
 		result.LoadBalancerProfile = &loadBalancerProfile
 	}
 
 	// Set property "LoadBalancerSku":
 	if profile.LoadBalancerSku != nil {
-		loadBalancerSku := *profile.LoadBalancerSku
+		var temp string
+		temp = string(*profile.LoadBalancerSku)
+		loadBalancerSku := arm.LoadBalancerSku(temp)
 		result.LoadBalancerSku = &loadBalancerSku
 	}
 
@@ -5240,43 +5281,55 @@ func (profile *ContainerServiceNetworkProfile) ConvertToARM(resolved genruntime.
 		if err != nil {
 			return nil, err
 		}
-		natGatewayProfile := *natGatewayProfile_ARM.(*ManagedClusterNATGatewayProfile_ARM)
+		natGatewayProfile := *natGatewayProfile_ARM.(*arm.ManagedClusterNATGatewayProfile)
 		result.NatGatewayProfile = &natGatewayProfile
 	}
 
 	// Set property "NetworkDataplane":
 	if profile.NetworkDataplane != nil {
-		networkDataplane := *profile.NetworkDataplane
+		var temp string
+		temp = string(*profile.NetworkDataplane)
+		networkDataplane := arm.NetworkDataplane(temp)
 		result.NetworkDataplane = &networkDataplane
 	}
 
 	// Set property "NetworkMode":
 	if profile.NetworkMode != nil {
-		networkMode := *profile.NetworkMode
+		var temp string
+		temp = string(*profile.NetworkMode)
+		networkMode := arm.NetworkMode(temp)
 		result.NetworkMode = &networkMode
 	}
 
 	// Set property "NetworkPlugin":
 	if profile.NetworkPlugin != nil {
-		networkPlugin := *profile.NetworkPlugin
+		var temp string
+		temp = string(*profile.NetworkPlugin)
+		networkPlugin := arm.NetworkPlugin(temp)
 		result.NetworkPlugin = &networkPlugin
 	}
 
 	// Set property "NetworkPluginMode":
 	if profile.NetworkPluginMode != nil {
-		networkPluginMode := *profile.NetworkPluginMode
+		var temp string
+		temp = string(*profile.NetworkPluginMode)
+		networkPluginMode := arm.NetworkPluginMode(temp)
 		result.NetworkPluginMode = &networkPluginMode
 	}
 
 	// Set property "NetworkPolicy":
 	if profile.NetworkPolicy != nil {
-		networkPolicy := *profile.NetworkPolicy
+		var temp string
+		temp = string(*profile.NetworkPolicy)
+		networkPolicy := arm.NetworkPolicy(temp)
 		result.NetworkPolicy = &networkPolicy
 	}
 
 	// Set property "OutboundType":
 	if profile.OutboundType != nil {
-		outboundType := *profile.OutboundType
+		var temp string
+		temp = string(*profile.OutboundType)
+		outboundType := arm.ContainerServiceNetworkProfile_OutboundType(temp)
 		result.OutboundType = &outboundType
 	}
 
@@ -5293,7 +5346,9 @@ func (profile *ContainerServiceNetworkProfile) ConvertToARM(resolved genruntime.
 
 	// Set property "PodLinkLocalAccess":
 	if profile.PodLinkLocalAccess != nil {
-		podLinkLocalAccess := *profile.PodLinkLocalAccess
+		var temp string
+		temp = string(*profile.PodLinkLocalAccess)
+		podLinkLocalAccess := arm.PodLinkLocalAccess(temp)
 		result.PodLinkLocalAccess = &podLinkLocalAccess
 	}
 
@@ -5314,7 +5369,7 @@ func (profile *ContainerServiceNetworkProfile) ConvertToARM(resolved genruntime.
 		if err != nil {
 			return nil, err
 		}
-		staticEgressGatewayProfile := *staticEgressGatewayProfile_ARM.(*ManagedClusterStaticEgressGatewayProfile_ARM)
+		staticEgressGatewayProfile := *staticEgressGatewayProfile_ARM.(*arm.ManagedClusterStaticEgressGatewayProfile)
 		result.StaticEgressGatewayProfile = &staticEgressGatewayProfile
 	}
 	return result, nil
@@ -5322,14 +5377,14 @@ func (profile *ContainerServiceNetworkProfile) ConvertToARM(resolved genruntime.
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ContainerServiceNetworkProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ContainerServiceNetworkProfile_ARM{}
+	return &arm.ContainerServiceNetworkProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ContainerServiceNetworkProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ContainerServiceNetworkProfile_ARM)
+	typedInput, ok := armInput.(arm.ContainerServiceNetworkProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ContainerServiceNetworkProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ContainerServiceNetworkProfile, got %T", armInput)
 	}
 
 	// Set property "AdvancedNetworking":
@@ -5351,7 +5406,9 @@ func (profile *ContainerServiceNetworkProfile) PopulateFromARM(owner genruntime.
 
 	// Set property "IpFamilies":
 	for _, item := range typedInput.IpFamilies {
-		profile.IpFamilies = append(profile.IpFamilies, item)
+		var temp string
+		temp = string(item)
+		profile.IpFamilies = append(profile.IpFamilies, IpFamily(temp))
 	}
 
 	// Set property "KubeProxyConfig":
@@ -5378,7 +5435,9 @@ func (profile *ContainerServiceNetworkProfile) PopulateFromARM(owner genruntime.
 
 	// Set property "LoadBalancerSku":
 	if typedInput.LoadBalancerSku != nil {
-		loadBalancerSku := *typedInput.LoadBalancerSku
+		var temp string
+		temp = string(*typedInput.LoadBalancerSku)
+		loadBalancerSku := LoadBalancerSku(temp)
 		profile.LoadBalancerSku = &loadBalancerSku
 	}
 
@@ -5395,37 +5454,49 @@ func (profile *ContainerServiceNetworkProfile) PopulateFromARM(owner genruntime.
 
 	// Set property "NetworkDataplane":
 	if typedInput.NetworkDataplane != nil {
-		networkDataplane := *typedInput.NetworkDataplane
+		var temp string
+		temp = string(*typedInput.NetworkDataplane)
+		networkDataplane := NetworkDataplane(temp)
 		profile.NetworkDataplane = &networkDataplane
 	}
 
 	// Set property "NetworkMode":
 	if typedInput.NetworkMode != nil {
-		networkMode := *typedInput.NetworkMode
+		var temp string
+		temp = string(*typedInput.NetworkMode)
+		networkMode := NetworkMode(temp)
 		profile.NetworkMode = &networkMode
 	}
 
 	// Set property "NetworkPlugin":
 	if typedInput.NetworkPlugin != nil {
-		networkPlugin := *typedInput.NetworkPlugin
+		var temp string
+		temp = string(*typedInput.NetworkPlugin)
+		networkPlugin := NetworkPlugin(temp)
 		profile.NetworkPlugin = &networkPlugin
 	}
 
 	// Set property "NetworkPluginMode":
 	if typedInput.NetworkPluginMode != nil {
-		networkPluginMode := *typedInput.NetworkPluginMode
+		var temp string
+		temp = string(*typedInput.NetworkPluginMode)
+		networkPluginMode := NetworkPluginMode(temp)
 		profile.NetworkPluginMode = &networkPluginMode
 	}
 
 	// Set property "NetworkPolicy":
 	if typedInput.NetworkPolicy != nil {
-		networkPolicy := *typedInput.NetworkPolicy
+		var temp string
+		temp = string(*typedInput.NetworkPolicy)
+		networkPolicy := NetworkPolicy(temp)
 		profile.NetworkPolicy = &networkPolicy
 	}
 
 	// Set property "OutboundType":
 	if typedInput.OutboundType != nil {
-		outboundType := *typedInput.OutboundType
+		var temp string
+		temp = string(*typedInput.OutboundType)
+		outboundType := ContainerServiceNetworkProfile_OutboundType(temp)
 		profile.OutboundType = &outboundType
 	}
 
@@ -5442,7 +5513,9 @@ func (profile *ContainerServiceNetworkProfile) PopulateFromARM(owner genruntime.
 
 	// Set property "PodLinkLocalAccess":
 	if typedInput.PodLinkLocalAccess != nil {
-		podLinkLocalAccess := *typedInput.PodLinkLocalAccess
+		var temp string
+		temp = string(*typedInput.PodLinkLocalAccess)
+		podLinkLocalAccess := PodLinkLocalAccess(temp)
 		profile.PodLinkLocalAccess = &podLinkLocalAccess
 	}
 
@@ -5914,14 +5987,14 @@ var _ genruntime.FromARMConverter = &ContainerServiceNetworkProfile_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ContainerServiceNetworkProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ContainerServiceNetworkProfile_STATUS_ARM{}
+	return &arm.ContainerServiceNetworkProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ContainerServiceNetworkProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ContainerServiceNetworkProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ContainerServiceNetworkProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ContainerServiceNetworkProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ContainerServiceNetworkProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "AdvancedNetworking":
@@ -5943,7 +6016,9 @@ func (profile *ContainerServiceNetworkProfile_STATUS) PopulateFromARM(owner genr
 
 	// Set property "IpFamilies":
 	for _, item := range typedInput.IpFamilies {
-		profile.IpFamilies = append(profile.IpFamilies, item)
+		var temp string
+		temp = string(item)
+		profile.IpFamilies = append(profile.IpFamilies, IpFamily_STATUS(temp))
 	}
 
 	// Set property "KubeProxyConfig":
@@ -5970,7 +6045,9 @@ func (profile *ContainerServiceNetworkProfile_STATUS) PopulateFromARM(owner genr
 
 	// Set property "LoadBalancerSku":
 	if typedInput.LoadBalancerSku != nil {
-		loadBalancerSku := *typedInput.LoadBalancerSku
+		var temp string
+		temp = string(*typedInput.LoadBalancerSku)
+		loadBalancerSku := LoadBalancerSku_STATUS(temp)
 		profile.LoadBalancerSku = &loadBalancerSku
 	}
 
@@ -5987,37 +6064,49 @@ func (profile *ContainerServiceNetworkProfile_STATUS) PopulateFromARM(owner genr
 
 	// Set property "NetworkDataplane":
 	if typedInput.NetworkDataplane != nil {
-		networkDataplane := *typedInput.NetworkDataplane
+		var temp string
+		temp = string(*typedInput.NetworkDataplane)
+		networkDataplane := NetworkDataplane_STATUS(temp)
 		profile.NetworkDataplane = &networkDataplane
 	}
 
 	// Set property "NetworkMode":
 	if typedInput.NetworkMode != nil {
-		networkMode := *typedInput.NetworkMode
+		var temp string
+		temp = string(*typedInput.NetworkMode)
+		networkMode := NetworkMode_STATUS(temp)
 		profile.NetworkMode = &networkMode
 	}
 
 	// Set property "NetworkPlugin":
 	if typedInput.NetworkPlugin != nil {
-		networkPlugin := *typedInput.NetworkPlugin
+		var temp string
+		temp = string(*typedInput.NetworkPlugin)
+		networkPlugin := NetworkPlugin_STATUS(temp)
 		profile.NetworkPlugin = &networkPlugin
 	}
 
 	// Set property "NetworkPluginMode":
 	if typedInput.NetworkPluginMode != nil {
-		networkPluginMode := *typedInput.NetworkPluginMode
+		var temp string
+		temp = string(*typedInput.NetworkPluginMode)
+		networkPluginMode := NetworkPluginMode_STATUS(temp)
 		profile.NetworkPluginMode = &networkPluginMode
 	}
 
 	// Set property "NetworkPolicy":
 	if typedInput.NetworkPolicy != nil {
-		networkPolicy := *typedInput.NetworkPolicy
+		var temp string
+		temp = string(*typedInput.NetworkPolicy)
+		networkPolicy := NetworkPolicy_STATUS(temp)
 		profile.NetworkPolicy = &networkPolicy
 	}
 
 	// Set property "OutboundType":
 	if typedInput.OutboundType != nil {
-		outboundType := *typedInput.OutboundType
+		var temp string
+		temp = string(*typedInput.OutboundType)
+		outboundType := ContainerServiceNetworkProfile_OutboundType_STATUS(temp)
 		profile.OutboundType = &outboundType
 	}
 
@@ -6034,7 +6123,9 @@ func (profile *ContainerServiceNetworkProfile_STATUS) PopulateFromARM(owner genr
 
 	// Set property "PodLinkLocalAccess":
 	if typedInput.PodLinkLocalAccess != nil {
-		podLinkLocalAccess := *typedInput.PodLinkLocalAccess
+		var temp string
+		temp = string(*typedInput.PodLinkLocalAccess)
+		podLinkLocalAccess := PodLinkLocalAccess_STATUS(temp)
 		profile.PodLinkLocalAccess = &podLinkLocalAccess
 	}
 
@@ -6412,7 +6503,7 @@ func (data *CreationData) ConvertToARM(resolved genruntime.ConvertToARMResolvedD
 	if data == nil {
 		return nil, nil
 	}
-	result := &CreationData_ARM{}
+	result := &arm.CreationData{}
 
 	// Set property "SourceResourceId":
 	if data.SourceResourceReference != nil {
@@ -6428,14 +6519,14 @@ func (data *CreationData) ConvertToARM(resolved genruntime.ConvertToARMResolvedD
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (data *CreationData) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &CreationData_ARM{}
+	return &arm.CreationData{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (data *CreationData) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	_, ok := armInput.(CreationData_ARM)
+	_, ok := armInput.(arm.CreationData)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected CreationData_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.CreationData, got %T", armInput)
 	}
 
 	// no assignment for property "SourceResourceReference"
@@ -6493,14 +6584,14 @@ var _ genruntime.FromARMConverter = &CreationData_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (data *CreationData_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &CreationData_STATUS_ARM{}
+	return &arm.CreationData_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (data *CreationData_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(CreationData_STATUS_ARM)
+	typedInput, ok := armInput.(arm.CreationData_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected CreationData_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.CreationData_STATUS, got %T", armInput)
 	}
 
 	// Set property "SourceResourceId":
@@ -6558,7 +6649,7 @@ func (location *ExtendedLocation) ConvertToARM(resolved genruntime.ConvertToARMR
 	if location == nil {
 		return nil, nil
 	}
-	result := &ExtendedLocation_ARM{}
+	result := &arm.ExtendedLocation{}
 
 	// Set property "Name":
 	if location.Name != nil {
@@ -6568,7 +6659,9 @@ func (location *ExtendedLocation) ConvertToARM(resolved genruntime.ConvertToARMR
 
 	// Set property "Type":
 	if location.Type != nil {
-		typeVar := *location.Type
+		var temp string
+		temp = string(*location.Type)
+		typeVar := arm.ExtendedLocationType(temp)
 		result.Type = &typeVar
 	}
 	return result, nil
@@ -6576,14 +6669,14 @@ func (location *ExtendedLocation) ConvertToARM(resolved genruntime.ConvertToARMR
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (location *ExtendedLocation) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ExtendedLocation_ARM{}
+	return &arm.ExtendedLocation{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (location *ExtendedLocation) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ExtendedLocation_ARM)
+	typedInput, ok := armInput.(arm.ExtendedLocation)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ExtendedLocation_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ExtendedLocation, got %T", armInput)
 	}
 
 	// Set property "Name":
@@ -6594,7 +6687,9 @@ func (location *ExtendedLocation) PopulateFromARM(owner genruntime.ArbitraryOwne
 
 	// Set property "Type":
 	if typedInput.Type != nil {
-		typeVar := *typedInput.Type
+		var temp string
+		temp = string(*typedInput.Type)
+		typeVar := ExtendedLocationType(temp)
 		location.Type = &typeVar
 	}
 
@@ -6661,14 +6756,14 @@ var _ genruntime.FromARMConverter = &ExtendedLocation_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (location *ExtendedLocation_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ExtendedLocation_STATUS_ARM{}
+	return &arm.ExtendedLocation_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (location *ExtendedLocation_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ExtendedLocation_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ExtendedLocation_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ExtendedLocation_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ExtendedLocation_STATUS, got %T", armInput)
 	}
 
 	// Set property "Name":
@@ -6679,7 +6774,9 @@ func (location *ExtendedLocation_STATUS) PopulateFromARM(owner genruntime.Arbitr
 
 	// Set property "Type":
 	if typedInput.Type != nil {
-		typeVar := *typedInput.Type
+		var temp string
+		temp = string(*typedInput.Type)
+		typeVar := ExtendedLocationType_STATUS(temp)
 		location.Type = &typeVar
 	}
 
@@ -6794,7 +6891,7 @@ func (profile *ManagedClusterAADProfile) ConvertToARM(resolved genruntime.Conver
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterAADProfile_ARM{}
+	result := &arm.ManagedClusterAADProfile{}
 
 	// Set property "AdminGroupObjectIDs":
 	for _, item := range profile.AdminGroupObjectIDs {
@@ -6841,14 +6938,14 @@ func (profile *ManagedClusterAADProfile) ConvertToARM(resolved genruntime.Conver
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterAADProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAADProfile_ARM{}
+	return &arm.ManagedClusterAADProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterAADProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAADProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAADProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAADProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAADProfile, got %T", armInput)
 	}
 
 	// Set property "AdminGroupObjectIDs":
@@ -7010,14 +7107,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterAADProfile_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterAADProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAADProfile_STATUS_ARM{}
+	return &arm.ManagedClusterAADProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterAADProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAADProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAADProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAADProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAADProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "AdminGroupObjectIDs":
@@ -7167,7 +7264,7 @@ func (profile *ManagedClusterAddonProfile) ConvertToARM(resolved genruntime.Conv
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterAddonProfile_ARM{}
+	result := &arm.ManagedClusterAddonProfile{}
 
 	// Set property "Config":
 	if profile.Config != nil {
@@ -7187,14 +7284,14 @@ func (profile *ManagedClusterAddonProfile) ConvertToARM(resolved genruntime.Conv
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterAddonProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAddonProfile_ARM{}
+	return &arm.ManagedClusterAddonProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterAddonProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAddonProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAddonProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAddonProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAddonProfile, got %T", armInput)
 	}
 
 	// Set property "Config":
@@ -7276,14 +7373,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterAddonProfile_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterAddonProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAddonProfile_STATUS_ARM{}
+	return &arm.ManagedClusterAddonProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterAddonProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAddonProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAddonProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAddonProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAddonProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "Config":
@@ -7594,7 +7691,7 @@ func (profile *ManagedClusterAgentPoolProfile) ConvertToARM(resolved genruntime.
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterAgentPoolProfile_ARM{}
+	result := &arm.ManagedClusterAgentPoolProfile{}
 
 	// Set property "ArtifactStreamingProfile":
 	if profile.ArtifactStreamingProfile != nil {
@@ -7602,7 +7699,7 @@ func (profile *ManagedClusterAgentPoolProfile) ConvertToARM(resolved genruntime.
 		if err != nil {
 			return nil, err
 		}
-		artifactStreamingProfile := *artifactStreamingProfile_ARM.(*AgentPoolArtifactStreamingProfile_ARM)
+		artifactStreamingProfile := *artifactStreamingProfile_ARM.(*arm.AgentPoolArtifactStreamingProfile)
 		result.ArtifactStreamingProfile = &artifactStreamingProfile
 	}
 
@@ -7633,7 +7730,7 @@ func (profile *ManagedClusterAgentPoolProfile) ConvertToARM(resolved genruntime.
 		if err != nil {
 			return nil, err
 		}
-		creationData := *creationData_ARM.(*CreationData_ARM)
+		creationData := *creationData_ARM.(*arm.CreationData)
 		result.CreationData = &creationData
 	}
 
@@ -7679,13 +7776,15 @@ func (profile *ManagedClusterAgentPoolProfile) ConvertToARM(resolved genruntime.
 		if err != nil {
 			return nil, err
 		}
-		gatewayProfile := *gatewayProfile_ARM.(*AgentPoolGatewayProfile_ARM)
+		gatewayProfile := *gatewayProfile_ARM.(*arm.AgentPoolGatewayProfile)
 		result.GatewayProfile = &gatewayProfile
 	}
 
 	// Set property "GpuInstanceProfile":
 	if profile.GpuInstanceProfile != nil {
-		gpuInstanceProfile := *profile.GpuInstanceProfile
+		var temp string
+		temp = string(*profile.GpuInstanceProfile)
+		gpuInstanceProfile := arm.GPUInstanceProfile(temp)
 		result.GpuInstanceProfile = &gpuInstanceProfile
 	}
 
@@ -7695,7 +7794,7 @@ func (profile *ManagedClusterAgentPoolProfile) ConvertToARM(resolved genruntime.
 		if err != nil {
 			return nil, err
 		}
-		gpuProfile := *gpuProfile_ARM.(*AgentPoolGPUProfile_ARM)
+		gpuProfile := *gpuProfile_ARM.(*arm.AgentPoolGPUProfile)
 		result.GpuProfile = &gpuProfile
 	}
 
@@ -7715,13 +7814,15 @@ func (profile *ManagedClusterAgentPoolProfile) ConvertToARM(resolved genruntime.
 		if err != nil {
 			return nil, err
 		}
-		kubeletConfig := *kubeletConfig_ARM.(*KubeletConfig_ARM)
+		kubeletConfig := *kubeletConfig_ARM.(*arm.KubeletConfig)
 		result.KubeletConfig = &kubeletConfig
 	}
 
 	// Set property "KubeletDiskType":
 	if profile.KubeletDiskType != nil {
-		kubeletDiskType := *profile.KubeletDiskType
+		var temp string
+		temp = string(*profile.KubeletDiskType)
+		kubeletDiskType := arm.KubeletDiskType(temp)
 		result.KubeletDiskType = &kubeletDiskType
 	}
 
@@ -7731,7 +7832,7 @@ func (profile *ManagedClusterAgentPoolProfile) ConvertToARM(resolved genruntime.
 		if err != nil {
 			return nil, err
 		}
-		linuxOSConfig := *linuxOSConfig_ARM.(*LinuxOSConfig_ARM)
+		linuxOSConfig := *linuxOSConfig_ARM.(*arm.LinuxOSConfig)
 		result.LinuxOSConfig = &linuxOSConfig
 	}
 
@@ -7761,7 +7862,9 @@ func (profile *ManagedClusterAgentPoolProfile) ConvertToARM(resolved genruntime.
 
 	// Set property "Mode":
 	if profile.Mode != nil {
-		mode := *profile.Mode
+		var temp string
+		temp = string(*profile.Mode)
+		mode := arm.AgentPoolMode(temp)
 		result.Mode = &mode
 	}
 
@@ -7777,7 +7880,7 @@ func (profile *ManagedClusterAgentPoolProfile) ConvertToARM(resolved genruntime.
 		if err != nil {
 			return nil, err
 		}
-		networkProfile := *networkProfile_ARM.(*AgentPoolNetworkProfile_ARM)
+		networkProfile := *networkProfile_ARM.(*arm.AgentPoolNetworkProfile)
 		result.NetworkProfile = &networkProfile
 	}
 
@@ -7830,25 +7933,33 @@ func (profile *ManagedClusterAgentPoolProfile) ConvertToARM(resolved genruntime.
 
 	// Set property "OsDiskType":
 	if profile.OsDiskType != nil {
-		osDiskType := *profile.OsDiskType
+		var temp string
+		temp = string(*profile.OsDiskType)
+		osDiskType := arm.OSDiskType(temp)
 		result.OsDiskType = &osDiskType
 	}
 
 	// Set property "OsSKU":
 	if profile.OsSKU != nil {
-		osSKU := *profile.OsSKU
+		var temp string
+		temp = string(*profile.OsSKU)
+		osSKU := arm.OSSKU(temp)
 		result.OsSKU = &osSKU
 	}
 
 	// Set property "OsType":
 	if profile.OsType != nil {
-		osType := *profile.OsType
+		var temp string
+		temp = string(*profile.OsType)
+		osType := arm.OSType(temp)
 		result.OsType = &osType
 	}
 
 	// Set property "PodIPAllocationMode":
 	if profile.PodIPAllocationMode != nil {
-		podIPAllocationMode := *profile.PodIPAllocationMode
+		var temp string
+		temp = string(*profile.PodIPAllocationMode)
+		podIPAllocationMode := arm.PodIPAllocationMode(temp)
 		result.PodIPAllocationMode = &podIPAllocationMode
 	}
 
@@ -7868,7 +7979,7 @@ func (profile *ManagedClusterAgentPoolProfile) ConvertToARM(resolved genruntime.
 		if err != nil {
 			return nil, err
 		}
-		powerState := *powerState_ARM.(*PowerState_ARM)
+		powerState := *powerState_ARM.(*arm.PowerState)
 		result.PowerState = &powerState
 	}
 
@@ -7884,19 +7995,25 @@ func (profile *ManagedClusterAgentPoolProfile) ConvertToARM(resolved genruntime.
 
 	// Set property "ScaleDownMode":
 	if profile.ScaleDownMode != nil {
-		scaleDownMode := *profile.ScaleDownMode
+		var temp string
+		temp = string(*profile.ScaleDownMode)
+		scaleDownMode := arm.ScaleDownMode(temp)
 		result.ScaleDownMode = &scaleDownMode
 	}
 
 	// Set property "ScaleSetEvictionPolicy":
 	if profile.ScaleSetEvictionPolicy != nil {
-		scaleSetEvictionPolicy := *profile.ScaleSetEvictionPolicy
+		var temp string
+		temp = string(*profile.ScaleSetEvictionPolicy)
+		scaleSetEvictionPolicy := arm.ScaleSetEvictionPolicy(temp)
 		result.ScaleSetEvictionPolicy = &scaleSetEvictionPolicy
 	}
 
 	// Set property "ScaleSetPriority":
 	if profile.ScaleSetPriority != nil {
-		scaleSetPriority := *profile.ScaleSetPriority
+		var temp string
+		temp = string(*profile.ScaleSetPriority)
+		scaleSetPriority := arm.ScaleSetPriority(temp)
 		result.ScaleSetPriority = &scaleSetPriority
 	}
 
@@ -7906,7 +8023,7 @@ func (profile *ManagedClusterAgentPoolProfile) ConvertToARM(resolved genruntime.
 		if err != nil {
 			return nil, err
 		}
-		securityProfile := *securityProfile_ARM.(*AgentPoolSecurityProfile_ARM)
+		securityProfile := *securityProfile_ARM.(*arm.AgentPoolSecurityProfile)
 		result.SecurityProfile = &securityProfile
 	}
 
@@ -7929,7 +8046,9 @@ func (profile *ManagedClusterAgentPoolProfile) ConvertToARM(resolved genruntime.
 
 	// Set property "Type":
 	if profile.Type != nil {
-		typeVar := *profile.Type
+		var temp string
+		temp = string(*profile.Type)
+		typeVar := arm.AgentPoolType(temp)
 		result.Type = &typeVar
 	}
 
@@ -7939,7 +8058,7 @@ func (profile *ManagedClusterAgentPoolProfile) ConvertToARM(resolved genruntime.
 		if err != nil {
 			return nil, err
 		}
-		upgradeSettings := *upgradeSettings_ARM.(*AgentPoolUpgradeSettings_ARM)
+		upgradeSettings := *upgradeSettings_ARM.(*arm.AgentPoolUpgradeSettings)
 		result.UpgradeSettings = &upgradeSettings
 	}
 
@@ -7949,7 +8068,7 @@ func (profile *ManagedClusterAgentPoolProfile) ConvertToARM(resolved genruntime.
 		if err != nil {
 			return nil, err
 		}
-		result.VirtualMachineNodesStatus = append(result.VirtualMachineNodesStatus, *item_ARM.(*VirtualMachineNodes_ARM))
+		result.VirtualMachineNodesStatus = append(result.VirtualMachineNodesStatus, *item_ARM.(*arm.VirtualMachineNodes))
 	}
 
 	// Set property "VirtualMachinesProfile":
@@ -7958,7 +8077,7 @@ func (profile *ManagedClusterAgentPoolProfile) ConvertToARM(resolved genruntime.
 		if err != nil {
 			return nil, err
 		}
-		virtualMachinesProfile := *virtualMachinesProfile_ARM.(*VirtualMachinesProfile_ARM)
+		virtualMachinesProfile := *virtualMachinesProfile_ARM.(*arm.VirtualMachinesProfile)
 		result.VirtualMachinesProfile = &virtualMachinesProfile
 	}
 
@@ -7984,13 +8103,15 @@ func (profile *ManagedClusterAgentPoolProfile) ConvertToARM(resolved genruntime.
 		if err != nil {
 			return nil, err
 		}
-		windowsProfile := *windowsProfile_ARM.(*AgentPoolWindowsProfile_ARM)
+		windowsProfile := *windowsProfile_ARM.(*arm.AgentPoolWindowsProfile)
 		result.WindowsProfile = &windowsProfile
 	}
 
 	// Set property "WorkloadRuntime":
 	if profile.WorkloadRuntime != nil {
-		workloadRuntime := *profile.WorkloadRuntime
+		var temp string
+		temp = string(*profile.WorkloadRuntime)
+		workloadRuntime := arm.WorkloadRuntime(temp)
 		result.WorkloadRuntime = &workloadRuntime
 	}
 	return result, nil
@@ -7998,14 +8119,14 @@ func (profile *ManagedClusterAgentPoolProfile) ConvertToARM(resolved genruntime.
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterAgentPoolProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAgentPoolProfile_ARM{}
+	return &arm.ManagedClusterAgentPoolProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterAgentPoolProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAgentPoolProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAgentPoolProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAgentPoolProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAgentPoolProfile, got %T", armInput)
 	}
 
 	// Set property "ArtifactStreamingProfile":
@@ -8092,7 +8213,9 @@ func (profile *ManagedClusterAgentPoolProfile) PopulateFromARM(owner genruntime.
 
 	// Set property "GpuInstanceProfile":
 	if typedInput.GpuInstanceProfile != nil {
-		gpuInstanceProfile := *typedInput.GpuInstanceProfile
+		var temp string
+		temp = string(*typedInput.GpuInstanceProfile)
+		gpuInstanceProfile := GPUInstanceProfile(temp)
 		profile.GpuInstanceProfile = &gpuInstanceProfile
 	}
 
@@ -8122,7 +8245,9 @@ func (profile *ManagedClusterAgentPoolProfile) PopulateFromARM(owner genruntime.
 
 	// Set property "KubeletDiskType":
 	if typedInput.KubeletDiskType != nil {
-		kubeletDiskType := *typedInput.KubeletDiskType
+		var temp string
+		temp = string(*typedInput.KubeletDiskType)
+		kubeletDiskType := KubeletDiskType(temp)
 		profile.KubeletDiskType = &kubeletDiskType
 	}
 
@@ -8163,7 +8288,9 @@ func (profile *ManagedClusterAgentPoolProfile) PopulateFromARM(owner genruntime.
 
 	// Set property "Mode":
 	if typedInput.Mode != nil {
-		mode := *typedInput.Mode
+		var temp string
+		temp = string(*typedInput.Mode)
+		mode := AgentPoolMode(temp)
 		profile.Mode = &mode
 	}
 
@@ -8195,6 +8322,9 @@ func (profile *ManagedClusterAgentPoolProfile) PopulateFromARM(owner genruntime.
 		for key, value := range typedInput.NodeLabels {
 			profile.NodeLabels[key] = value
 		}
+	} else {
+		// Set property to empty map, as this resource is set to serialize all collections explicitly
+		profile.NodeLabels = make(map[string]string)
 	}
 
 	// no assignment for property "NodePublicIPPrefixReference"
@@ -8202,6 +8332,10 @@ func (profile *ManagedClusterAgentPoolProfile) PopulateFromARM(owner genruntime.
 	// Set property "NodeTaints":
 	for _, item := range typedInput.NodeTaints {
 		profile.NodeTaints = append(profile.NodeTaints, item)
+	}
+	if profile.NodeTaints == nil {
+		// Set property to empty map, as this resource is set to serialize all collections explicitly
+		profile.NodeTaints = []string{}
 	}
 
 	// Set property "OrchestratorVersion":
@@ -8218,25 +8352,33 @@ func (profile *ManagedClusterAgentPoolProfile) PopulateFromARM(owner genruntime.
 
 	// Set property "OsDiskType":
 	if typedInput.OsDiskType != nil {
-		osDiskType := *typedInput.OsDiskType
+		var temp string
+		temp = string(*typedInput.OsDiskType)
+		osDiskType := OSDiskType(temp)
 		profile.OsDiskType = &osDiskType
 	}
 
 	// Set property "OsSKU":
 	if typedInput.OsSKU != nil {
-		osSKU := *typedInput.OsSKU
+		var temp string
+		temp = string(*typedInput.OsSKU)
+		osSKU := OSSKU(temp)
 		profile.OsSKU = &osSKU
 	}
 
 	// Set property "OsType":
 	if typedInput.OsType != nil {
-		osType := *typedInput.OsType
+		var temp string
+		temp = string(*typedInput.OsType)
+		osType := OSType(temp)
 		profile.OsType = &osType
 	}
 
 	// Set property "PodIPAllocationMode":
 	if typedInput.PodIPAllocationMode != nil {
-		podIPAllocationMode := *typedInput.PodIPAllocationMode
+		var temp string
+		temp = string(*typedInput.PodIPAllocationMode)
+		podIPAllocationMode := PodIPAllocationMode(temp)
 		profile.PodIPAllocationMode = &podIPAllocationMode
 	}
 
@@ -8257,19 +8399,25 @@ func (profile *ManagedClusterAgentPoolProfile) PopulateFromARM(owner genruntime.
 
 	// Set property "ScaleDownMode":
 	if typedInput.ScaleDownMode != nil {
-		scaleDownMode := *typedInput.ScaleDownMode
+		var temp string
+		temp = string(*typedInput.ScaleDownMode)
+		scaleDownMode := ScaleDownMode(temp)
 		profile.ScaleDownMode = &scaleDownMode
 	}
 
 	// Set property "ScaleSetEvictionPolicy":
 	if typedInput.ScaleSetEvictionPolicy != nil {
-		scaleSetEvictionPolicy := *typedInput.ScaleSetEvictionPolicy
+		var temp string
+		temp = string(*typedInput.ScaleSetEvictionPolicy)
+		scaleSetEvictionPolicy := ScaleSetEvictionPolicy(temp)
 		profile.ScaleSetEvictionPolicy = &scaleSetEvictionPolicy
 	}
 
 	// Set property "ScaleSetPriority":
 	if typedInput.ScaleSetPriority != nil {
-		scaleSetPriority := *typedInput.ScaleSetPriority
+		var temp string
+		temp = string(*typedInput.ScaleSetPriority)
+		scaleSetPriority := ScaleSetPriority(temp)
 		profile.ScaleSetPriority = &scaleSetPriority
 	}
 
@@ -8296,11 +8444,16 @@ func (profile *ManagedClusterAgentPoolProfile) PopulateFromARM(owner genruntime.
 		for key, value := range typedInput.Tags {
 			profile.Tags[key] = value
 		}
+	} else {
+		// Set property to empty map, as this resource is set to serialize all collections explicitly
+		profile.Tags = make(map[string]string)
 	}
 
 	// Set property "Type":
 	if typedInput.Type != nil {
-		typeVar := *typedInput.Type
+		var temp string
+		temp = string(*typedInput.Type)
+		typeVar := AgentPoolType(temp)
 		profile.Type = &typeVar
 	}
 
@@ -8357,7 +8510,9 @@ func (profile *ManagedClusterAgentPoolProfile) PopulateFromARM(owner genruntime.
 
 	// Set property "WorkloadRuntime":
 	if typedInput.WorkloadRuntime != nil {
-		workloadRuntime := *typedInput.WorkloadRuntime
+		var temp string
+		temp = string(*typedInput.WorkloadRuntime)
+		workloadRuntime := WorkloadRuntime(temp)
 		profile.WorkloadRuntime = &workloadRuntime
 	}
 
@@ -9449,14 +9604,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterAgentPoolProfile_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterAgentPoolProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAgentPoolProfile_STATUS_ARM{}
+	return &arm.ManagedClusterAgentPoolProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterAgentPoolProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAgentPoolProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAgentPoolProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAgentPoolProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAgentPoolProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "ArtifactStreamingProfile":
@@ -9559,7 +9714,9 @@ func (profile *ManagedClusterAgentPoolProfile_STATUS) PopulateFromARM(owner genr
 
 	// Set property "GpuInstanceProfile":
 	if typedInput.GpuInstanceProfile != nil {
-		gpuInstanceProfile := *typedInput.GpuInstanceProfile
+		var temp string
+		temp = string(*typedInput.GpuInstanceProfile)
+		gpuInstanceProfile := GPUInstanceProfile_STATUS(temp)
 		profile.GpuInstanceProfile = &gpuInstanceProfile
 	}
 
@@ -9593,7 +9750,9 @@ func (profile *ManagedClusterAgentPoolProfile_STATUS) PopulateFromARM(owner genr
 
 	// Set property "KubeletDiskType":
 	if typedInput.KubeletDiskType != nil {
-		kubeletDiskType := *typedInput.KubeletDiskType
+		var temp string
+		temp = string(*typedInput.KubeletDiskType)
+		kubeletDiskType := KubeletDiskType_STATUS(temp)
 		profile.KubeletDiskType = &kubeletDiskType
 	}
 
@@ -9634,7 +9793,9 @@ func (profile *ManagedClusterAgentPoolProfile_STATUS) PopulateFromARM(owner genr
 
 	// Set property "Mode":
 	if typedInput.Mode != nil {
-		mode := *typedInput.Mode
+		var temp string
+		temp = string(*typedInput.Mode)
+		mode := AgentPoolMode_STATUS(temp)
 		profile.Mode = &mode
 	}
 
@@ -9699,25 +9860,33 @@ func (profile *ManagedClusterAgentPoolProfile_STATUS) PopulateFromARM(owner genr
 
 	// Set property "OsDiskType":
 	if typedInput.OsDiskType != nil {
-		osDiskType := *typedInput.OsDiskType
+		var temp string
+		temp = string(*typedInput.OsDiskType)
+		osDiskType := OSDiskType_STATUS(temp)
 		profile.OsDiskType = &osDiskType
 	}
 
 	// Set property "OsSKU":
 	if typedInput.OsSKU != nil {
-		osSKU := *typedInput.OsSKU
+		var temp string
+		temp = string(*typedInput.OsSKU)
+		osSKU := OSSKU_STATUS(temp)
 		profile.OsSKU = &osSKU
 	}
 
 	// Set property "OsType":
 	if typedInput.OsType != nil {
-		osType := *typedInput.OsType
+		var temp string
+		temp = string(*typedInput.OsType)
+		osType := OSType_STATUS(temp)
 		profile.OsType = &osType
 	}
 
 	// Set property "PodIPAllocationMode":
 	if typedInput.PodIPAllocationMode != nil {
-		podIPAllocationMode := *typedInput.PodIPAllocationMode
+		var temp string
+		temp = string(*typedInput.PodIPAllocationMode)
+		podIPAllocationMode := PodIPAllocationMode_STATUS(temp)
 		profile.PodIPAllocationMode = &podIPAllocationMode
 	}
 
@@ -9752,19 +9921,25 @@ func (profile *ManagedClusterAgentPoolProfile_STATUS) PopulateFromARM(owner genr
 
 	// Set property "ScaleDownMode":
 	if typedInput.ScaleDownMode != nil {
-		scaleDownMode := *typedInput.ScaleDownMode
+		var temp string
+		temp = string(*typedInput.ScaleDownMode)
+		scaleDownMode := ScaleDownMode_STATUS(temp)
 		profile.ScaleDownMode = &scaleDownMode
 	}
 
 	// Set property "ScaleSetEvictionPolicy":
 	if typedInput.ScaleSetEvictionPolicy != nil {
-		scaleSetEvictionPolicy := *typedInput.ScaleSetEvictionPolicy
+		var temp string
+		temp = string(*typedInput.ScaleSetEvictionPolicy)
+		scaleSetEvictionPolicy := ScaleSetEvictionPolicy_STATUS(temp)
 		profile.ScaleSetEvictionPolicy = &scaleSetEvictionPolicy
 	}
 
 	// Set property "ScaleSetPriority":
 	if typedInput.ScaleSetPriority != nil {
-		scaleSetPriority := *typedInput.ScaleSetPriority
+		var temp string
+		temp = string(*typedInput.ScaleSetPriority)
+		scaleSetPriority := ScaleSetPriority_STATUS(temp)
 		profile.ScaleSetPriority = &scaleSetPriority
 	}
 
@@ -9795,7 +9970,9 @@ func (profile *ManagedClusterAgentPoolProfile_STATUS) PopulateFromARM(owner genr
 
 	// Set property "Type":
 	if typedInput.Type != nil {
-		typeVar := *typedInput.Type
+		var temp string
+		temp = string(*typedInput.Type)
+		typeVar := AgentPoolType_STATUS(temp)
 		profile.Type = &typeVar
 	}
 
@@ -9856,7 +10033,9 @@ func (profile *ManagedClusterAgentPoolProfile_STATUS) PopulateFromARM(owner genr
 
 	// Set property "WorkloadRuntime":
 	if typedInput.WorkloadRuntime != nil {
-		workloadRuntime := *typedInput.WorkloadRuntime
+		var temp string
+		temp = string(*typedInput.WorkloadRuntime)
+		workloadRuntime := WorkloadRuntime_STATUS(temp)
 		profile.WorkloadRuntime = &workloadRuntime
 	}
 
@@ -10686,7 +10865,7 @@ func (profile *ManagedClusterAIToolchainOperatorProfile) ConvertToARM(resolved g
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterAIToolchainOperatorProfile_ARM{}
+	result := &arm.ManagedClusterAIToolchainOperatorProfile{}
 
 	// Set property "Enabled":
 	if profile.Enabled != nil {
@@ -10698,14 +10877,14 @@ func (profile *ManagedClusterAIToolchainOperatorProfile) ConvertToARM(resolved g
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterAIToolchainOperatorProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAIToolchainOperatorProfile_ARM{}
+	return &arm.ManagedClusterAIToolchainOperatorProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterAIToolchainOperatorProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAIToolchainOperatorProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAIToolchainOperatorProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAIToolchainOperatorProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAIToolchainOperatorProfile, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -10769,14 +10948,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterAIToolchainOperatorProfile_ST
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterAIToolchainOperatorProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAIToolchainOperatorProfile_STATUS_ARM{}
+	return &arm.ManagedClusterAIToolchainOperatorProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterAIToolchainOperatorProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAIToolchainOperatorProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAIToolchainOperatorProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAIToolchainOperatorProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAIToolchainOperatorProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -10865,7 +11044,7 @@ func (profile *ManagedClusterAPIServerAccessProfile) ConvertToARM(resolved genru
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterAPIServerAccessProfile_ARM{}
+	result := &arm.ManagedClusterAPIServerAccessProfile{}
 
 	// Set property "AuthorizedIPRanges":
 	for _, item := range profile.AuthorizedIPRanges {
@@ -10912,14 +11091,14 @@ func (profile *ManagedClusterAPIServerAccessProfile) ConvertToARM(resolved genru
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterAPIServerAccessProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAPIServerAccessProfile_ARM{}
+	return &arm.ManagedClusterAPIServerAccessProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterAPIServerAccessProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAPIServerAccessProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAPIServerAccessProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAPIServerAccessProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAPIServerAccessProfile, got %T", armInput)
 	}
 
 	// Set property "AuthorizedIPRanges":
@@ -11106,14 +11285,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterAPIServerAccessProfile_STATUS
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterAPIServerAccessProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAPIServerAccessProfile_STATUS_ARM{}
+	return &arm.ManagedClusterAPIServerAccessProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterAPIServerAccessProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAPIServerAccessProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAPIServerAccessProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAPIServerAccessProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAPIServerAccessProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "AuthorizedIPRanges":
@@ -11283,17 +11462,21 @@ func (profile *ManagedClusterAutoUpgradeProfile) ConvertToARM(resolved genruntim
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterAutoUpgradeProfile_ARM{}
+	result := &arm.ManagedClusterAutoUpgradeProfile{}
 
 	// Set property "NodeOSUpgradeChannel":
 	if profile.NodeOSUpgradeChannel != nil {
-		nodeOSUpgradeChannel := *profile.NodeOSUpgradeChannel
+		var temp string
+		temp = string(*profile.NodeOSUpgradeChannel)
+		nodeOSUpgradeChannel := arm.ManagedClusterAutoUpgradeProfile_NodeOSUpgradeChannel(temp)
 		result.NodeOSUpgradeChannel = &nodeOSUpgradeChannel
 	}
 
 	// Set property "UpgradeChannel":
 	if profile.UpgradeChannel != nil {
-		upgradeChannel := *profile.UpgradeChannel
+		var temp string
+		temp = string(*profile.UpgradeChannel)
+		upgradeChannel := arm.ManagedClusterAutoUpgradeProfile_UpgradeChannel(temp)
 		result.UpgradeChannel = &upgradeChannel
 	}
 	return result, nil
@@ -11301,25 +11484,29 @@ func (profile *ManagedClusterAutoUpgradeProfile) ConvertToARM(resolved genruntim
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterAutoUpgradeProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAutoUpgradeProfile_ARM{}
+	return &arm.ManagedClusterAutoUpgradeProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterAutoUpgradeProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAutoUpgradeProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAutoUpgradeProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAutoUpgradeProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAutoUpgradeProfile, got %T", armInput)
 	}
 
 	// Set property "NodeOSUpgradeChannel":
 	if typedInput.NodeOSUpgradeChannel != nil {
-		nodeOSUpgradeChannel := *typedInput.NodeOSUpgradeChannel
+		var temp string
+		temp = string(*typedInput.NodeOSUpgradeChannel)
+		nodeOSUpgradeChannel := ManagedClusterAutoUpgradeProfile_NodeOSUpgradeChannel(temp)
 		profile.NodeOSUpgradeChannel = &nodeOSUpgradeChannel
 	}
 
 	// Set property "UpgradeChannel":
 	if typedInput.UpgradeChannel != nil {
-		upgradeChannel := *typedInput.UpgradeChannel
+		var temp string
+		temp = string(*typedInput.UpgradeChannel)
+		upgradeChannel := ManagedClusterAutoUpgradeProfile_UpgradeChannel(temp)
 		profile.UpgradeChannel = &upgradeChannel
 	}
 
@@ -11398,25 +11585,29 @@ var _ genruntime.FromARMConverter = &ManagedClusterAutoUpgradeProfile_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterAutoUpgradeProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAutoUpgradeProfile_STATUS_ARM{}
+	return &arm.ManagedClusterAutoUpgradeProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterAutoUpgradeProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAutoUpgradeProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAutoUpgradeProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAutoUpgradeProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAutoUpgradeProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "NodeOSUpgradeChannel":
 	if typedInput.NodeOSUpgradeChannel != nil {
-		nodeOSUpgradeChannel := *typedInput.NodeOSUpgradeChannel
+		var temp string
+		temp = string(*typedInput.NodeOSUpgradeChannel)
+		nodeOSUpgradeChannel := ManagedClusterAutoUpgradeProfile_NodeOSUpgradeChannel_STATUS(temp)
 		profile.NodeOSUpgradeChannel = &nodeOSUpgradeChannel
 	}
 
 	// Set property "UpgradeChannel":
 	if typedInput.UpgradeChannel != nil {
-		upgradeChannel := *typedInput.UpgradeChannel
+		var temp string
+		temp = string(*typedInput.UpgradeChannel)
+		upgradeChannel := ManagedClusterAutoUpgradeProfile_UpgradeChannel_STATUS(temp)
 		profile.UpgradeChannel = &upgradeChannel
 	}
 
@@ -11503,7 +11694,7 @@ func (profile *ManagedClusterAzureMonitorProfile) ConvertToARM(resolved genrunti
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterAzureMonitorProfile_ARM{}
+	result := &arm.ManagedClusterAzureMonitorProfile{}
 
 	// Set property "AppMonitoring":
 	if profile.AppMonitoring != nil {
@@ -11511,7 +11702,7 @@ func (profile *ManagedClusterAzureMonitorProfile) ConvertToARM(resolved genrunti
 		if err != nil {
 			return nil, err
 		}
-		appMonitoring := *appMonitoring_ARM.(*ManagedClusterAzureMonitorProfileAppMonitoring_ARM)
+		appMonitoring := *appMonitoring_ARM.(*arm.ManagedClusterAzureMonitorProfileAppMonitoring)
 		result.AppMonitoring = &appMonitoring
 	}
 
@@ -11521,7 +11712,7 @@ func (profile *ManagedClusterAzureMonitorProfile) ConvertToARM(resolved genrunti
 		if err != nil {
 			return nil, err
 		}
-		containerInsights := *containerInsights_ARM.(*ManagedClusterAzureMonitorProfileContainerInsights_ARM)
+		containerInsights := *containerInsights_ARM.(*arm.ManagedClusterAzureMonitorProfileContainerInsights)
 		result.ContainerInsights = &containerInsights
 	}
 
@@ -11531,7 +11722,7 @@ func (profile *ManagedClusterAzureMonitorProfile) ConvertToARM(resolved genrunti
 		if err != nil {
 			return nil, err
 		}
-		metrics := *metrics_ARM.(*ManagedClusterAzureMonitorProfileMetrics_ARM)
+		metrics := *metrics_ARM.(*arm.ManagedClusterAzureMonitorProfileMetrics)
 		result.Metrics = &metrics
 	}
 	return result, nil
@@ -11539,14 +11730,14 @@ func (profile *ManagedClusterAzureMonitorProfile) ConvertToARM(resolved genrunti
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterAzureMonitorProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAzureMonitorProfile_ARM{}
+	return &arm.ManagedClusterAzureMonitorProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterAzureMonitorProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAzureMonitorProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAzureMonitorProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAzureMonitorProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAzureMonitorProfile, got %T", armInput)
 	}
 
 	// Set property "AppMonitoring":
@@ -11700,14 +11891,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterAzureMonitorProfile_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterAzureMonitorProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAzureMonitorProfile_STATUS_ARM{}
+	return &arm.ManagedClusterAzureMonitorProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterAzureMonitorProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAzureMonitorProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAzureMonitorProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAzureMonitorProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAzureMonitorProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "AppMonitoring":
@@ -11859,11 +12050,13 @@ func (profile *ManagedClusterBootstrapProfile) ConvertToARM(resolved genruntime.
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterBootstrapProfile_ARM{}
+	result := &arm.ManagedClusterBootstrapProfile{}
 
 	// Set property "ArtifactSource":
 	if profile.ArtifactSource != nil {
-		artifactSource := *profile.ArtifactSource
+		var temp string
+		temp = string(*profile.ArtifactSource)
+		artifactSource := arm.ManagedClusterBootstrapProfile_ArtifactSource(temp)
 		result.ArtifactSource = &artifactSource
 	}
 
@@ -11881,19 +12074,21 @@ func (profile *ManagedClusterBootstrapProfile) ConvertToARM(resolved genruntime.
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterBootstrapProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterBootstrapProfile_ARM{}
+	return &arm.ManagedClusterBootstrapProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterBootstrapProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterBootstrapProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterBootstrapProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterBootstrapProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterBootstrapProfile, got %T", armInput)
 	}
 
 	// Set property "ArtifactSource":
 	if typedInput.ArtifactSource != nil {
-		artifactSource := *typedInput.ArtifactSource
+		var temp string
+		temp = string(*typedInput.ArtifactSource)
+		artifactSource := ManagedClusterBootstrapProfile_ArtifactSource(temp)
 		profile.ArtifactSource = &artifactSource
 	}
 
@@ -11973,19 +12168,21 @@ var _ genruntime.FromARMConverter = &ManagedClusterBootstrapProfile_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterBootstrapProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterBootstrapProfile_STATUS_ARM{}
+	return &arm.ManagedClusterBootstrapProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterBootstrapProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterBootstrapProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterBootstrapProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterBootstrapProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterBootstrapProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "ArtifactSource":
 	if typedInput.ArtifactSource != nil {
-		artifactSource := *typedInput.ArtifactSource
+		var temp string
+		temp = string(*typedInput.ArtifactSource)
+		artifactSource := ManagedClusterBootstrapProfile_ArtifactSource_STATUS(temp)
 		profile.ArtifactSource = &artifactSource
 	}
 
@@ -12067,7 +12264,7 @@ func (config *ManagedClusterHTTPProxyConfig) ConvertToARM(resolved genruntime.Co
 	if config == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterHTTPProxyConfig_ARM{}
+	result := &arm.ManagedClusterHTTPProxyConfig{}
 
 	// Set property "HttpProxy":
 	if config.HttpProxy != nil {
@@ -12096,14 +12293,14 @@ func (config *ManagedClusterHTTPProxyConfig) ConvertToARM(resolved genruntime.Co
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (config *ManagedClusterHTTPProxyConfig) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterHTTPProxyConfig_ARM{}
+	return &arm.ManagedClusterHTTPProxyConfig{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (config *ManagedClusterHTTPProxyConfig) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterHTTPProxyConfig_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterHTTPProxyConfig)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterHTTPProxyConfig_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterHTTPProxyConfig, got %T", armInput)
 	}
 
 	// Set property "HttpProxy":
@@ -12203,14 +12400,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterHTTPProxyConfig_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (config *ManagedClusterHTTPProxyConfig_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterHTTPProxyConfig_STATUS_ARM{}
+	return &arm.ManagedClusterHTTPProxyConfig_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (config *ManagedClusterHTTPProxyConfig_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterHTTPProxyConfig_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterHTTPProxyConfig_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterHTTPProxyConfig_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterHTTPProxyConfig_STATUS, got %T", armInput)
 	}
 
 	// Set property "EffectiveNoProxy":
@@ -12320,49 +12517,51 @@ func (identity *ManagedClusterIdentity) ConvertToARM(resolved genruntime.Convert
 	if identity == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterIdentity_ARM{}
+	result := &arm.ManagedClusterIdentity{}
 
 	// Set property "DelegatedResources":
 	if identity.DelegatedResources != nil {
-		result.DelegatedResources = make(map[string]DelegatedResource_ARM, len(identity.DelegatedResources))
+		result.DelegatedResources = make(map[string]arm.DelegatedResource, len(identity.DelegatedResources))
 		for key, value := range identity.DelegatedResources {
 			value_ARM, err := value.ConvertToARM(resolved)
 			if err != nil {
 				return nil, err
 			}
-			result.DelegatedResources[key] = *value_ARM.(*DelegatedResource_ARM)
+			result.DelegatedResources[key] = *value_ARM.(*arm.DelegatedResource)
 		}
 	}
 
 	// Set property "Type":
 	if identity.Type != nil {
-		typeVar := *identity.Type
+		var temp string
+		temp = string(*identity.Type)
+		typeVar := arm.ManagedClusterIdentity_Type(temp)
 		result.Type = &typeVar
 	}
 
 	// Set property "UserAssignedIdentities":
-	result.UserAssignedIdentities = make(map[string]UserAssignedIdentityDetails_ARM, len(identity.UserAssignedIdentities))
+	result.UserAssignedIdentities = make(map[string]arm.UserAssignedIdentityDetails, len(identity.UserAssignedIdentities))
 	for _, ident := range identity.UserAssignedIdentities {
 		identARMID, err := resolved.ResolvedReferences.Lookup(ident.Reference)
 		if err != nil {
 			return nil, err
 		}
 		key := identARMID
-		result.UserAssignedIdentities[key] = UserAssignedIdentityDetails_ARM{}
+		result.UserAssignedIdentities[key] = arm.UserAssignedIdentityDetails{}
 	}
 	return result, nil
 }
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (identity *ManagedClusterIdentity) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterIdentity_ARM{}
+	return &arm.ManagedClusterIdentity{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (identity *ManagedClusterIdentity) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterIdentity_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterIdentity)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterIdentity_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterIdentity, got %T", armInput)
 	}
 
 	// Set property "DelegatedResources":
@@ -12380,7 +12579,9 @@ func (identity *ManagedClusterIdentity) PopulateFromARM(owner genruntime.Arbitra
 
 	// Set property "Type":
 	if typedInput.Type != nil {
-		typeVar := *typedInput.Type
+		var temp string
+		temp = string(*typedInput.Type)
+		typeVar := ManagedClusterIdentity_Type(temp)
 		identity.Type = &typeVar
 	}
 
@@ -12527,14 +12728,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterIdentity_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (identity *ManagedClusterIdentity_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterIdentity_STATUS_ARM{}
+	return &arm.ManagedClusterIdentity_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (identity *ManagedClusterIdentity_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterIdentity_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterIdentity_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterIdentity_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterIdentity_STATUS, got %T", armInput)
 	}
 
 	// Set property "DelegatedResources":
@@ -12564,7 +12765,9 @@ func (identity *ManagedClusterIdentity_STATUS) PopulateFromARM(owner genruntime.
 
 	// Set property "Type":
 	if typedInput.Type != nil {
-		typeVar := *typedInput.Type
+		var temp string
+		temp = string(*typedInput.Type)
+		typeVar := ManagedClusterIdentity_Type_STATUS(temp)
 		identity.Type = &typeVar
 	}
 
@@ -12722,7 +12925,7 @@ func (profile *ManagedClusterIngressProfile) ConvertToARM(resolved genruntime.Co
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterIngressProfile_ARM{}
+	result := &arm.ManagedClusterIngressProfile{}
 
 	// Set property "WebAppRouting":
 	if profile.WebAppRouting != nil {
@@ -12730,7 +12933,7 @@ func (profile *ManagedClusterIngressProfile) ConvertToARM(resolved genruntime.Co
 		if err != nil {
 			return nil, err
 		}
-		webAppRouting := *webAppRouting_ARM.(*ManagedClusterIngressProfileWebAppRouting_ARM)
+		webAppRouting := *webAppRouting_ARM.(*arm.ManagedClusterIngressProfileWebAppRouting)
 		result.WebAppRouting = &webAppRouting
 	}
 	return result, nil
@@ -12738,14 +12941,14 @@ func (profile *ManagedClusterIngressProfile) ConvertToARM(resolved genruntime.Co
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterIngressProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterIngressProfile_ARM{}
+	return &arm.ManagedClusterIngressProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterIngressProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterIngressProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterIngressProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterIngressProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterIngressProfile, got %T", armInput)
 	}
 
 	// Set property "WebAppRouting":
@@ -12820,14 +13023,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterIngressProfile_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterIngressProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterIngressProfile_STATUS_ARM{}
+	return &arm.ManagedClusterIngressProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterIngressProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterIngressProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterIngressProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterIngressProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterIngressProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "WebAppRouting":
@@ -12905,7 +13108,7 @@ func (profile *ManagedClusterMetricsProfile) ConvertToARM(resolved genruntime.Co
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterMetricsProfile_ARM{}
+	result := &arm.ManagedClusterMetricsProfile{}
 
 	// Set property "CostAnalysis":
 	if profile.CostAnalysis != nil {
@@ -12913,7 +13116,7 @@ func (profile *ManagedClusterMetricsProfile) ConvertToARM(resolved genruntime.Co
 		if err != nil {
 			return nil, err
 		}
-		costAnalysis := *costAnalysis_ARM.(*ManagedClusterCostAnalysis_ARM)
+		costAnalysis := *costAnalysis_ARM.(*arm.ManagedClusterCostAnalysis)
 		result.CostAnalysis = &costAnalysis
 	}
 	return result, nil
@@ -12921,14 +13124,14 @@ func (profile *ManagedClusterMetricsProfile) ConvertToARM(resolved genruntime.Co
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterMetricsProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterMetricsProfile_ARM{}
+	return &arm.ManagedClusterMetricsProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterMetricsProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterMetricsProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterMetricsProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterMetricsProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterMetricsProfile, got %T", armInput)
 	}
 
 	// Set property "CostAnalysis":
@@ -13003,14 +13206,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterMetricsProfile_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterMetricsProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterMetricsProfile_STATUS_ARM{}
+	return &arm.ManagedClusterMetricsProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterMetricsProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterMetricsProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterMetricsProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterMetricsProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterMetricsProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "CostAnalysis":
@@ -13087,11 +13290,13 @@ func (profile *ManagedClusterNodeProvisioningProfile) ConvertToARM(resolved genr
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterNodeProvisioningProfile_ARM{}
+	result := &arm.ManagedClusterNodeProvisioningProfile{}
 
 	// Set property "Mode":
 	if profile.Mode != nil {
-		mode := *profile.Mode
+		var temp string
+		temp = string(*profile.Mode)
+		mode := arm.ManagedClusterNodeProvisioningProfile_Mode(temp)
 		result.Mode = &mode
 	}
 	return result, nil
@@ -13099,19 +13304,21 @@ func (profile *ManagedClusterNodeProvisioningProfile) ConvertToARM(resolved genr
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterNodeProvisioningProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterNodeProvisioningProfile_ARM{}
+	return &arm.ManagedClusterNodeProvisioningProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterNodeProvisioningProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterNodeProvisioningProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterNodeProvisioningProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterNodeProvisioningProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterNodeProvisioningProfile, got %T", armInput)
 	}
 
 	// Set property "Mode":
 	if typedInput.Mode != nil {
-		mode := *typedInput.Mode
+		var temp string
+		temp = string(*typedInput.Mode)
+		mode := ManagedClusterNodeProvisioningProfile_Mode(temp)
 		profile.Mode = &mode
 	}
 
@@ -13168,19 +13375,21 @@ var _ genruntime.FromARMConverter = &ManagedClusterNodeProvisioningProfile_STATU
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterNodeProvisioningProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterNodeProvisioningProfile_STATUS_ARM{}
+	return &arm.ManagedClusterNodeProvisioningProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterNodeProvisioningProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterNodeProvisioningProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterNodeProvisioningProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterNodeProvisioningProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterNodeProvisioningProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "Mode":
 	if typedInput.Mode != nil {
-		mode := *typedInput.Mode
+		var temp string
+		temp = string(*typedInput.Mode)
+		mode := ManagedClusterNodeProvisioningProfile_Mode_STATUS(temp)
 		profile.Mode = &mode
 	}
 
@@ -13241,11 +13450,13 @@ func (profile *ManagedClusterNodeResourceGroupProfile) ConvertToARM(resolved gen
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterNodeResourceGroupProfile_ARM{}
+	result := &arm.ManagedClusterNodeResourceGroupProfile{}
 
 	// Set property "RestrictionLevel":
 	if profile.RestrictionLevel != nil {
-		restrictionLevel := *profile.RestrictionLevel
+		var temp string
+		temp = string(*profile.RestrictionLevel)
+		restrictionLevel := arm.ManagedClusterNodeResourceGroupProfile_RestrictionLevel(temp)
 		result.RestrictionLevel = &restrictionLevel
 	}
 	return result, nil
@@ -13253,19 +13464,21 @@ func (profile *ManagedClusterNodeResourceGroupProfile) ConvertToARM(resolved gen
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterNodeResourceGroupProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterNodeResourceGroupProfile_ARM{}
+	return &arm.ManagedClusterNodeResourceGroupProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterNodeResourceGroupProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterNodeResourceGroupProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterNodeResourceGroupProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterNodeResourceGroupProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterNodeResourceGroupProfile, got %T", armInput)
 	}
 
 	// Set property "RestrictionLevel":
 	if typedInput.RestrictionLevel != nil {
-		restrictionLevel := *typedInput.RestrictionLevel
+		var temp string
+		temp = string(*typedInput.RestrictionLevel)
+		restrictionLevel := ManagedClusterNodeResourceGroupProfile_RestrictionLevel(temp)
 		profile.RestrictionLevel = &restrictionLevel
 	}
 
@@ -13323,19 +13536,21 @@ var _ genruntime.FromARMConverter = &ManagedClusterNodeResourceGroupProfile_STAT
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterNodeResourceGroupProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterNodeResourceGroupProfile_STATUS_ARM{}
+	return &arm.ManagedClusterNodeResourceGroupProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterNodeResourceGroupProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterNodeResourceGroupProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterNodeResourceGroupProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterNodeResourceGroupProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterNodeResourceGroupProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "RestrictionLevel":
 	if typedInput.RestrictionLevel != nil {
-		restrictionLevel := *typedInput.RestrictionLevel
+		var temp string
+		temp = string(*typedInput.RestrictionLevel)
+		restrictionLevel := ManagedClusterNodeResourceGroupProfile_RestrictionLevel_STATUS(temp)
 		profile.RestrictionLevel = &restrictionLevel
 	}
 
@@ -13396,7 +13611,7 @@ func (profile *ManagedClusterOIDCIssuerProfile) ConvertToARM(resolved genruntime
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterOIDCIssuerProfile_ARM{}
+	result := &arm.ManagedClusterOIDCIssuerProfile{}
 
 	// Set property "Enabled":
 	if profile.Enabled != nil {
@@ -13408,14 +13623,14 @@ func (profile *ManagedClusterOIDCIssuerProfile) ConvertToARM(resolved genruntime
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterOIDCIssuerProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterOIDCIssuerProfile_ARM{}
+	return &arm.ManagedClusterOIDCIssuerProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterOIDCIssuerProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterOIDCIssuerProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterOIDCIssuerProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterOIDCIssuerProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterOIDCIssuerProfile, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -13480,14 +13695,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterOIDCIssuerProfile_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterOIDCIssuerProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterOIDCIssuerProfile_STATUS_ARM{}
+	return &arm.ManagedClusterOIDCIssuerProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterOIDCIssuerProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterOIDCIssuerProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterOIDCIssuerProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterOIDCIssuerProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterOIDCIssuerProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -13553,8 +13768,14 @@ func (profile *ManagedClusterOIDCIssuerProfile_STATUS) AssignProperties_To_Manag
 
 // Details for configuring operator behavior. Fields in this struct are interpreted by the operator directly rather than being passed to Azure
 type ManagedClusterOperatorSpec struct {
+	// ConfigMapExpressions: configures where to place operator written dynamic ConfigMaps (created with CEL expressions).
+	ConfigMapExpressions []*core.DestinationExpression `json:"configMapExpressions,omitempty"`
+
 	// ConfigMaps: configures where to place operator written ConfigMaps.
 	ConfigMaps *ManagedClusterOperatorConfigMaps `json:"configMaps,omitempty"`
+
+	// SecretExpressions: configures where to place operator written dynamic secrets (created with CEL expressions).
+	SecretExpressions []*core.DestinationExpression `json:"secretExpressions,omitempty"`
 
 	// Secrets: configures where to place Azure generated secrets.
 	Secrets *ManagedClusterOperatorSecrets `json:"secrets,omitempty"`
@@ -13562,6 +13783,24 @@ type ManagedClusterOperatorSpec struct {
 
 // AssignProperties_From_ManagedClusterOperatorSpec populates our ManagedClusterOperatorSpec from the provided source ManagedClusterOperatorSpec
 func (operator *ManagedClusterOperatorSpec) AssignProperties_From_ManagedClusterOperatorSpec(source *storage.ManagedClusterOperatorSpec) error {
+
+	// ConfigMapExpressions
+	if source.ConfigMapExpressions != nil {
+		configMapExpressionList := make([]*core.DestinationExpression, len(source.ConfigMapExpressions))
+		for configMapExpressionIndex, configMapExpressionItem := range source.ConfigMapExpressions {
+			// Shadow the loop variable to avoid aliasing
+			configMapExpressionItem := configMapExpressionItem
+			if configMapExpressionItem != nil {
+				configMapExpression := *configMapExpressionItem.DeepCopy()
+				configMapExpressionList[configMapExpressionIndex] = &configMapExpression
+			} else {
+				configMapExpressionList[configMapExpressionIndex] = nil
+			}
+		}
+		operator.ConfigMapExpressions = configMapExpressionList
+	} else {
+		operator.ConfigMapExpressions = nil
+	}
 
 	// ConfigMaps
 	if source.ConfigMaps != nil {
@@ -13573,6 +13812,24 @@ func (operator *ManagedClusterOperatorSpec) AssignProperties_From_ManagedCluster
 		operator.ConfigMaps = &configMap
 	} else {
 		operator.ConfigMaps = nil
+	}
+
+	// SecretExpressions
+	if source.SecretExpressions != nil {
+		secretExpressionList := make([]*core.DestinationExpression, len(source.SecretExpressions))
+		for secretExpressionIndex, secretExpressionItem := range source.SecretExpressions {
+			// Shadow the loop variable to avoid aliasing
+			secretExpressionItem := secretExpressionItem
+			if secretExpressionItem != nil {
+				secretExpression := *secretExpressionItem.DeepCopy()
+				secretExpressionList[secretExpressionIndex] = &secretExpression
+			} else {
+				secretExpressionList[secretExpressionIndex] = nil
+			}
+		}
+		operator.SecretExpressions = secretExpressionList
+	} else {
+		operator.SecretExpressions = nil
 	}
 
 	// Secrets
@@ -13596,6 +13853,24 @@ func (operator *ManagedClusterOperatorSpec) AssignProperties_To_ManagedClusterOp
 	// Create a new property bag
 	propertyBag := genruntime.NewPropertyBag()
 
+	// ConfigMapExpressions
+	if operator.ConfigMapExpressions != nil {
+		configMapExpressionList := make([]*core.DestinationExpression, len(operator.ConfigMapExpressions))
+		for configMapExpressionIndex, configMapExpressionItem := range operator.ConfigMapExpressions {
+			// Shadow the loop variable to avoid aliasing
+			configMapExpressionItem := configMapExpressionItem
+			if configMapExpressionItem != nil {
+				configMapExpression := *configMapExpressionItem.DeepCopy()
+				configMapExpressionList[configMapExpressionIndex] = &configMapExpression
+			} else {
+				configMapExpressionList[configMapExpressionIndex] = nil
+			}
+		}
+		destination.ConfigMapExpressions = configMapExpressionList
+	} else {
+		destination.ConfigMapExpressions = nil
+	}
+
 	// ConfigMaps
 	if operator.ConfigMaps != nil {
 		var configMap storage.ManagedClusterOperatorConfigMaps
@@ -13606,6 +13881,24 @@ func (operator *ManagedClusterOperatorSpec) AssignProperties_To_ManagedClusterOp
 		destination.ConfigMaps = &configMap
 	} else {
 		destination.ConfigMaps = nil
+	}
+
+	// SecretExpressions
+	if operator.SecretExpressions != nil {
+		secretExpressionList := make([]*core.DestinationExpression, len(operator.SecretExpressions))
+		for secretExpressionIndex, secretExpressionItem := range operator.SecretExpressions {
+			// Shadow the loop variable to avoid aliasing
+			secretExpressionItem := secretExpressionItem
+			if secretExpressionItem != nil {
+				secretExpression := *secretExpressionItem.DeepCopy()
+				secretExpressionList[secretExpressionIndex] = &secretExpression
+			} else {
+				secretExpressionList[secretExpressionIndex] = nil
+			}
+		}
+		destination.SecretExpressions = secretExpressionList
+	} else {
+		destination.SecretExpressions = nil
 	}
 
 	// Secrets
@@ -13657,7 +13950,7 @@ func (profile *ManagedClusterPodIdentityProfile) ConvertToARM(resolved genruntim
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterPodIdentityProfile_ARM{}
+	result := &arm.ManagedClusterPodIdentityProfile{}
 
 	// Set property "AllowNetworkPluginKubenet":
 	if profile.AllowNetworkPluginKubenet != nil {
@@ -13677,7 +13970,7 @@ func (profile *ManagedClusterPodIdentityProfile) ConvertToARM(resolved genruntim
 		if err != nil {
 			return nil, err
 		}
-		result.UserAssignedIdentities = append(result.UserAssignedIdentities, *item_ARM.(*ManagedClusterPodIdentity_ARM))
+		result.UserAssignedIdentities = append(result.UserAssignedIdentities, *item_ARM.(*arm.ManagedClusterPodIdentity))
 	}
 
 	// Set property "UserAssignedIdentityExceptions":
@@ -13686,21 +13979,21 @@ func (profile *ManagedClusterPodIdentityProfile) ConvertToARM(resolved genruntim
 		if err != nil {
 			return nil, err
 		}
-		result.UserAssignedIdentityExceptions = append(result.UserAssignedIdentityExceptions, *item_ARM.(*ManagedClusterPodIdentityException_ARM))
+		result.UserAssignedIdentityExceptions = append(result.UserAssignedIdentityExceptions, *item_ARM.(*arm.ManagedClusterPodIdentityException))
 	}
 	return result, nil
 }
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterPodIdentityProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterPodIdentityProfile_ARM{}
+	return &arm.ManagedClusterPodIdentityProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterPodIdentityProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterPodIdentityProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterPodIdentityProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterPodIdentityProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterPodIdentityProfile, got %T", armInput)
 	}
 
 	// Set property "AllowNetworkPluginKubenet":
@@ -13889,14 +14182,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterPodIdentityProfile_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterPodIdentityProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterPodIdentityProfile_STATUS_ARM{}
+	return &arm.ManagedClusterPodIdentityProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterPodIdentityProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterPodIdentityProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterPodIdentityProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterPodIdentityProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterPodIdentityProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "AllowNetworkPluginKubenet":
@@ -14144,7 +14437,7 @@ func (profile *ManagedClusterProperties_AutoScalerProfile) ConvertToARM(resolved
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterProperties_AutoScalerProfile_ARM{}
+	result := &arm.ManagedClusterProperties_AutoScalerProfile{}
 
 	// Set property "BalanceSimilarNodeGroups":
 	if profile.BalanceSimilarNodeGroups != nil {
@@ -14166,7 +14459,9 @@ func (profile *ManagedClusterProperties_AutoScalerProfile) ConvertToARM(resolved
 
 	// Set property "Expander":
 	if profile.Expander != nil {
-		expander := *profile.Expander
+		var temp string
+		temp = string(*profile.Expander)
+		expander := arm.Expander(temp)
 		result.Expander = &expander
 	}
 
@@ -14270,14 +14565,14 @@ func (profile *ManagedClusterProperties_AutoScalerProfile) ConvertToARM(resolved
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterProperties_AutoScalerProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterProperties_AutoScalerProfile_ARM{}
+	return &arm.ManagedClusterProperties_AutoScalerProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterProperties_AutoScalerProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterProperties_AutoScalerProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterProperties_AutoScalerProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterProperties_AutoScalerProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterProperties_AutoScalerProfile, got %T", armInput)
 	}
 
 	// Set property "BalanceSimilarNodeGroups":
@@ -14300,7 +14595,9 @@ func (profile *ManagedClusterProperties_AutoScalerProfile) PopulateFromARM(owner
 
 	// Set property "Expander":
 	if typedInput.Expander != nil {
-		expander := *typedInput.Expander
+		var temp string
+		temp = string(*typedInput.Expander)
+		expander := Expander(temp)
 		profile.Expander = &expander
 	}
 
@@ -14667,14 +14964,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterProperties_AutoScalerProfile_
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterProperties_AutoScalerProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterProperties_AutoScalerProfile_STATUS_ARM{}
+	return &arm.ManagedClusterProperties_AutoScalerProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterProperties_AutoScalerProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterProperties_AutoScalerProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterProperties_AutoScalerProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterProperties_AutoScalerProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterProperties_AutoScalerProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "BalanceSimilarNodeGroups":
@@ -14697,7 +14994,9 @@ func (profile *ManagedClusterProperties_AutoScalerProfile_STATUS) PopulateFromAR
 
 	// Set property "Expander":
 	if typedInput.Expander != nil {
-		expander := *typedInput.Expander
+		var temp string
+		temp = string(*typedInput.Expander)
+		expander := Expander_STATUS(temp)
 		profile.Expander = &expander
 	}
 
@@ -15055,7 +15354,7 @@ func (profile *ManagedClusterSecurityProfile) ConvertToARM(resolved genruntime.C
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterSecurityProfile_ARM{}
+	result := &arm.ManagedClusterSecurityProfile{}
 
 	// Set property "AzureKeyVaultKms":
 	if profile.AzureKeyVaultKms != nil {
@@ -15063,7 +15362,7 @@ func (profile *ManagedClusterSecurityProfile) ConvertToARM(resolved genruntime.C
 		if err != nil {
 			return nil, err
 		}
-		azureKeyVaultKms := *azureKeyVaultKms_ARM.(*AzureKeyVaultKms_ARM)
+		azureKeyVaultKms := *azureKeyVaultKms_ARM.(*arm.AzureKeyVaultKms)
 		result.AzureKeyVaultKms = &azureKeyVaultKms
 	}
 
@@ -15080,7 +15379,7 @@ func (profile *ManagedClusterSecurityProfile) ConvertToARM(resolved genruntime.C
 		if err != nil {
 			return nil, err
 		}
-		defender := *defender_ARM.(*ManagedClusterSecurityProfileDefender_ARM)
+		defender := *defender_ARM.(*arm.ManagedClusterSecurityProfileDefender)
 		result.Defender = &defender
 	}
 
@@ -15090,7 +15389,7 @@ func (profile *ManagedClusterSecurityProfile) ConvertToARM(resolved genruntime.C
 		if err != nil {
 			return nil, err
 		}
-		imageCleaner := *imageCleaner_ARM.(*ManagedClusterSecurityProfileImageCleaner_ARM)
+		imageCleaner := *imageCleaner_ARM.(*arm.ManagedClusterSecurityProfileImageCleaner)
 		result.ImageCleaner = &imageCleaner
 	}
 
@@ -15100,7 +15399,7 @@ func (profile *ManagedClusterSecurityProfile) ConvertToARM(resolved genruntime.C
 		if err != nil {
 			return nil, err
 		}
-		imageIntegrity := *imageIntegrity_ARM.(*ManagedClusterSecurityProfileImageIntegrity_ARM)
+		imageIntegrity := *imageIntegrity_ARM.(*arm.ManagedClusterSecurityProfileImageIntegrity)
 		result.ImageIntegrity = &imageIntegrity
 	}
 
@@ -15110,7 +15409,7 @@ func (profile *ManagedClusterSecurityProfile) ConvertToARM(resolved genruntime.C
 		if err != nil {
 			return nil, err
 		}
-		nodeRestriction := *nodeRestriction_ARM.(*ManagedClusterSecurityProfileNodeRestriction_ARM)
+		nodeRestriction := *nodeRestriction_ARM.(*arm.ManagedClusterSecurityProfileNodeRestriction)
 		result.NodeRestriction = &nodeRestriction
 	}
 
@@ -15120,7 +15419,7 @@ func (profile *ManagedClusterSecurityProfile) ConvertToARM(resolved genruntime.C
 		if err != nil {
 			return nil, err
 		}
-		workloadIdentity := *workloadIdentity_ARM.(*ManagedClusterSecurityProfileWorkloadIdentity_ARM)
+		workloadIdentity := *workloadIdentity_ARM.(*arm.ManagedClusterSecurityProfileWorkloadIdentity)
 		result.WorkloadIdentity = &workloadIdentity
 	}
 	return result, nil
@@ -15128,14 +15427,14 @@ func (profile *ManagedClusterSecurityProfile) ConvertToARM(resolved genruntime.C
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterSecurityProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterSecurityProfile_ARM{}
+	return &arm.ManagedClusterSecurityProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterSecurityProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterSecurityProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterSecurityProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterSecurityProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterSecurityProfile, got %T", armInput)
 	}
 
 	// Set property "AzureKeyVaultKms":
@@ -15424,14 +15723,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterSecurityProfile_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterSecurityProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterSecurityProfile_STATUS_ARM{}
+	return &arm.ManagedClusterSecurityProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterSecurityProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterSecurityProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterSecurityProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterSecurityProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterSecurityProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "AzureKeyVaultKms":
@@ -15699,7 +15998,7 @@ func (profile *ManagedClusterServicePrincipalProfile) ConvertToARM(resolved genr
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterServicePrincipalProfile_ARM{}
+	result := &arm.ManagedClusterServicePrincipalProfile{}
 
 	// Set property "ClientId":
 	if profile.ClientId != nil {
@@ -15721,14 +16020,14 @@ func (profile *ManagedClusterServicePrincipalProfile) ConvertToARM(resolved genr
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterServicePrincipalProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterServicePrincipalProfile_ARM{}
+	return &arm.ManagedClusterServicePrincipalProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterServicePrincipalProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterServicePrincipalProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterServicePrincipalProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterServicePrincipalProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterServicePrincipalProfile, got %T", armInput)
 	}
 
 	// Set property "ClientId":
@@ -15798,14 +16097,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterServicePrincipalProfile_STATU
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterServicePrincipalProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterServicePrincipalProfile_STATUS_ARM{}
+	return &arm.ManagedClusterServicePrincipalProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterServicePrincipalProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterServicePrincipalProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterServicePrincipalProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterServicePrincipalProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterServicePrincipalProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "ClientId":
@@ -15864,17 +16163,21 @@ func (clusterSKU *ManagedClusterSKU) ConvertToARM(resolved genruntime.ConvertToA
 	if clusterSKU == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterSKU_ARM{}
+	result := &arm.ManagedClusterSKU{}
 
 	// Set property "Name":
 	if clusterSKU.Name != nil {
-		name := *clusterSKU.Name
+		var temp string
+		temp = string(*clusterSKU.Name)
+		name := arm.ManagedClusterSKU_Name(temp)
 		result.Name = &name
 	}
 
 	// Set property "Tier":
 	if clusterSKU.Tier != nil {
-		tier := *clusterSKU.Tier
+		var temp string
+		temp = string(*clusterSKU.Tier)
+		tier := arm.ManagedClusterSKU_Tier(temp)
 		result.Tier = &tier
 	}
 	return result, nil
@@ -15882,25 +16185,29 @@ func (clusterSKU *ManagedClusterSKU) ConvertToARM(resolved genruntime.ConvertToA
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (clusterSKU *ManagedClusterSKU) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterSKU_ARM{}
+	return &arm.ManagedClusterSKU{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (clusterSKU *ManagedClusterSKU) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterSKU_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterSKU)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterSKU_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterSKU, got %T", armInput)
 	}
 
 	// Set property "Name":
 	if typedInput.Name != nil {
-		name := *typedInput.Name
+		var temp string
+		temp = string(*typedInput.Name)
+		name := ManagedClusterSKU_Name(temp)
 		clusterSKU.Name = &name
 	}
 
 	// Set property "Tier":
 	if typedInput.Tier != nil {
-		tier := *typedInput.Tier
+		var temp string
+		temp = string(*typedInput.Tier)
+		tier := ManagedClusterSKU_Tier(temp)
 		clusterSKU.Tier = &tier
 	}
 
@@ -15979,25 +16286,29 @@ var _ genruntime.FromARMConverter = &ManagedClusterSKU_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (clusterSKU *ManagedClusterSKU_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterSKU_STATUS_ARM{}
+	return &arm.ManagedClusterSKU_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (clusterSKU *ManagedClusterSKU_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterSKU_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterSKU_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterSKU_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterSKU_STATUS, got %T", armInput)
 	}
 
 	// Set property "Name":
 	if typedInput.Name != nil {
-		name := *typedInput.Name
+		var temp string
+		temp = string(*typedInput.Name)
+		name := ManagedClusterSKU_Name_STATUS(temp)
 		clusterSKU.Name = &name
 	}
 
 	// Set property "Tier":
 	if typedInput.Tier != nil {
-		tier := *typedInput.Tier
+		var temp string
+		temp = string(*typedInput.Tier)
+		tier := ManagedClusterSKU_Tier_STATUS(temp)
 		clusterSKU.Tier = &tier
 	}
 
@@ -16084,7 +16395,7 @@ func (profile *ManagedClusterStorageProfile) ConvertToARM(resolved genruntime.Co
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterStorageProfile_ARM{}
+	result := &arm.ManagedClusterStorageProfile{}
 
 	// Set property "BlobCSIDriver":
 	if profile.BlobCSIDriver != nil {
@@ -16092,7 +16403,7 @@ func (profile *ManagedClusterStorageProfile) ConvertToARM(resolved genruntime.Co
 		if err != nil {
 			return nil, err
 		}
-		blobCSIDriver := *blobCSIDriver_ARM.(*ManagedClusterStorageProfileBlobCSIDriver_ARM)
+		blobCSIDriver := *blobCSIDriver_ARM.(*arm.ManagedClusterStorageProfileBlobCSIDriver)
 		result.BlobCSIDriver = &blobCSIDriver
 	}
 
@@ -16102,7 +16413,7 @@ func (profile *ManagedClusterStorageProfile) ConvertToARM(resolved genruntime.Co
 		if err != nil {
 			return nil, err
 		}
-		diskCSIDriver := *diskCSIDriver_ARM.(*ManagedClusterStorageProfileDiskCSIDriver_ARM)
+		diskCSIDriver := *diskCSIDriver_ARM.(*arm.ManagedClusterStorageProfileDiskCSIDriver)
 		result.DiskCSIDriver = &diskCSIDriver
 	}
 
@@ -16112,7 +16423,7 @@ func (profile *ManagedClusterStorageProfile) ConvertToARM(resolved genruntime.Co
 		if err != nil {
 			return nil, err
 		}
-		fileCSIDriver := *fileCSIDriver_ARM.(*ManagedClusterStorageProfileFileCSIDriver_ARM)
+		fileCSIDriver := *fileCSIDriver_ARM.(*arm.ManagedClusterStorageProfileFileCSIDriver)
 		result.FileCSIDriver = &fileCSIDriver
 	}
 
@@ -16122,7 +16433,7 @@ func (profile *ManagedClusterStorageProfile) ConvertToARM(resolved genruntime.Co
 		if err != nil {
 			return nil, err
 		}
-		snapshotController := *snapshotController_ARM.(*ManagedClusterStorageProfileSnapshotController_ARM)
+		snapshotController := *snapshotController_ARM.(*arm.ManagedClusterStorageProfileSnapshotController)
 		result.SnapshotController = &snapshotController
 	}
 	return result, nil
@@ -16130,14 +16441,14 @@ func (profile *ManagedClusterStorageProfile) ConvertToARM(resolved genruntime.Co
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterStorageProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterStorageProfile_ARM{}
+	return &arm.ManagedClusterStorageProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterStorageProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterStorageProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterStorageProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterStorageProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterStorageProfile, got %T", armInput)
 	}
 
 	// Set property "BlobCSIDriver":
@@ -16326,14 +16637,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterStorageProfile_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterStorageProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterStorageProfile_STATUS_ARM{}
+	return &arm.ManagedClusterStorageProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterStorageProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterStorageProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterStorageProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterStorageProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterStorageProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "BlobCSIDriver":
@@ -16546,7 +16857,7 @@ func (profile *ManagedClusterWindowsProfile) ConvertToARM(resolved genruntime.Co
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterWindowsProfile_ARM{}
+	result := &arm.ManagedClusterWindowsProfile{}
 
 	// Set property "AdminPassword":
 	if profile.AdminPassword != nil {
@@ -16576,13 +16887,15 @@ func (profile *ManagedClusterWindowsProfile) ConvertToARM(resolved genruntime.Co
 		if err != nil {
 			return nil, err
 		}
-		gmsaProfile := *gmsaProfile_ARM.(*WindowsGmsaProfile_ARM)
+		gmsaProfile := *gmsaProfile_ARM.(*arm.WindowsGmsaProfile)
 		result.GmsaProfile = &gmsaProfile
 	}
 
 	// Set property "LicenseType":
 	if profile.LicenseType != nil {
-		licenseType := *profile.LicenseType
+		var temp string
+		temp = string(*profile.LicenseType)
+		licenseType := arm.ManagedClusterWindowsProfile_LicenseType(temp)
 		result.LicenseType = &licenseType
 	}
 	return result, nil
@@ -16590,14 +16903,14 @@ func (profile *ManagedClusterWindowsProfile) ConvertToARM(resolved genruntime.Co
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterWindowsProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterWindowsProfile_ARM{}
+	return &arm.ManagedClusterWindowsProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterWindowsProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterWindowsProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterWindowsProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterWindowsProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterWindowsProfile, got %T", armInput)
 	}
 
 	// no assignment for property "AdminPassword"
@@ -16627,7 +16940,9 @@ func (profile *ManagedClusterWindowsProfile) PopulateFromARM(owner genruntime.Ar
 
 	// Set property "LicenseType":
 	if typedInput.LicenseType != nil {
-		licenseType := *typedInput.LicenseType
+		var temp string
+		temp = string(*typedInput.LicenseType)
+		licenseType := ManagedClusterWindowsProfile_LicenseType(temp)
 		profile.LicenseType = &licenseType
 	}
 
@@ -16764,14 +17079,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterWindowsProfile_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterWindowsProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterWindowsProfile_STATUS_ARM{}
+	return &arm.ManagedClusterWindowsProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterWindowsProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterWindowsProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterWindowsProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterWindowsProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterWindowsProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "AdminUsername":
@@ -16799,7 +17114,9 @@ func (profile *ManagedClusterWindowsProfile_STATUS) PopulateFromARM(owner genrun
 
 	// Set property "LicenseType":
 	if typedInput.LicenseType != nil {
-		licenseType := *typedInput.LicenseType
+		var temp string
+		temp = string(*typedInput.LicenseType)
+		licenseType := ManagedClusterWindowsProfile_LicenseType_STATUS(temp)
 		profile.LicenseType = &licenseType
 	}
 
@@ -16907,7 +17224,7 @@ func (profile *ManagedClusterWorkloadAutoScalerProfile) ConvertToARM(resolved ge
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterWorkloadAutoScalerProfile_ARM{}
+	result := &arm.ManagedClusterWorkloadAutoScalerProfile{}
 
 	// Set property "Keda":
 	if profile.Keda != nil {
@@ -16915,7 +17232,7 @@ func (profile *ManagedClusterWorkloadAutoScalerProfile) ConvertToARM(resolved ge
 		if err != nil {
 			return nil, err
 		}
-		keda := *keda_ARM.(*ManagedClusterWorkloadAutoScalerProfileKeda_ARM)
+		keda := *keda_ARM.(*arm.ManagedClusterWorkloadAutoScalerProfileKeda)
 		result.Keda = &keda
 	}
 
@@ -16925,7 +17242,7 @@ func (profile *ManagedClusterWorkloadAutoScalerProfile) ConvertToARM(resolved ge
 		if err != nil {
 			return nil, err
 		}
-		verticalPodAutoscaler := *verticalPodAutoscaler_ARM.(*ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler_ARM)
+		verticalPodAutoscaler := *verticalPodAutoscaler_ARM.(*arm.ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler)
 		result.VerticalPodAutoscaler = &verticalPodAutoscaler
 	}
 	return result, nil
@@ -16933,14 +17250,14 @@ func (profile *ManagedClusterWorkloadAutoScalerProfile) ConvertToARM(resolved ge
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterWorkloadAutoScalerProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterWorkloadAutoScalerProfile_ARM{}
+	return &arm.ManagedClusterWorkloadAutoScalerProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterWorkloadAutoScalerProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterWorkloadAutoScalerProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterWorkloadAutoScalerProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterWorkloadAutoScalerProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterWorkloadAutoScalerProfile, got %T", armInput)
 	}
 
 	// Set property "Keda":
@@ -17051,14 +17368,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterWorkloadAutoScalerProfile_STA
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterWorkloadAutoScalerProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterWorkloadAutoScalerProfile_STATUS_ARM{}
+	return &arm.ManagedClusterWorkloadAutoScalerProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterWorkloadAutoScalerProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterWorkloadAutoScalerProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterWorkloadAutoScalerProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterWorkloadAutoScalerProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterWorkloadAutoScalerProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "Keda":
@@ -17168,19 +17485,21 @@ var _ genruntime.FromARMConverter = &PowerState_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (state *PowerState_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &PowerState_STATUS_ARM{}
+	return &arm.PowerState_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (state *PowerState_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(PowerState_STATUS_ARM)
+	typedInput, ok := armInput.(arm.PowerState_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected PowerState_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.PowerState_STATUS, got %T", armInput)
 	}
 
 	// Set property "Code":
 	if typedInput.Code != nil {
-		code := *typedInput.Code
+		var temp string
+		temp = string(*typedInput.Code)
+		code := PowerState_Code_STATUS(temp)
 		state.Code = &code
 	}
 
@@ -17253,7 +17572,7 @@ func (resource *PrivateLinkResource) ConvertToARM(resolved genruntime.ConvertToA
 	if resource == nil {
 		return nil, nil
 	}
-	result := &PrivateLinkResource_ARM{}
+	result := &arm.PrivateLinkResource{}
 
 	// Set property "GroupId":
 	if resource.GroupId != nil {
@@ -17292,14 +17611,14 @@ func (resource *PrivateLinkResource) ConvertToARM(resolved genruntime.ConvertToA
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (resource *PrivateLinkResource) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &PrivateLinkResource_ARM{}
+	return &arm.PrivateLinkResource{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (resource *PrivateLinkResource) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(PrivateLinkResource_ARM)
+	typedInput, ok := armInput.(arm.PrivateLinkResource)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected PrivateLinkResource_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.PrivateLinkResource, got %T", armInput)
 	}
 
 	// Set property "GroupId":
@@ -17419,14 +17738,14 @@ var _ genruntime.FromARMConverter = &PrivateLinkResource_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (resource *PrivateLinkResource_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &PrivateLinkResource_STATUS_ARM{}
+	return &arm.PrivateLinkResource_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (resource *PrivateLinkResource_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(PrivateLinkResource_STATUS_ARM)
+	typedInput, ok := armInput.(arm.PrivateLinkResource_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected PrivateLinkResource_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.PrivateLinkResource_STATUS, got %T", armInput)
 	}
 
 	// Set property "GroupId":
@@ -17548,7 +17867,7 @@ func (profile *SafeguardsProfile) ConvertToARM(resolved genruntime.ConvertToARMR
 	if profile == nil {
 		return nil, nil
 	}
-	result := &SafeguardsProfile_ARM{}
+	result := &arm.SafeguardsProfile{}
 
 	// Set property "ExcludedNamespaces":
 	for _, item := range profile.ExcludedNamespaces {
@@ -17557,7 +17876,9 @@ func (profile *SafeguardsProfile) ConvertToARM(resolved genruntime.ConvertToARMR
 
 	// Set property "Level":
 	if profile.Level != nil {
-		level := *profile.Level
+		var temp string
+		temp = string(*profile.Level)
+		level := arm.SafeguardsProfile_Level(temp)
 		result.Level = &level
 	}
 
@@ -17571,14 +17892,14 @@ func (profile *SafeguardsProfile) ConvertToARM(resolved genruntime.ConvertToARMR
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *SafeguardsProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &SafeguardsProfile_ARM{}
+	return &arm.SafeguardsProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *SafeguardsProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(SafeguardsProfile_ARM)
+	typedInput, ok := armInput.(arm.SafeguardsProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected SafeguardsProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.SafeguardsProfile, got %T", armInput)
 	}
 
 	// Set property "ExcludedNamespaces":
@@ -17588,7 +17909,9 @@ func (profile *SafeguardsProfile) PopulateFromARM(owner genruntime.ArbitraryOwne
 
 	// Set property "Level":
 	if typedInput.Level != nil {
-		level := *typedInput.Level
+		var temp string
+		temp = string(*typedInput.Level)
+		level := SafeguardsProfile_Level(temp)
 		profile.Level = &level
 	}
 
@@ -17674,14 +17997,14 @@ var _ genruntime.FromARMConverter = &SafeguardsProfile_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *SafeguardsProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &SafeguardsProfile_STATUS_ARM{}
+	return &arm.SafeguardsProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *SafeguardsProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(SafeguardsProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.SafeguardsProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected SafeguardsProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.SafeguardsProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "ExcludedNamespaces":
@@ -17691,7 +18014,9 @@ func (profile *SafeguardsProfile_STATUS) PopulateFromARM(owner genruntime.Arbitr
 
 	// Set property "Level":
 	if typedInput.Level != nil {
-		level := *typedInput.Level
+		var temp string
+		temp = string(*typedInput.Level)
+		level := SafeguardsProfile_Level_STATUS(temp)
 		profile.Level = &level
 	}
 
@@ -17785,7 +18110,7 @@ func (profile *ServiceMeshProfile) ConvertToARM(resolved genruntime.ConvertToARM
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ServiceMeshProfile_ARM{}
+	result := &arm.ServiceMeshProfile{}
 
 	// Set property "Istio":
 	if profile.Istio != nil {
@@ -17793,13 +18118,15 @@ func (profile *ServiceMeshProfile) ConvertToARM(resolved genruntime.ConvertToARM
 		if err != nil {
 			return nil, err
 		}
-		istio := *istio_ARM.(*IstioServiceMesh_ARM)
+		istio := *istio_ARM.(*arm.IstioServiceMesh)
 		result.Istio = &istio
 	}
 
 	// Set property "Mode":
 	if profile.Mode != nil {
-		mode := *profile.Mode
+		var temp string
+		temp = string(*profile.Mode)
+		mode := arm.ServiceMeshProfile_Mode(temp)
 		result.Mode = &mode
 	}
 	return result, nil
@@ -17807,14 +18134,14 @@ func (profile *ServiceMeshProfile) ConvertToARM(resolved genruntime.ConvertToARM
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ServiceMeshProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ServiceMeshProfile_ARM{}
+	return &arm.ServiceMeshProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ServiceMeshProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ServiceMeshProfile_ARM)
+	typedInput, ok := armInput.(arm.ServiceMeshProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ServiceMeshProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ServiceMeshProfile, got %T", armInput)
 	}
 
 	// Set property "Istio":
@@ -17830,7 +18157,9 @@ func (profile *ServiceMeshProfile) PopulateFromARM(owner genruntime.ArbitraryOwn
 
 	// Set property "Mode":
 	if typedInput.Mode != nil {
-		mode := *typedInput.Mode
+		var temp string
+		temp = string(*typedInput.Mode)
+		mode := ServiceMeshProfile_Mode(temp)
 		profile.Mode = &mode
 	}
 
@@ -17915,14 +18244,14 @@ var _ genruntime.FromARMConverter = &ServiceMeshProfile_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ServiceMeshProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ServiceMeshProfile_STATUS_ARM{}
+	return &arm.ServiceMeshProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ServiceMeshProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ServiceMeshProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ServiceMeshProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ServiceMeshProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ServiceMeshProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "Istio":
@@ -17938,7 +18267,9 @@ func (profile *ServiceMeshProfile_STATUS) PopulateFromARM(owner genruntime.Arbit
 
 	// Set property "Mode":
 	if typedInput.Mode != nil {
-		mode := *typedInput.Mode
+		var temp string
+		temp = string(*typedInput.Mode)
+		mode := ServiceMeshProfile_Mode_STATUS(temp)
 		profile.Mode = &mode
 	}
 
@@ -18035,14 +18366,14 @@ var _ genruntime.FromARMConverter = &SystemData_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (data *SystemData_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &SystemData_STATUS_ARM{}
+	return &arm.SystemData_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (data *SystemData_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(SystemData_STATUS_ARM)
+	typedInput, ok := armInput.(arm.SystemData_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected SystemData_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.SystemData_STATUS, got %T", armInput)
 	}
 
 	// Set property "CreatedAt":
@@ -18059,7 +18390,9 @@ func (data *SystemData_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerRe
 
 	// Set property "CreatedByType":
 	if typedInput.CreatedByType != nil {
-		createdByType := *typedInput.CreatedByType
+		var temp string
+		temp = string(*typedInput.CreatedByType)
+		createdByType := SystemData_CreatedByType_STATUS(temp)
 		data.CreatedByType = &createdByType
 	}
 
@@ -18077,7 +18410,9 @@ func (data *SystemData_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerRe
 
 	// Set property "LastModifiedByType":
 	if typedInput.LastModifiedByType != nil {
-		lastModifiedByType := *typedInput.LastModifiedByType
+		var temp string
+		temp = string(*typedInput.LastModifiedByType)
+		lastModifiedByType := SystemData_LastModifiedByType_STATUS(temp)
 		data.LastModifiedByType = &lastModifiedByType
 	}
 
@@ -18185,7 +18520,7 @@ func (identity *UserAssignedIdentity) ConvertToARM(resolved genruntime.ConvertTo
 	if identity == nil {
 		return nil, nil
 	}
-	result := &UserAssignedIdentity_ARM{}
+	result := &arm.UserAssignedIdentity{}
 
 	// Set property "ClientId":
 	if identity.ClientId != nil {
@@ -18213,14 +18548,14 @@ func (identity *UserAssignedIdentity) ConvertToARM(resolved genruntime.ConvertTo
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (identity *UserAssignedIdentity) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &UserAssignedIdentity_ARM{}
+	return &arm.UserAssignedIdentity{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (identity *UserAssignedIdentity) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(UserAssignedIdentity_ARM)
+	typedInput, ok := armInput.(arm.UserAssignedIdentity)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected UserAssignedIdentity_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.UserAssignedIdentity, got %T", armInput)
 	}
 
 	// Set property "ClientId":
@@ -18308,14 +18643,14 @@ var _ genruntime.FromARMConverter = &UserAssignedIdentity_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (identity *UserAssignedIdentity_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &UserAssignedIdentity_STATUS_ARM{}
+	return &arm.UserAssignedIdentity_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (identity *UserAssignedIdentity_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(UserAssignedIdentity_STATUS_ARM)
+	typedInput, ok := armInput.(arm.UserAssignedIdentity_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected UserAssignedIdentity_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.UserAssignedIdentity_STATUS, got %T", armInput)
 	}
 
 	// Set property "ClientId":
@@ -18395,7 +18730,7 @@ func (networking *AdvancedNetworking) ConvertToARM(resolved genruntime.ConvertTo
 	if networking == nil {
 		return nil, nil
 	}
-	result := &AdvancedNetworking_ARM{}
+	result := &arm.AdvancedNetworking{}
 
 	// Set property "Observability":
 	if networking.Observability != nil {
@@ -18403,7 +18738,7 @@ func (networking *AdvancedNetworking) ConvertToARM(resolved genruntime.ConvertTo
 		if err != nil {
 			return nil, err
 		}
-		observability := *observability_ARM.(*AdvancedNetworkingObservability_ARM)
+		observability := *observability_ARM.(*arm.AdvancedNetworkingObservability)
 		result.Observability = &observability
 	}
 	return result, nil
@@ -18411,14 +18746,14 @@ func (networking *AdvancedNetworking) ConvertToARM(resolved genruntime.ConvertTo
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (networking *AdvancedNetworking) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &AdvancedNetworking_ARM{}
+	return &arm.AdvancedNetworking{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (networking *AdvancedNetworking) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(AdvancedNetworking_ARM)
+	typedInput, ok := armInput.(arm.AdvancedNetworking)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected AdvancedNetworking_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.AdvancedNetworking, got %T", armInput)
 	}
 
 	// Set property "Observability":
@@ -18494,14 +18829,14 @@ var _ genruntime.FromARMConverter = &AdvancedNetworking_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (networking *AdvancedNetworking_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &AdvancedNetworking_STATUS_ARM{}
+	return &arm.AdvancedNetworking_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (networking *AdvancedNetworking_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(AdvancedNetworking_STATUS_ARM)
+	typedInput, ok := armInput.(arm.AdvancedNetworking_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected AdvancedNetworking_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.AdvancedNetworking_STATUS, got %T", armInput)
 	}
 
 	// Set property "Observability":
@@ -18594,7 +18929,7 @@ func (vaultKms *AzureKeyVaultKms) ConvertToARM(resolved genruntime.ConvertToARMR
 	if vaultKms == nil {
 		return nil, nil
 	}
-	result := &AzureKeyVaultKms_ARM{}
+	result := &arm.AzureKeyVaultKms{}
 
 	// Set property "Enabled":
 	if vaultKms.Enabled != nil {
@@ -18610,7 +18945,9 @@ func (vaultKms *AzureKeyVaultKms) ConvertToARM(resolved genruntime.ConvertToARMR
 
 	// Set property "KeyVaultNetworkAccess":
 	if vaultKms.KeyVaultNetworkAccess != nil {
-		keyVaultNetworkAccess := *vaultKms.KeyVaultNetworkAccess
+		var temp string
+		temp = string(*vaultKms.KeyVaultNetworkAccess)
+		keyVaultNetworkAccess := arm.AzureKeyVaultKms_KeyVaultNetworkAccess(temp)
 		result.KeyVaultNetworkAccess = &keyVaultNetworkAccess
 	}
 
@@ -18628,14 +18965,14 @@ func (vaultKms *AzureKeyVaultKms) ConvertToARM(resolved genruntime.ConvertToARMR
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (vaultKms *AzureKeyVaultKms) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &AzureKeyVaultKms_ARM{}
+	return &arm.AzureKeyVaultKms{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (vaultKms *AzureKeyVaultKms) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(AzureKeyVaultKms_ARM)
+	typedInput, ok := armInput.(arm.AzureKeyVaultKms)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected AzureKeyVaultKms_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.AzureKeyVaultKms, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -18652,7 +18989,9 @@ func (vaultKms *AzureKeyVaultKms) PopulateFromARM(owner genruntime.ArbitraryOwne
 
 	// Set property "KeyVaultNetworkAccess":
 	if typedInput.KeyVaultNetworkAccess != nil {
-		keyVaultNetworkAccess := *typedInput.KeyVaultNetworkAccess
+		var temp string
+		temp = string(*typedInput.KeyVaultNetworkAccess)
+		keyVaultNetworkAccess := AzureKeyVaultKms_KeyVaultNetworkAccess(temp)
 		vaultKms.KeyVaultNetworkAccess = &keyVaultNetworkAccess
 	}
 
@@ -18765,14 +19104,14 @@ var _ genruntime.FromARMConverter = &AzureKeyVaultKms_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (vaultKms *AzureKeyVaultKms_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &AzureKeyVaultKms_STATUS_ARM{}
+	return &arm.AzureKeyVaultKms_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (vaultKms *AzureKeyVaultKms_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(AzureKeyVaultKms_STATUS_ARM)
+	typedInput, ok := armInput.(arm.AzureKeyVaultKms_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected AzureKeyVaultKms_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.AzureKeyVaultKms_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -18789,7 +19128,9 @@ func (vaultKms *AzureKeyVaultKms_STATUS) PopulateFromARM(owner genruntime.Arbitr
 
 	// Set property "KeyVaultNetworkAccess":
 	if typedInput.KeyVaultNetworkAccess != nil {
-		keyVaultNetworkAccess := *typedInput.KeyVaultNetworkAccess
+		var temp string
+		temp = string(*typedInput.KeyVaultNetworkAccess)
+		keyVaultNetworkAccess := AzureKeyVaultKms_KeyVaultNetworkAccess_STATUS(temp)
 		vaultKms.KeyVaultNetworkAccess = &keyVaultNetworkAccess
 	}
 
@@ -18890,7 +19231,7 @@ func (config *ContainerServiceNetworkProfile_KubeProxyConfig) ConvertToARM(resol
 	if config == nil {
 		return nil, nil
 	}
-	result := &ContainerServiceNetworkProfile_KubeProxyConfig_ARM{}
+	result := &arm.ContainerServiceNetworkProfile_KubeProxyConfig{}
 
 	// Set property "Enabled":
 	if config.Enabled != nil {
@@ -18904,13 +19245,15 @@ func (config *ContainerServiceNetworkProfile_KubeProxyConfig) ConvertToARM(resol
 		if err != nil {
 			return nil, err
 		}
-		ipvsConfig := *ipvsConfig_ARM.(*ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig_ARM)
+		ipvsConfig := *ipvsConfig_ARM.(*arm.ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig)
 		result.IpvsConfig = &ipvsConfig
 	}
 
 	// Set property "Mode":
 	if config.Mode != nil {
-		mode := *config.Mode
+		var temp string
+		temp = string(*config.Mode)
+		mode := arm.ContainerServiceNetworkProfile_KubeProxyConfig_Mode(temp)
 		result.Mode = &mode
 	}
 	return result, nil
@@ -18918,14 +19261,14 @@ func (config *ContainerServiceNetworkProfile_KubeProxyConfig) ConvertToARM(resol
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (config *ContainerServiceNetworkProfile_KubeProxyConfig) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ContainerServiceNetworkProfile_KubeProxyConfig_ARM{}
+	return &arm.ContainerServiceNetworkProfile_KubeProxyConfig{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (config *ContainerServiceNetworkProfile_KubeProxyConfig) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ContainerServiceNetworkProfile_KubeProxyConfig_ARM)
+	typedInput, ok := armInput.(arm.ContainerServiceNetworkProfile_KubeProxyConfig)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ContainerServiceNetworkProfile_KubeProxyConfig_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ContainerServiceNetworkProfile_KubeProxyConfig, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -18947,7 +19290,9 @@ func (config *ContainerServiceNetworkProfile_KubeProxyConfig) PopulateFromARM(ow
 
 	// Set property "Mode":
 	if typedInput.Mode != nil {
-		mode := *typedInput.Mode
+		var temp string
+		temp = string(*typedInput.Mode)
+		mode := ContainerServiceNetworkProfile_KubeProxyConfig_Mode(temp)
 		config.Mode = &mode
 	}
 
@@ -19051,14 +19396,14 @@ var _ genruntime.FromARMConverter = &ContainerServiceNetworkProfile_KubeProxyCon
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (config *ContainerServiceNetworkProfile_KubeProxyConfig_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ContainerServiceNetworkProfile_KubeProxyConfig_STATUS_ARM{}
+	return &arm.ContainerServiceNetworkProfile_KubeProxyConfig_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (config *ContainerServiceNetworkProfile_KubeProxyConfig_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ContainerServiceNetworkProfile_KubeProxyConfig_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ContainerServiceNetworkProfile_KubeProxyConfig_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ContainerServiceNetworkProfile_KubeProxyConfig_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ContainerServiceNetworkProfile_KubeProxyConfig_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -19080,7 +19425,9 @@ func (config *ContainerServiceNetworkProfile_KubeProxyConfig_STATUS) PopulateFro
 
 	// Set property "Mode":
 	if typedInput.Mode != nil {
-		mode := *typedInput.Mode
+		var temp string
+		temp = string(*typedInput.Mode)
+		mode := ContainerServiceNetworkProfile_KubeProxyConfig_Mode_STATUS(temp)
 		config.Mode = &mode
 	}
 
@@ -19221,7 +19568,7 @@ func (configuration *ContainerServiceSshConfiguration) ConvertToARM(resolved gen
 	if configuration == nil {
 		return nil, nil
 	}
-	result := &ContainerServiceSshConfiguration_ARM{}
+	result := &arm.ContainerServiceSshConfiguration{}
 
 	// Set property "PublicKeys":
 	for _, item := range configuration.PublicKeys {
@@ -19229,21 +19576,21 @@ func (configuration *ContainerServiceSshConfiguration) ConvertToARM(resolved gen
 		if err != nil {
 			return nil, err
 		}
-		result.PublicKeys = append(result.PublicKeys, *item_ARM.(*ContainerServiceSshPublicKey_ARM))
+		result.PublicKeys = append(result.PublicKeys, *item_ARM.(*arm.ContainerServiceSshPublicKey))
 	}
 	return result, nil
 }
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (configuration *ContainerServiceSshConfiguration) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ContainerServiceSshConfiguration_ARM{}
+	return &arm.ContainerServiceSshConfiguration{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (configuration *ContainerServiceSshConfiguration) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ContainerServiceSshConfiguration_ARM)
+	typedInput, ok := armInput.(arm.ContainerServiceSshConfiguration)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ContainerServiceSshConfiguration_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ContainerServiceSshConfiguration, got %T", armInput)
 	}
 
 	// Set property "PublicKeys":
@@ -19329,14 +19676,14 @@ var _ genruntime.FromARMConverter = &ContainerServiceSshConfiguration_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (configuration *ContainerServiceSshConfiguration_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ContainerServiceSshConfiguration_STATUS_ARM{}
+	return &arm.ContainerServiceSshConfiguration_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (configuration *ContainerServiceSshConfiguration_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ContainerServiceSshConfiguration_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ContainerServiceSshConfiguration_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ContainerServiceSshConfiguration_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ContainerServiceSshConfiguration_STATUS, got %T", armInput)
 	}
 
 	// Set property "PublicKeys":
@@ -19435,7 +19782,7 @@ func (resource *DelegatedResource) ConvertToARM(resolved genruntime.ConvertToARM
 	if resource == nil {
 		return nil, nil
 	}
-	result := &DelegatedResource_ARM{}
+	result := &arm.DelegatedResource{}
 
 	// Set property "Location":
 	if resource.Location != nil {
@@ -19469,14 +19816,14 @@ func (resource *DelegatedResource) ConvertToARM(resolved genruntime.ConvertToARM
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (resource *DelegatedResource) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &DelegatedResource_ARM{}
+	return &arm.DelegatedResource{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (resource *DelegatedResource) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(DelegatedResource_ARM)
+	typedInput, ok := armInput.(arm.DelegatedResource)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected DelegatedResource_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.DelegatedResource, got %T", armInput)
 	}
 
 	// Set property "Location":
@@ -19589,14 +19936,14 @@ var _ genruntime.FromARMConverter = &DelegatedResource_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (resource *DelegatedResource_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &DelegatedResource_STATUS_ARM{}
+	return &arm.DelegatedResource_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (resource *DelegatedResource_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(DelegatedResource_STATUS_ARM)
+	typedInput, ok := armInput.(arm.DelegatedResource_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected DelegatedResource_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.DelegatedResource_STATUS, got %T", armInput)
 	}
 
 	// Set property "Location":
@@ -19715,6 +20062,27 @@ var expander_STATUS_Values = map[string]Expander_STATUS{
 	"random":      Expander_STATUS_Random,
 }
 
+// The type of extendedLocation.
+// +kubebuilder:validation:Enum={"EdgeZone"}
+type ExtendedLocationType string
+
+const ExtendedLocationType_EdgeZone = ExtendedLocationType("EdgeZone")
+
+// Mapping from string to ExtendedLocationType
+var extendedLocationType_Values = map[string]ExtendedLocationType{
+	"edgezone": ExtendedLocationType_EdgeZone,
+}
+
+// The type of extendedLocation.
+type ExtendedLocationType_STATUS string
+
+const ExtendedLocationType_STATUS_EdgeZone = ExtendedLocationType_STATUS("EdgeZone")
+
+// Mapping from string to ExtendedLocationType_STATUS
+var extendedLocationType_STATUS_Values = map[string]ExtendedLocationType_STATUS{
+	"edgezone": ExtendedLocationType_STATUS_EdgeZone,
+}
+
 // To determine if address belongs IPv4 or IPv6 family.
 // +kubebuilder:validation:Enum={"IPv4","IPv6"}
 type IpFamily string
@@ -19767,7 +20135,7 @@ func (mesh *IstioServiceMesh) ConvertToARM(resolved genruntime.ConvertToARMResol
 	if mesh == nil {
 		return nil, nil
 	}
-	result := &IstioServiceMesh_ARM{}
+	result := &arm.IstioServiceMesh{}
 
 	// Set property "CertificateAuthority":
 	if mesh.CertificateAuthority != nil {
@@ -19775,7 +20143,7 @@ func (mesh *IstioServiceMesh) ConvertToARM(resolved genruntime.ConvertToARMResol
 		if err != nil {
 			return nil, err
 		}
-		certificateAuthority := *certificateAuthority_ARM.(*IstioCertificateAuthority_ARM)
+		certificateAuthority := *certificateAuthority_ARM.(*arm.IstioCertificateAuthority)
 		result.CertificateAuthority = &certificateAuthority
 	}
 
@@ -19785,7 +20153,7 @@ func (mesh *IstioServiceMesh) ConvertToARM(resolved genruntime.ConvertToARMResol
 		if err != nil {
 			return nil, err
 		}
-		components := *components_ARM.(*IstioComponents_ARM)
+		components := *components_ARM.(*arm.IstioComponents)
 		result.Components = &components
 	}
 
@@ -19798,14 +20166,14 @@ func (mesh *IstioServiceMesh) ConvertToARM(resolved genruntime.ConvertToARMResol
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (mesh *IstioServiceMesh) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &IstioServiceMesh_ARM{}
+	return &arm.IstioServiceMesh{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (mesh *IstioServiceMesh) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(IstioServiceMesh_ARM)
+	typedInput, ok := armInput.(arm.IstioServiceMesh)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected IstioServiceMesh_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.IstioServiceMesh, got %T", armInput)
 	}
 
 	// Set property "CertificateAuthority":
@@ -19955,14 +20323,14 @@ var _ genruntime.FromARMConverter = &IstioServiceMesh_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (mesh *IstioServiceMesh_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &IstioServiceMesh_STATUS_ARM{}
+	return &arm.IstioServiceMesh_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (mesh *IstioServiceMesh_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(IstioServiceMesh_STATUS_ARM)
+	typedInput, ok := armInput.(arm.IstioServiceMesh_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected IstioServiceMesh_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.IstioServiceMesh_STATUS, got %T", armInput)
 	}
 
 	// Set property "CertificateAuthority":
@@ -20205,7 +20573,7 @@ func (monitoring *ManagedClusterAzureMonitorProfileAppMonitoring) ConvertToARM(r
 	if monitoring == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterAzureMonitorProfileAppMonitoring_ARM{}
+	result := &arm.ManagedClusterAzureMonitorProfileAppMonitoring{}
 
 	// Set property "AutoInstrumentation":
 	if monitoring.AutoInstrumentation != nil {
@@ -20213,7 +20581,7 @@ func (monitoring *ManagedClusterAzureMonitorProfileAppMonitoring) ConvertToARM(r
 		if err != nil {
 			return nil, err
 		}
-		autoInstrumentation := *autoInstrumentation_ARM.(*ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrumentation_ARM)
+		autoInstrumentation := *autoInstrumentation_ARM.(*arm.ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrumentation)
 		result.AutoInstrumentation = &autoInstrumentation
 	}
 
@@ -20223,7 +20591,7 @@ func (monitoring *ManagedClusterAzureMonitorProfileAppMonitoring) ConvertToARM(r
 		if err != nil {
 			return nil, err
 		}
-		openTelemetryLogs := *openTelemetryLogs_ARM.(*ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs_ARM)
+		openTelemetryLogs := *openTelemetryLogs_ARM.(*arm.ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs)
 		result.OpenTelemetryLogs = &openTelemetryLogs
 	}
 
@@ -20233,7 +20601,7 @@ func (monitoring *ManagedClusterAzureMonitorProfileAppMonitoring) ConvertToARM(r
 		if err != nil {
 			return nil, err
 		}
-		openTelemetryMetrics := *openTelemetryMetrics_ARM.(*ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetrics_ARM)
+		openTelemetryMetrics := *openTelemetryMetrics_ARM.(*arm.ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetrics)
 		result.OpenTelemetryMetrics = &openTelemetryMetrics
 	}
 	return result, nil
@@ -20241,14 +20609,14 @@ func (monitoring *ManagedClusterAzureMonitorProfileAppMonitoring) ConvertToARM(r
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (monitoring *ManagedClusterAzureMonitorProfileAppMonitoring) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAzureMonitorProfileAppMonitoring_ARM{}
+	return &arm.ManagedClusterAzureMonitorProfileAppMonitoring{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (monitoring *ManagedClusterAzureMonitorProfileAppMonitoring) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAzureMonitorProfileAppMonitoring_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAzureMonitorProfileAppMonitoring)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAzureMonitorProfileAppMonitoring_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAzureMonitorProfileAppMonitoring, got %T", armInput)
 	}
 
 	// Set property "AutoInstrumentation":
@@ -20407,14 +20775,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterAzureMonitorProfileAppMonitor
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (monitoring *ManagedClusterAzureMonitorProfileAppMonitoring_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAzureMonitorProfileAppMonitoring_STATUS_ARM{}
+	return &arm.ManagedClusterAzureMonitorProfileAppMonitoring_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (monitoring *ManagedClusterAzureMonitorProfileAppMonitoring_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAzureMonitorProfileAppMonitoring_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAzureMonitorProfileAppMonitoring_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAzureMonitorProfileAppMonitoring_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAzureMonitorProfileAppMonitoring_STATUS, got %T", armInput)
 	}
 
 	// Set property "AutoInstrumentation":
@@ -20580,7 +20948,7 @@ func (insights *ManagedClusterAzureMonitorProfileContainerInsights) ConvertToARM
 	if insights == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterAzureMonitorProfileContainerInsights_ARM{}
+	result := &arm.ManagedClusterAzureMonitorProfileContainerInsights{}
 
 	// Set property "DisableCustomMetrics":
 	if insights.DisableCustomMetrics != nil {
@@ -20620,14 +20988,14 @@ func (insights *ManagedClusterAzureMonitorProfileContainerInsights) ConvertToARM
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (insights *ManagedClusterAzureMonitorProfileContainerInsights) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAzureMonitorProfileContainerInsights_ARM{}
+	return &arm.ManagedClusterAzureMonitorProfileContainerInsights{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (insights *ManagedClusterAzureMonitorProfileContainerInsights) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAzureMonitorProfileContainerInsights_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAzureMonitorProfileContainerInsights)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAzureMonitorProfileContainerInsights_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAzureMonitorProfileContainerInsights, got %T", armInput)
 	}
 
 	// Set property "DisableCustomMetrics":
@@ -20781,14 +21149,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterAzureMonitorProfileContainerI
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (insights *ManagedClusterAzureMonitorProfileContainerInsights_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAzureMonitorProfileContainerInsights_STATUS_ARM{}
+	return &arm.ManagedClusterAzureMonitorProfileContainerInsights_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (insights *ManagedClusterAzureMonitorProfileContainerInsights_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAzureMonitorProfileContainerInsights_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAzureMonitorProfileContainerInsights_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAzureMonitorProfileContainerInsights_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAzureMonitorProfileContainerInsights_STATUS, got %T", armInput)
 	}
 
 	// Set property "DisableCustomMetrics":
@@ -20925,7 +21293,7 @@ func (metrics *ManagedClusterAzureMonitorProfileMetrics) ConvertToARM(resolved g
 	if metrics == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterAzureMonitorProfileMetrics_ARM{}
+	result := &arm.ManagedClusterAzureMonitorProfileMetrics{}
 
 	// Set property "Enabled":
 	if metrics.Enabled != nil {
@@ -20939,7 +21307,7 @@ func (metrics *ManagedClusterAzureMonitorProfileMetrics) ConvertToARM(resolved g
 		if err != nil {
 			return nil, err
 		}
-		kubeStateMetrics := *kubeStateMetrics_ARM.(*ManagedClusterAzureMonitorProfileKubeStateMetrics_ARM)
+		kubeStateMetrics := *kubeStateMetrics_ARM.(*arm.ManagedClusterAzureMonitorProfileKubeStateMetrics)
 		result.KubeStateMetrics = &kubeStateMetrics
 	}
 	return result, nil
@@ -20947,14 +21315,14 @@ func (metrics *ManagedClusterAzureMonitorProfileMetrics) ConvertToARM(resolved g
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (metrics *ManagedClusterAzureMonitorProfileMetrics) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAzureMonitorProfileMetrics_ARM{}
+	return &arm.ManagedClusterAzureMonitorProfileMetrics{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (metrics *ManagedClusterAzureMonitorProfileMetrics) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAzureMonitorProfileMetrics_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAzureMonitorProfileMetrics)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAzureMonitorProfileMetrics_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAzureMonitorProfileMetrics, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -21054,14 +21422,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterAzureMonitorProfileMetrics_ST
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (metrics *ManagedClusterAzureMonitorProfileMetrics_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAzureMonitorProfileMetrics_STATUS_ARM{}
+	return &arm.ManagedClusterAzureMonitorProfileMetrics_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (metrics *ManagedClusterAzureMonitorProfileMetrics_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAzureMonitorProfileMetrics_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAzureMonitorProfileMetrics_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAzureMonitorProfileMetrics_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAzureMonitorProfileMetrics_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -21190,7 +21558,7 @@ func (analysis *ManagedClusterCostAnalysis) ConvertToARM(resolved genruntime.Con
 	if analysis == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterCostAnalysis_ARM{}
+	result := &arm.ManagedClusterCostAnalysis{}
 
 	// Set property "Enabled":
 	if analysis.Enabled != nil {
@@ -21202,14 +21570,14 @@ func (analysis *ManagedClusterCostAnalysis) ConvertToARM(resolved genruntime.Con
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (analysis *ManagedClusterCostAnalysis) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterCostAnalysis_ARM{}
+	return &arm.ManagedClusterCostAnalysis{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (analysis *ManagedClusterCostAnalysis) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterCostAnalysis_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterCostAnalysis)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterCostAnalysis_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterCostAnalysis, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -21273,14 +21641,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterCostAnalysis_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (analysis *ManagedClusterCostAnalysis_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterCostAnalysis_STATUS_ARM{}
+	return &arm.ManagedClusterCostAnalysis_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (analysis *ManagedClusterCostAnalysis_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterCostAnalysis_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterCostAnalysis_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterCostAnalysis_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterCostAnalysis_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -21332,6 +21700,37 @@ func (analysis *ManagedClusterCostAnalysis_STATUS) AssignProperties_To_ManagedCl
 	return nil
 }
 
+// +kubebuilder:validation:Enum={"None","SystemAssigned","UserAssigned"}
+type ManagedClusterIdentity_Type string
+
+const (
+	ManagedClusterIdentity_Type_None           = ManagedClusterIdentity_Type("None")
+	ManagedClusterIdentity_Type_SystemAssigned = ManagedClusterIdentity_Type("SystemAssigned")
+	ManagedClusterIdentity_Type_UserAssigned   = ManagedClusterIdentity_Type("UserAssigned")
+)
+
+// Mapping from string to ManagedClusterIdentity_Type
+var managedClusterIdentity_Type_Values = map[string]ManagedClusterIdentity_Type{
+	"none":           ManagedClusterIdentity_Type_None,
+	"systemassigned": ManagedClusterIdentity_Type_SystemAssigned,
+	"userassigned":   ManagedClusterIdentity_Type_UserAssigned,
+}
+
+type ManagedClusterIdentity_Type_STATUS string
+
+const (
+	ManagedClusterIdentity_Type_STATUS_None           = ManagedClusterIdentity_Type_STATUS("None")
+	ManagedClusterIdentity_Type_STATUS_SystemAssigned = ManagedClusterIdentity_Type_STATUS("SystemAssigned")
+	ManagedClusterIdentity_Type_STATUS_UserAssigned   = ManagedClusterIdentity_Type_STATUS("UserAssigned")
+)
+
+// Mapping from string to ManagedClusterIdentity_Type_STATUS
+var managedClusterIdentity_Type_STATUS_Values = map[string]ManagedClusterIdentity_Type_STATUS{
+	"none":           ManagedClusterIdentity_Type_STATUS_None,
+	"systemassigned": ManagedClusterIdentity_Type_STATUS_SystemAssigned,
+	"userassigned":   ManagedClusterIdentity_Type_STATUS_UserAssigned,
+}
+
 type ManagedClusterIdentity_UserAssignedIdentities_STATUS struct {
 	// ClientId: The client id of user assigned identity.
 	ClientId *string `json:"clientId,omitempty"`
@@ -21344,14 +21743,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterIdentity_UserAssignedIdentiti
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (identities *ManagedClusterIdentity_UserAssignedIdentities_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterIdentity_UserAssignedIdentities_STATUS_ARM{}
+	return &arm.ManagedClusterIdentity_UserAssignedIdentities_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (identities *ManagedClusterIdentity_UserAssignedIdentities_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterIdentity_UserAssignedIdentities_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterIdentity_UserAssignedIdentities_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterIdentity_UserAssignedIdentities_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterIdentity_UserAssignedIdentities_STATUS, got %T", armInput)
 	}
 
 	// Set property "ClientId":
@@ -21423,7 +21822,7 @@ func (routing *ManagedClusterIngressProfileWebAppRouting) ConvertToARM(resolved 
 	if routing == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterIngressProfileWebAppRouting_ARM{}
+	result := &arm.ManagedClusterIngressProfileWebAppRouting{}
 
 	// Set property "DnsZoneResourceIds":
 	for _, item := range routing.DnsZoneResourceReferences {
@@ -21444,14 +21843,14 @@ func (routing *ManagedClusterIngressProfileWebAppRouting) ConvertToARM(resolved 
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (routing *ManagedClusterIngressProfileWebAppRouting) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterIngressProfileWebAppRouting_ARM{}
+	return &arm.ManagedClusterIngressProfileWebAppRouting{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (routing *ManagedClusterIngressProfileWebAppRouting) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterIngressProfileWebAppRouting_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterIngressProfileWebAppRouting)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterIngressProfileWebAppRouting_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterIngressProfileWebAppRouting, got %T", armInput)
 	}
 
 	// no assignment for property "DnsZoneResourceReferences"
@@ -21552,14 +21951,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterIngressProfileWebAppRouting_S
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (routing *ManagedClusterIngressProfileWebAppRouting_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterIngressProfileWebAppRouting_STATUS_ARM{}
+	return &arm.ManagedClusterIngressProfileWebAppRouting_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (routing *ManagedClusterIngressProfileWebAppRouting_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterIngressProfileWebAppRouting_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterIngressProfileWebAppRouting_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterIngressProfileWebAppRouting_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterIngressProfileWebAppRouting_STATUS, got %T", armInput)
 	}
 
 	// Set property "DnsZoneResourceIds":
@@ -21700,7 +22099,7 @@ func (profile *ManagedClusterLoadBalancerProfile) ConvertToARM(resolved genrunti
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterLoadBalancerProfile_ARM{}
+	result := &arm.ManagedClusterLoadBalancerProfile{}
 
 	// Set property "AllocatedOutboundPorts":
 	if profile.AllocatedOutboundPorts != nil {
@@ -21710,13 +22109,17 @@ func (profile *ManagedClusterLoadBalancerProfile) ConvertToARM(resolved genrunti
 
 	// Set property "BackendPoolType":
 	if profile.BackendPoolType != nil {
-		backendPoolType := *profile.BackendPoolType
+		var temp string
+		temp = string(*profile.BackendPoolType)
+		backendPoolType := arm.ManagedClusterLoadBalancerProfile_BackendPoolType(temp)
 		result.BackendPoolType = &backendPoolType
 	}
 
 	// Set property "ClusterServiceLoadBalancerHealthProbeMode":
 	if profile.ClusterServiceLoadBalancerHealthProbeMode != nil {
-		clusterServiceLoadBalancerHealthProbeMode := *profile.ClusterServiceLoadBalancerHealthProbeMode
+		var temp string
+		temp = string(*profile.ClusterServiceLoadBalancerHealthProbeMode)
+		clusterServiceLoadBalancerHealthProbeMode := arm.ManagedClusterLoadBalancerProfile_ClusterServiceLoadBalancerHealthProbeMode(temp)
 		result.ClusterServiceLoadBalancerHealthProbeMode = &clusterServiceLoadBalancerHealthProbeMode
 	}
 
@@ -21726,7 +22129,7 @@ func (profile *ManagedClusterLoadBalancerProfile) ConvertToARM(resolved genrunti
 		if err != nil {
 			return nil, err
 		}
-		result.EffectiveOutboundIPs = append(result.EffectiveOutboundIPs, *item_ARM.(*ResourceReference_ARM))
+		result.EffectiveOutboundIPs = append(result.EffectiveOutboundIPs, *item_ARM.(*arm.ResourceReference))
 	}
 
 	// Set property "EnableMultipleStandardLoadBalancers":
@@ -21747,7 +22150,7 @@ func (profile *ManagedClusterLoadBalancerProfile) ConvertToARM(resolved genrunti
 		if err != nil {
 			return nil, err
 		}
-		managedOutboundIPs := *managedOutboundIPs_ARM.(*ManagedClusterLoadBalancerProfile_ManagedOutboundIPs_ARM)
+		managedOutboundIPs := *managedOutboundIPs_ARM.(*arm.ManagedClusterLoadBalancerProfile_ManagedOutboundIPs)
 		result.ManagedOutboundIPs = &managedOutboundIPs
 	}
 
@@ -21757,7 +22160,7 @@ func (profile *ManagedClusterLoadBalancerProfile) ConvertToARM(resolved genrunti
 		if err != nil {
 			return nil, err
 		}
-		outboundIPPrefixes := *outboundIPPrefixes_ARM.(*ManagedClusterLoadBalancerProfile_OutboundIPPrefixes_ARM)
+		outboundIPPrefixes := *outboundIPPrefixes_ARM.(*arm.ManagedClusterLoadBalancerProfile_OutboundIPPrefixes)
 		result.OutboundIPPrefixes = &outboundIPPrefixes
 	}
 
@@ -21767,7 +22170,7 @@ func (profile *ManagedClusterLoadBalancerProfile) ConvertToARM(resolved genrunti
 		if err != nil {
 			return nil, err
 		}
-		outboundIPs := *outboundIPs_ARM.(*ManagedClusterLoadBalancerProfile_OutboundIPs_ARM)
+		outboundIPs := *outboundIPs_ARM.(*arm.ManagedClusterLoadBalancerProfile_OutboundIPs)
 		result.OutboundIPs = &outboundIPs
 	}
 	return result, nil
@@ -21775,14 +22178,14 @@ func (profile *ManagedClusterLoadBalancerProfile) ConvertToARM(resolved genrunti
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterLoadBalancerProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterLoadBalancerProfile_ARM{}
+	return &arm.ManagedClusterLoadBalancerProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterLoadBalancerProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterLoadBalancerProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterLoadBalancerProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterLoadBalancerProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterLoadBalancerProfile, got %T", armInput)
 	}
 
 	// Set property "AllocatedOutboundPorts":
@@ -21793,13 +22196,17 @@ func (profile *ManagedClusterLoadBalancerProfile) PopulateFromARM(owner genrunti
 
 	// Set property "BackendPoolType":
 	if typedInput.BackendPoolType != nil {
-		backendPoolType := *typedInput.BackendPoolType
+		var temp string
+		temp = string(*typedInput.BackendPoolType)
+		backendPoolType := ManagedClusterLoadBalancerProfile_BackendPoolType(temp)
 		profile.BackendPoolType = &backendPoolType
 	}
 
 	// Set property "ClusterServiceLoadBalancerHealthProbeMode":
 	if typedInput.ClusterServiceLoadBalancerHealthProbeMode != nil {
-		clusterServiceLoadBalancerHealthProbeMode := *typedInput.ClusterServiceLoadBalancerHealthProbeMode
+		var temp string
+		temp = string(*typedInput.ClusterServiceLoadBalancerHealthProbeMode)
+		clusterServiceLoadBalancerHealthProbeMode := ManagedClusterLoadBalancerProfile_ClusterServiceLoadBalancerHealthProbeMode(temp)
 		profile.ClusterServiceLoadBalancerHealthProbeMode = &clusterServiceLoadBalancerHealthProbeMode
 	}
 
@@ -22111,14 +22518,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterLoadBalancerProfile_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterLoadBalancerProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterLoadBalancerProfile_STATUS_ARM{}
+	return &arm.ManagedClusterLoadBalancerProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterLoadBalancerProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterLoadBalancerProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterLoadBalancerProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterLoadBalancerProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterLoadBalancerProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "AllocatedOutboundPorts":
@@ -22129,13 +22536,17 @@ func (profile *ManagedClusterLoadBalancerProfile_STATUS) PopulateFromARM(owner g
 
 	// Set property "BackendPoolType":
 	if typedInput.BackendPoolType != nil {
-		backendPoolType := *typedInput.BackendPoolType
+		var temp string
+		temp = string(*typedInput.BackendPoolType)
+		backendPoolType := ManagedClusterLoadBalancerProfile_BackendPoolType_STATUS(temp)
 		profile.BackendPoolType = &backendPoolType
 	}
 
 	// Set property "ClusterServiceLoadBalancerHealthProbeMode":
 	if typedInput.ClusterServiceLoadBalancerHealthProbeMode != nil {
-		clusterServiceLoadBalancerHealthProbeMode := *typedInput.ClusterServiceLoadBalancerHealthProbeMode
+		var temp string
+		temp = string(*typedInput.ClusterServiceLoadBalancerHealthProbeMode)
+		clusterServiceLoadBalancerHealthProbeMode := ManagedClusterLoadBalancerProfile_ClusterServiceLoadBalancerHealthProbeMode_STATUS(temp)
 		profile.ClusterServiceLoadBalancerHealthProbeMode = &clusterServiceLoadBalancerHealthProbeMode
 	}
 
@@ -22413,7 +22824,7 @@ func (profile *ManagedClusterNATGatewayProfile) ConvertToARM(resolved genruntime
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterNATGatewayProfile_ARM{}
+	result := &arm.ManagedClusterNATGatewayProfile{}
 
 	// Set property "EffectiveOutboundIPs":
 	for _, item := range profile.EffectiveOutboundIPs {
@@ -22421,7 +22832,7 @@ func (profile *ManagedClusterNATGatewayProfile) ConvertToARM(resolved genruntime
 		if err != nil {
 			return nil, err
 		}
-		result.EffectiveOutboundIPs = append(result.EffectiveOutboundIPs, *item_ARM.(*ResourceReference_ARM))
+		result.EffectiveOutboundIPs = append(result.EffectiveOutboundIPs, *item_ARM.(*arm.ResourceReference))
 	}
 
 	// Set property "IdleTimeoutInMinutes":
@@ -22436,7 +22847,7 @@ func (profile *ManagedClusterNATGatewayProfile) ConvertToARM(resolved genruntime
 		if err != nil {
 			return nil, err
 		}
-		managedOutboundIPProfile := *managedOutboundIPProfile_ARM.(*ManagedClusterManagedOutboundIPProfile_ARM)
+		managedOutboundIPProfile := *managedOutboundIPProfile_ARM.(*arm.ManagedClusterManagedOutboundIPProfile)
 		result.ManagedOutboundIPProfile = &managedOutboundIPProfile
 	}
 	return result, nil
@@ -22444,14 +22855,14 @@ func (profile *ManagedClusterNATGatewayProfile) ConvertToARM(resolved genruntime
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterNATGatewayProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterNATGatewayProfile_ARM{}
+	return &arm.ManagedClusterNATGatewayProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterNATGatewayProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterNATGatewayProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterNATGatewayProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterNATGatewayProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterNATGatewayProfile, got %T", armInput)
 	}
 
 	// Set property "EffectiveOutboundIPs":
@@ -22601,14 +23012,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterNATGatewayProfile_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterNATGatewayProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterNATGatewayProfile_STATUS_ARM{}
+	return &arm.ManagedClusterNATGatewayProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterNATGatewayProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterNATGatewayProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterNATGatewayProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterNATGatewayProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterNATGatewayProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "EffectiveOutboundIPs":
@@ -22920,7 +23331,7 @@ func (identity *ManagedClusterPodIdentity) ConvertToARM(resolved genruntime.Conv
 	if identity == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterPodIdentity_ARM{}
+	result := &arm.ManagedClusterPodIdentity{}
 
 	// Set property "BindingSelector":
 	if identity.BindingSelector != nil {
@@ -22934,7 +23345,7 @@ func (identity *ManagedClusterPodIdentity) ConvertToARM(resolved genruntime.Conv
 		if err != nil {
 			return nil, err
 		}
-		identity1 := *identity_ARM.(*UserAssignedIdentity_ARM)
+		identity1 := *identity_ARM.(*arm.UserAssignedIdentity)
 		result.Identity = &identity1
 	}
 
@@ -22954,14 +23365,14 @@ func (identity *ManagedClusterPodIdentity) ConvertToARM(resolved genruntime.Conv
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (identity *ManagedClusterPodIdentity) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterPodIdentity_ARM{}
+	return &arm.ManagedClusterPodIdentity{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (identity *ManagedClusterPodIdentity) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterPodIdentity_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterPodIdentity)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterPodIdentity_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterPodIdentity, got %T", armInput)
 	}
 
 	// Set property "BindingSelector":
@@ -23085,14 +23496,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterPodIdentity_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (identity *ManagedClusterPodIdentity_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterPodIdentity_STATUS_ARM{}
+	return &arm.ManagedClusterPodIdentity_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (identity *ManagedClusterPodIdentity_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterPodIdentity_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterPodIdentity_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterPodIdentity_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterPodIdentity_STATUS, got %T", armInput)
 	}
 
 	// Set property "BindingSelector":
@@ -23137,7 +23548,9 @@ func (identity *ManagedClusterPodIdentity_STATUS) PopulateFromARM(owner genrunti
 
 	// Set property "ProvisioningState":
 	if typedInput.ProvisioningState != nil {
-		provisioningState := *typedInput.ProvisioningState
+		var temp string
+		temp = string(*typedInput.ProvisioningState)
+		provisioningState := ManagedClusterPodIdentity_ProvisioningState_STATUS(temp)
 		identity.ProvisioningState = &provisioningState
 	}
 
@@ -23274,7 +23687,7 @@ func (exception *ManagedClusterPodIdentityException) ConvertToARM(resolved genru
 	if exception == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterPodIdentityException_ARM{}
+	result := &arm.ManagedClusterPodIdentityException{}
 
 	// Set property "Name":
 	if exception.Name != nil {
@@ -23300,14 +23713,14 @@ func (exception *ManagedClusterPodIdentityException) ConvertToARM(resolved genru
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (exception *ManagedClusterPodIdentityException) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterPodIdentityException_ARM{}
+	return &arm.ManagedClusterPodIdentityException{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (exception *ManagedClusterPodIdentityException) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterPodIdentityException_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterPodIdentityException)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterPodIdentityException_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterPodIdentityException, got %T", armInput)
 	}
 
 	// Set property "Name":
@@ -23392,14 +23805,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterPodIdentityException_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (exception *ManagedClusterPodIdentityException_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterPodIdentityException_STATUS_ARM{}
+	return &arm.ManagedClusterPodIdentityException_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (exception *ManagedClusterPodIdentityException_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterPodIdentityException_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterPodIdentityException_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterPodIdentityException_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterPodIdentityException_STATUS, got %T", armInput)
 	}
 
 	// Set property "Name":
@@ -23489,7 +23902,7 @@ func (defender *ManagedClusterSecurityProfileDefender) ConvertToARM(resolved gen
 	if defender == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterSecurityProfileDefender_ARM{}
+	result := &arm.ManagedClusterSecurityProfileDefender{}
 
 	// Set property "LogAnalyticsWorkspaceResourceId":
 	if defender.LogAnalyticsWorkspaceResourceReference != nil {
@@ -23507,7 +23920,7 @@ func (defender *ManagedClusterSecurityProfileDefender) ConvertToARM(resolved gen
 		if err != nil {
 			return nil, err
 		}
-		securityMonitoring := *securityMonitoring_ARM.(*ManagedClusterSecurityProfileDefenderSecurityMonitoring_ARM)
+		securityMonitoring := *securityMonitoring_ARM.(*arm.ManagedClusterSecurityProfileDefenderSecurityMonitoring)
 		result.SecurityMonitoring = &securityMonitoring
 	}
 	return result, nil
@@ -23515,14 +23928,14 @@ func (defender *ManagedClusterSecurityProfileDefender) ConvertToARM(resolved gen
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (defender *ManagedClusterSecurityProfileDefender) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterSecurityProfileDefender_ARM{}
+	return &arm.ManagedClusterSecurityProfileDefender{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (defender *ManagedClusterSecurityProfileDefender) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterSecurityProfileDefender_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterSecurityProfileDefender)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterSecurityProfileDefender_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterSecurityProfileDefender, got %T", armInput)
 	}
 
 	// no assignment for property "LogAnalyticsWorkspaceResourceReference"
@@ -23620,14 +24033,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterSecurityProfileDefender_STATU
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (defender *ManagedClusterSecurityProfileDefender_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterSecurityProfileDefender_STATUS_ARM{}
+	return &arm.ManagedClusterSecurityProfileDefender_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (defender *ManagedClusterSecurityProfileDefender_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterSecurityProfileDefender_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterSecurityProfileDefender_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterSecurityProfileDefender_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterSecurityProfileDefender_STATUS, got %T", armInput)
 	}
 
 	// Set property "LogAnalyticsWorkspaceResourceId":
@@ -23721,7 +24134,7 @@ func (cleaner *ManagedClusterSecurityProfileImageCleaner) ConvertToARM(resolved 
 	if cleaner == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterSecurityProfileImageCleaner_ARM{}
+	result := &arm.ManagedClusterSecurityProfileImageCleaner{}
 
 	// Set property "Enabled":
 	if cleaner.Enabled != nil {
@@ -23739,14 +24152,14 @@ func (cleaner *ManagedClusterSecurityProfileImageCleaner) ConvertToARM(resolved 
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (cleaner *ManagedClusterSecurityProfileImageCleaner) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterSecurityProfileImageCleaner_ARM{}
+	return &arm.ManagedClusterSecurityProfileImageCleaner{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (cleaner *ManagedClusterSecurityProfileImageCleaner) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterSecurityProfileImageCleaner_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterSecurityProfileImageCleaner)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterSecurityProfileImageCleaner_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterSecurityProfileImageCleaner, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -23824,14 +24237,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterSecurityProfileImageCleaner_S
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (cleaner *ManagedClusterSecurityProfileImageCleaner_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterSecurityProfileImageCleaner_STATUS_ARM{}
+	return &arm.ManagedClusterSecurityProfileImageCleaner_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (cleaner *ManagedClusterSecurityProfileImageCleaner_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterSecurityProfileImageCleaner_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterSecurityProfileImageCleaner_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterSecurityProfileImageCleaner_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterSecurityProfileImageCleaner_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -23908,7 +24321,7 @@ func (integrity *ManagedClusterSecurityProfileImageIntegrity) ConvertToARM(resol
 	if integrity == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterSecurityProfileImageIntegrity_ARM{}
+	result := &arm.ManagedClusterSecurityProfileImageIntegrity{}
 
 	// Set property "Enabled":
 	if integrity.Enabled != nil {
@@ -23920,14 +24333,14 @@ func (integrity *ManagedClusterSecurityProfileImageIntegrity) ConvertToARM(resol
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (integrity *ManagedClusterSecurityProfileImageIntegrity) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterSecurityProfileImageIntegrity_ARM{}
+	return &arm.ManagedClusterSecurityProfileImageIntegrity{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (integrity *ManagedClusterSecurityProfileImageIntegrity) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterSecurityProfileImageIntegrity_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterSecurityProfileImageIntegrity)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterSecurityProfileImageIntegrity_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterSecurityProfileImageIntegrity, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -23989,14 +24402,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterSecurityProfileImageIntegrity
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (integrity *ManagedClusterSecurityProfileImageIntegrity_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterSecurityProfileImageIntegrity_STATUS_ARM{}
+	return &arm.ManagedClusterSecurityProfileImageIntegrity_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (integrity *ManagedClusterSecurityProfileImageIntegrity_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterSecurityProfileImageIntegrity_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterSecurityProfileImageIntegrity_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterSecurityProfileImageIntegrity_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterSecurityProfileImageIntegrity_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -24061,7 +24474,7 @@ func (restriction *ManagedClusterSecurityProfileNodeRestriction) ConvertToARM(re
 	if restriction == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterSecurityProfileNodeRestriction_ARM{}
+	result := &arm.ManagedClusterSecurityProfileNodeRestriction{}
 
 	// Set property "Enabled":
 	if restriction.Enabled != nil {
@@ -24073,14 +24486,14 @@ func (restriction *ManagedClusterSecurityProfileNodeRestriction) ConvertToARM(re
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (restriction *ManagedClusterSecurityProfileNodeRestriction) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterSecurityProfileNodeRestriction_ARM{}
+	return &arm.ManagedClusterSecurityProfileNodeRestriction{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (restriction *ManagedClusterSecurityProfileNodeRestriction) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterSecurityProfileNodeRestriction_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterSecurityProfileNodeRestriction)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterSecurityProfileNodeRestriction_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterSecurityProfileNodeRestriction, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -24142,14 +24555,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterSecurityProfileNodeRestrictio
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (restriction *ManagedClusterSecurityProfileNodeRestriction_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterSecurityProfileNodeRestriction_STATUS_ARM{}
+	return &arm.ManagedClusterSecurityProfileNodeRestriction_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (restriction *ManagedClusterSecurityProfileNodeRestriction_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterSecurityProfileNodeRestriction_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterSecurityProfileNodeRestriction_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterSecurityProfileNodeRestriction_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterSecurityProfileNodeRestriction_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -24214,7 +24627,7 @@ func (identity *ManagedClusterSecurityProfileWorkloadIdentity) ConvertToARM(reso
 	if identity == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterSecurityProfileWorkloadIdentity_ARM{}
+	result := &arm.ManagedClusterSecurityProfileWorkloadIdentity{}
 
 	// Set property "Enabled":
 	if identity.Enabled != nil {
@@ -24226,14 +24639,14 @@ func (identity *ManagedClusterSecurityProfileWorkloadIdentity) ConvertToARM(reso
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (identity *ManagedClusterSecurityProfileWorkloadIdentity) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterSecurityProfileWorkloadIdentity_ARM{}
+	return &arm.ManagedClusterSecurityProfileWorkloadIdentity{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (identity *ManagedClusterSecurityProfileWorkloadIdentity) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterSecurityProfileWorkloadIdentity_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterSecurityProfileWorkloadIdentity)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterSecurityProfileWorkloadIdentity_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterSecurityProfileWorkloadIdentity, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -24295,14 +24708,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterSecurityProfileWorkloadIdenti
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (identity *ManagedClusterSecurityProfileWorkloadIdentity_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterSecurityProfileWorkloadIdentity_STATUS_ARM{}
+	return &arm.ManagedClusterSecurityProfileWorkloadIdentity_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (identity *ManagedClusterSecurityProfileWorkloadIdentity_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterSecurityProfileWorkloadIdentity_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterSecurityProfileWorkloadIdentity_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterSecurityProfileWorkloadIdentity_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterSecurityProfileWorkloadIdentity_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -24354,6 +24767,64 @@ func (identity *ManagedClusterSecurityProfileWorkloadIdentity_STATUS) AssignProp
 	return nil
 }
 
+// +kubebuilder:validation:Enum={"Automatic","Base"}
+type ManagedClusterSKU_Name string
+
+const (
+	ManagedClusterSKU_Name_Automatic = ManagedClusterSKU_Name("Automatic")
+	ManagedClusterSKU_Name_Base      = ManagedClusterSKU_Name("Base")
+)
+
+// Mapping from string to ManagedClusterSKU_Name
+var managedClusterSKU_Name_Values = map[string]ManagedClusterSKU_Name{
+	"automatic": ManagedClusterSKU_Name_Automatic,
+	"base":      ManagedClusterSKU_Name_Base,
+}
+
+type ManagedClusterSKU_Name_STATUS string
+
+const (
+	ManagedClusterSKU_Name_STATUS_Automatic = ManagedClusterSKU_Name_STATUS("Automatic")
+	ManagedClusterSKU_Name_STATUS_Base      = ManagedClusterSKU_Name_STATUS("Base")
+)
+
+// Mapping from string to ManagedClusterSKU_Name_STATUS
+var managedClusterSKU_Name_STATUS_Values = map[string]ManagedClusterSKU_Name_STATUS{
+	"automatic": ManagedClusterSKU_Name_STATUS_Automatic,
+	"base":      ManagedClusterSKU_Name_STATUS_Base,
+}
+
+// +kubebuilder:validation:Enum={"Free","Premium","Standard"}
+type ManagedClusterSKU_Tier string
+
+const (
+	ManagedClusterSKU_Tier_Free     = ManagedClusterSKU_Tier("Free")
+	ManagedClusterSKU_Tier_Premium  = ManagedClusterSKU_Tier("Premium")
+	ManagedClusterSKU_Tier_Standard = ManagedClusterSKU_Tier("Standard")
+)
+
+// Mapping from string to ManagedClusterSKU_Tier
+var managedClusterSKU_Tier_Values = map[string]ManagedClusterSKU_Tier{
+	"free":     ManagedClusterSKU_Tier_Free,
+	"premium":  ManagedClusterSKU_Tier_Premium,
+	"standard": ManagedClusterSKU_Tier_Standard,
+}
+
+type ManagedClusterSKU_Tier_STATUS string
+
+const (
+	ManagedClusterSKU_Tier_STATUS_Free     = ManagedClusterSKU_Tier_STATUS("Free")
+	ManagedClusterSKU_Tier_STATUS_Premium  = ManagedClusterSKU_Tier_STATUS("Premium")
+	ManagedClusterSKU_Tier_STATUS_Standard = ManagedClusterSKU_Tier_STATUS("Standard")
+)
+
+// Mapping from string to ManagedClusterSKU_Tier_STATUS
+var managedClusterSKU_Tier_STATUS_Values = map[string]ManagedClusterSKU_Tier_STATUS{
+	"free":     ManagedClusterSKU_Tier_STATUS_Free,
+	"premium":  ManagedClusterSKU_Tier_STATUS_Premium,
+	"standard": ManagedClusterSKU_Tier_STATUS_Standard,
+}
+
 // The Static Egress Gateway addon configuration for the cluster.
 type ManagedClusterStaticEgressGatewayProfile struct {
 	// Enabled: Indicates if Static Egress Gateway addon is enabled or not.
@@ -24367,7 +24838,7 @@ func (profile *ManagedClusterStaticEgressGatewayProfile) ConvertToARM(resolved g
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterStaticEgressGatewayProfile_ARM{}
+	result := &arm.ManagedClusterStaticEgressGatewayProfile{}
 
 	// Set property "Enabled":
 	if profile.Enabled != nil {
@@ -24379,14 +24850,14 @@ func (profile *ManagedClusterStaticEgressGatewayProfile) ConvertToARM(resolved g
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterStaticEgressGatewayProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterStaticEgressGatewayProfile_ARM{}
+	return &arm.ManagedClusterStaticEgressGatewayProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterStaticEgressGatewayProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterStaticEgressGatewayProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterStaticEgressGatewayProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterStaticEgressGatewayProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterStaticEgressGatewayProfile, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -24448,14 +24919,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterStaticEgressGatewayProfile_ST
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterStaticEgressGatewayProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterStaticEgressGatewayProfile_STATUS_ARM{}
+	return &arm.ManagedClusterStaticEgressGatewayProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterStaticEgressGatewayProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterStaticEgressGatewayProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterStaticEgressGatewayProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterStaticEgressGatewayProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterStaticEgressGatewayProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -24520,7 +24991,7 @@ func (driver *ManagedClusterStorageProfileBlobCSIDriver) ConvertToARM(resolved g
 	if driver == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterStorageProfileBlobCSIDriver_ARM{}
+	result := &arm.ManagedClusterStorageProfileBlobCSIDriver{}
 
 	// Set property "Enabled":
 	if driver.Enabled != nil {
@@ -24532,14 +25003,14 @@ func (driver *ManagedClusterStorageProfileBlobCSIDriver) ConvertToARM(resolved g
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (driver *ManagedClusterStorageProfileBlobCSIDriver) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterStorageProfileBlobCSIDriver_ARM{}
+	return &arm.ManagedClusterStorageProfileBlobCSIDriver{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (driver *ManagedClusterStorageProfileBlobCSIDriver) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterStorageProfileBlobCSIDriver_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterStorageProfileBlobCSIDriver)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterStorageProfileBlobCSIDriver_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterStorageProfileBlobCSIDriver, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -24601,14 +25072,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterStorageProfileBlobCSIDriver_S
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (driver *ManagedClusterStorageProfileBlobCSIDriver_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterStorageProfileBlobCSIDriver_STATUS_ARM{}
+	return &arm.ManagedClusterStorageProfileBlobCSIDriver_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (driver *ManagedClusterStorageProfileBlobCSIDriver_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterStorageProfileBlobCSIDriver_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterStorageProfileBlobCSIDriver_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterStorageProfileBlobCSIDriver_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterStorageProfileBlobCSIDriver_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -24676,7 +25147,7 @@ func (driver *ManagedClusterStorageProfileDiskCSIDriver) ConvertToARM(resolved g
 	if driver == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterStorageProfileDiskCSIDriver_ARM{}
+	result := &arm.ManagedClusterStorageProfileDiskCSIDriver{}
 
 	// Set property "Enabled":
 	if driver.Enabled != nil {
@@ -24694,14 +25165,14 @@ func (driver *ManagedClusterStorageProfileDiskCSIDriver) ConvertToARM(resolved g
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (driver *ManagedClusterStorageProfileDiskCSIDriver) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterStorageProfileDiskCSIDriver_ARM{}
+	return &arm.ManagedClusterStorageProfileDiskCSIDriver{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (driver *ManagedClusterStorageProfileDiskCSIDriver) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterStorageProfileDiskCSIDriver_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterStorageProfileDiskCSIDriver)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterStorageProfileDiskCSIDriver_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterStorageProfileDiskCSIDriver, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -24778,14 +25249,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterStorageProfileDiskCSIDriver_S
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (driver *ManagedClusterStorageProfileDiskCSIDriver_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterStorageProfileDiskCSIDriver_STATUS_ARM{}
+	return &arm.ManagedClusterStorageProfileDiskCSIDriver_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (driver *ManagedClusterStorageProfileDiskCSIDriver_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterStorageProfileDiskCSIDriver_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterStorageProfileDiskCSIDriver_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterStorageProfileDiskCSIDriver_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterStorageProfileDiskCSIDriver_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -24862,7 +25333,7 @@ func (driver *ManagedClusterStorageProfileFileCSIDriver) ConvertToARM(resolved g
 	if driver == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterStorageProfileFileCSIDriver_ARM{}
+	result := &arm.ManagedClusterStorageProfileFileCSIDriver{}
 
 	// Set property "Enabled":
 	if driver.Enabled != nil {
@@ -24874,14 +25345,14 @@ func (driver *ManagedClusterStorageProfileFileCSIDriver) ConvertToARM(resolved g
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (driver *ManagedClusterStorageProfileFileCSIDriver) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterStorageProfileFileCSIDriver_ARM{}
+	return &arm.ManagedClusterStorageProfileFileCSIDriver{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (driver *ManagedClusterStorageProfileFileCSIDriver) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterStorageProfileFileCSIDriver_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterStorageProfileFileCSIDriver)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterStorageProfileFileCSIDriver_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterStorageProfileFileCSIDriver, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -24943,14 +25414,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterStorageProfileFileCSIDriver_S
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (driver *ManagedClusterStorageProfileFileCSIDriver_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterStorageProfileFileCSIDriver_STATUS_ARM{}
+	return &arm.ManagedClusterStorageProfileFileCSIDriver_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (driver *ManagedClusterStorageProfileFileCSIDriver_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterStorageProfileFileCSIDriver_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterStorageProfileFileCSIDriver_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterStorageProfileFileCSIDriver_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterStorageProfileFileCSIDriver_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -25015,7 +25486,7 @@ func (controller *ManagedClusterStorageProfileSnapshotController) ConvertToARM(r
 	if controller == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterStorageProfileSnapshotController_ARM{}
+	result := &arm.ManagedClusterStorageProfileSnapshotController{}
 
 	// Set property "Enabled":
 	if controller.Enabled != nil {
@@ -25027,14 +25498,14 @@ func (controller *ManagedClusterStorageProfileSnapshotController) ConvertToARM(r
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (controller *ManagedClusterStorageProfileSnapshotController) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterStorageProfileSnapshotController_ARM{}
+	return &arm.ManagedClusterStorageProfileSnapshotController{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (controller *ManagedClusterStorageProfileSnapshotController) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterStorageProfileSnapshotController_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterStorageProfileSnapshotController)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterStorageProfileSnapshotController_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterStorageProfileSnapshotController, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -25096,14 +25567,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterStorageProfileSnapshotControl
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (controller *ManagedClusterStorageProfileSnapshotController_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterStorageProfileSnapshotController_STATUS_ARM{}
+	return &arm.ManagedClusterStorageProfileSnapshotController_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (controller *ManagedClusterStorageProfileSnapshotController_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterStorageProfileSnapshotController_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterStorageProfileSnapshotController_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterStorageProfileSnapshotController_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterStorageProfileSnapshotController_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -25196,7 +25667,7 @@ func (keda *ManagedClusterWorkloadAutoScalerProfileKeda) ConvertToARM(resolved g
 	if keda == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterWorkloadAutoScalerProfileKeda_ARM{}
+	result := &arm.ManagedClusterWorkloadAutoScalerProfileKeda{}
 
 	// Set property "Enabled":
 	if keda.Enabled != nil {
@@ -25208,14 +25679,14 @@ func (keda *ManagedClusterWorkloadAutoScalerProfileKeda) ConvertToARM(resolved g
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (keda *ManagedClusterWorkloadAutoScalerProfileKeda) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterWorkloadAutoScalerProfileKeda_ARM{}
+	return &arm.ManagedClusterWorkloadAutoScalerProfileKeda{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (keda *ManagedClusterWorkloadAutoScalerProfileKeda) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterWorkloadAutoScalerProfileKeda_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterWorkloadAutoScalerProfileKeda)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterWorkloadAutoScalerProfileKeda_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterWorkloadAutoScalerProfileKeda, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -25277,14 +25748,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterWorkloadAutoScalerProfileKeda
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (keda *ManagedClusterWorkloadAutoScalerProfileKeda_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterWorkloadAutoScalerProfileKeda_STATUS_ARM{}
+	return &arm.ManagedClusterWorkloadAutoScalerProfileKeda_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (keda *ManagedClusterWorkloadAutoScalerProfileKeda_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterWorkloadAutoScalerProfileKeda_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterWorkloadAutoScalerProfileKeda_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterWorkloadAutoScalerProfileKeda_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterWorkloadAutoScalerProfileKeda_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -25352,11 +25823,13 @@ func (autoscaler *ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler) 
 	if autoscaler == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler_ARM{}
+	result := &arm.ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler{}
 
 	// Set property "AddonAutoscaling":
 	if autoscaler.AddonAutoscaling != nil {
-		addonAutoscaling := *autoscaler.AddonAutoscaling
+		var temp string
+		temp = string(*autoscaler.AddonAutoscaling)
+		addonAutoscaling := arm.ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler_AddonAutoscaling(temp)
 		result.AddonAutoscaling = &addonAutoscaling
 	}
 
@@ -25370,19 +25843,21 @@ func (autoscaler *ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler) 
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (autoscaler *ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler_ARM{}
+	return &arm.ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (autoscaler *ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler, got %T", armInput)
 	}
 
 	// Set property "AddonAutoscaling":
 	if typedInput.AddonAutoscaling != nil {
-		addonAutoscaling := *typedInput.AddonAutoscaling
+		var temp string
+		temp = string(*typedInput.AddonAutoscaling)
+		addonAutoscaling := ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler_AddonAutoscaling(temp)
 		autoscaler.AddonAutoscaling = &addonAutoscaling
 	}
 
@@ -25464,19 +25939,21 @@ var _ genruntime.FromARMConverter = &ManagedClusterWorkloadAutoScalerProfileVert
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (autoscaler *ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler_STATUS_ARM{}
+	return &arm.ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (autoscaler *ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler_STATUS, got %T", armInput)
 	}
 
 	// Set property "AddonAutoscaling":
 	if typedInput.AddonAutoscaling != nil {
-		addonAutoscaling := *typedInput.AddonAutoscaling
+		var temp string
+		temp = string(*typedInput.AddonAutoscaling)
+		addonAutoscaling := ManagedClusterWorkloadAutoScalerProfileVerticalPodAutoscaler_AddonAutoscaling_STATUS(temp)
 		autoscaler.AddonAutoscaling = &addonAutoscaling
 	}
 
@@ -25797,6 +26274,40 @@ var serviceMeshProfile_Mode_STATUS_Values = map[string]ServiceMeshProfile_Mode_S
 	"istio":    ServiceMeshProfile_Mode_STATUS_Istio,
 }
 
+type SystemData_CreatedByType_STATUS string
+
+const (
+	SystemData_CreatedByType_STATUS_Application     = SystemData_CreatedByType_STATUS("Application")
+	SystemData_CreatedByType_STATUS_Key             = SystemData_CreatedByType_STATUS("Key")
+	SystemData_CreatedByType_STATUS_ManagedIdentity = SystemData_CreatedByType_STATUS("ManagedIdentity")
+	SystemData_CreatedByType_STATUS_User            = SystemData_CreatedByType_STATUS("User")
+)
+
+// Mapping from string to SystemData_CreatedByType_STATUS
+var systemData_CreatedByType_STATUS_Values = map[string]SystemData_CreatedByType_STATUS{
+	"application":     SystemData_CreatedByType_STATUS_Application,
+	"key":             SystemData_CreatedByType_STATUS_Key,
+	"managedidentity": SystemData_CreatedByType_STATUS_ManagedIdentity,
+	"user":            SystemData_CreatedByType_STATUS_User,
+}
+
+type SystemData_LastModifiedByType_STATUS string
+
+const (
+	SystemData_LastModifiedByType_STATUS_Application     = SystemData_LastModifiedByType_STATUS("Application")
+	SystemData_LastModifiedByType_STATUS_Key             = SystemData_LastModifiedByType_STATUS("Key")
+	SystemData_LastModifiedByType_STATUS_ManagedIdentity = SystemData_LastModifiedByType_STATUS("ManagedIdentity")
+	SystemData_LastModifiedByType_STATUS_User            = SystemData_LastModifiedByType_STATUS("User")
+)
+
+// Mapping from string to SystemData_LastModifiedByType_STATUS
+var systemData_LastModifiedByType_STATUS_Values = map[string]SystemData_LastModifiedByType_STATUS{
+	"application":     SystemData_LastModifiedByType_STATUS_Application,
+	"key":             SystemData_LastModifiedByType_STATUS_Key,
+	"managedidentity": SystemData_LastModifiedByType_STATUS_ManagedIdentity,
+	"user":            SystemData_LastModifiedByType_STATUS_User,
+}
+
 // Settings for overrides when upgrading a cluster.
 type UpgradeOverrideSettings struct {
 	// ForceUpgrade: Whether to force upgrade the cluster. Note that this option instructs upgrade operation to bypass upgrade
@@ -25816,7 +26327,7 @@ func (settings *UpgradeOverrideSettings) ConvertToARM(resolved genruntime.Conver
 	if settings == nil {
 		return nil, nil
 	}
-	result := &UpgradeOverrideSettings_ARM{}
+	result := &arm.UpgradeOverrideSettings{}
 
 	// Set property "ForceUpgrade":
 	if settings.ForceUpgrade != nil {
@@ -25834,14 +26345,14 @@ func (settings *UpgradeOverrideSettings) ConvertToARM(resolved genruntime.Conver
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (settings *UpgradeOverrideSettings) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &UpgradeOverrideSettings_ARM{}
+	return &arm.UpgradeOverrideSettings{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (settings *UpgradeOverrideSettings) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(UpgradeOverrideSettings_ARM)
+	typedInput, ok := armInput.(arm.UpgradeOverrideSettings)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected UpgradeOverrideSettings_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.UpgradeOverrideSettings, got %T", armInput)
 	}
 
 	// Set property "ForceUpgrade":
@@ -25921,14 +26432,14 @@ var _ genruntime.FromARMConverter = &UpgradeOverrideSettings_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (settings *UpgradeOverrideSettings_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &UpgradeOverrideSettings_STATUS_ARM{}
+	return &arm.UpgradeOverrideSettings_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (settings *UpgradeOverrideSettings_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(UpgradeOverrideSettings_STATUS_ARM)
+	typedInput, ok := armInput.(arm.UpgradeOverrideSettings_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected UpgradeOverrideSettings_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.UpgradeOverrideSettings_STATUS, got %T", armInput)
 	}
 
 	// Set property "ForceUpgrade":
@@ -26047,7 +26558,7 @@ func (profile *WindowsGmsaProfile) ConvertToARM(resolved genruntime.ConvertToARM
 	if profile == nil {
 		return nil, nil
 	}
-	result := &WindowsGmsaProfile_ARM{}
+	result := &arm.WindowsGmsaProfile{}
 
 	// Set property "DnsServer":
 	if profile.DnsServer != nil {
@@ -26071,14 +26582,14 @@ func (profile *WindowsGmsaProfile) ConvertToARM(resolved genruntime.ConvertToARM
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *WindowsGmsaProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &WindowsGmsaProfile_ARM{}
+	return &arm.WindowsGmsaProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *WindowsGmsaProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(WindowsGmsaProfile_ARM)
+	typedInput, ok := armInput.(arm.WindowsGmsaProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected WindowsGmsaProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.WindowsGmsaProfile, got %T", armInput)
 	}
 
 	// Set property "DnsServer":
@@ -26172,14 +26683,14 @@ var _ genruntime.FromARMConverter = &WindowsGmsaProfile_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *WindowsGmsaProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &WindowsGmsaProfile_STATUS_ARM{}
+	return &arm.WindowsGmsaProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *WindowsGmsaProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(WindowsGmsaProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.WindowsGmsaProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected WindowsGmsaProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.WindowsGmsaProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "DnsServer":
@@ -26268,7 +26779,7 @@ func (observability *AdvancedNetworkingObservability) ConvertToARM(resolved genr
 	if observability == nil {
 		return nil, nil
 	}
-	result := &AdvancedNetworkingObservability_ARM{}
+	result := &arm.AdvancedNetworkingObservability{}
 
 	// Set property "Enabled":
 	if observability.Enabled != nil {
@@ -26280,14 +26791,14 @@ func (observability *AdvancedNetworkingObservability) ConvertToARM(resolved genr
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (observability *AdvancedNetworkingObservability) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &AdvancedNetworkingObservability_ARM{}
+	return &arm.AdvancedNetworkingObservability{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (observability *AdvancedNetworkingObservability) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(AdvancedNetworkingObservability_ARM)
+	typedInput, ok := armInput.(arm.AdvancedNetworkingObservability)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected AdvancedNetworkingObservability_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.AdvancedNetworkingObservability, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -26349,14 +26860,14 @@ var _ genruntime.FromARMConverter = &AdvancedNetworkingObservability_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (observability *AdvancedNetworkingObservability_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &AdvancedNetworkingObservability_STATUS_ARM{}
+	return &arm.AdvancedNetworkingObservability_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (observability *AdvancedNetworkingObservability_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(AdvancedNetworkingObservability_STATUS_ARM)
+	typedInput, ok := armInput.(arm.AdvancedNetworkingObservability_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected AdvancedNetworkingObservability_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.AdvancedNetworkingObservability_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -26457,11 +26968,13 @@ func (config *ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig) Convert
 	if config == nil {
 		return nil, nil
 	}
-	result := &ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig_ARM{}
+	result := &arm.ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig{}
 
 	// Set property "Scheduler":
 	if config.Scheduler != nil {
-		scheduler := *config.Scheduler
+		var temp string
+		temp = string(*config.Scheduler)
+		scheduler := arm.ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig_Scheduler(temp)
 		result.Scheduler = &scheduler
 	}
 
@@ -26487,19 +27000,21 @@ func (config *ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig) Convert
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (config *ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig_ARM{}
+	return &arm.ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (config *ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig_ARM)
+	typedInput, ok := armInput.(arm.ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig, got %T", armInput)
 	}
 
 	// Set property "Scheduler":
 	if typedInput.Scheduler != nil {
-		scheduler := *typedInput.Scheduler
+		var temp string
+		temp = string(*typedInput.Scheduler)
+		scheduler := ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig_Scheduler(temp)
 		config.Scheduler = &scheduler
 	}
 
@@ -26602,19 +27117,21 @@ var _ genruntime.FromARMConverter = &ContainerServiceNetworkProfile_KubeProxyCon
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (config *ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig_STATUS_ARM{}
+	return &arm.ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (config *ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig_STATUS, got %T", armInput)
 	}
 
 	// Set property "Scheduler":
 	if typedInput.Scheduler != nil {
-		scheduler := *typedInput.Scheduler
+		var temp string
+		temp = string(*typedInput.Scheduler)
+		scheduler := ContainerServiceNetworkProfile_KubeProxyConfig_IpvsConfig_Scheduler_STATUS(temp)
 		config.Scheduler = &scheduler
 	}
 
@@ -26740,7 +27257,7 @@ func (publicKey *ContainerServiceSshPublicKey) ConvertToARM(resolved genruntime.
 	if publicKey == nil {
 		return nil, nil
 	}
-	result := &ContainerServiceSshPublicKey_ARM{}
+	result := &arm.ContainerServiceSshPublicKey{}
 
 	// Set property "KeyData":
 	if publicKey.KeyData != nil {
@@ -26752,14 +27269,14 @@ func (publicKey *ContainerServiceSshPublicKey) ConvertToARM(resolved genruntime.
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (publicKey *ContainerServiceSshPublicKey) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ContainerServiceSshPublicKey_ARM{}
+	return &arm.ContainerServiceSshPublicKey{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (publicKey *ContainerServiceSshPublicKey) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ContainerServiceSshPublicKey_ARM)
+	typedInput, ok := armInput.(arm.ContainerServiceSshPublicKey)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ContainerServiceSshPublicKey_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ContainerServiceSshPublicKey, got %T", armInput)
 	}
 
 	// Set property "KeyData":
@@ -26812,14 +27329,14 @@ var _ genruntime.FromARMConverter = &ContainerServiceSshPublicKey_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (publicKey *ContainerServiceSshPublicKey_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ContainerServiceSshPublicKey_STATUS_ARM{}
+	return &arm.ContainerServiceSshPublicKey_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (publicKey *ContainerServiceSshPublicKey_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ContainerServiceSshPublicKey_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ContainerServiceSshPublicKey_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ContainerServiceSshPublicKey_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ContainerServiceSshPublicKey_STATUS, got %T", armInput)
 	}
 
 	// Set property "KeyData":
@@ -26875,7 +27392,7 @@ func (authority *IstioCertificateAuthority) ConvertToARM(resolved genruntime.Con
 	if authority == nil {
 		return nil, nil
 	}
-	result := &IstioCertificateAuthority_ARM{}
+	result := &arm.IstioCertificateAuthority{}
 
 	// Set property "Plugin":
 	if authority.Plugin != nil {
@@ -26883,7 +27400,7 @@ func (authority *IstioCertificateAuthority) ConvertToARM(resolved genruntime.Con
 		if err != nil {
 			return nil, err
 		}
-		plugin := *plugin_ARM.(*IstioPluginCertificateAuthority_ARM)
+		plugin := *plugin_ARM.(*arm.IstioPluginCertificateAuthority)
 		result.Plugin = &plugin
 	}
 	return result, nil
@@ -26891,14 +27408,14 @@ func (authority *IstioCertificateAuthority) ConvertToARM(resolved genruntime.Con
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (authority *IstioCertificateAuthority) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &IstioCertificateAuthority_ARM{}
+	return &arm.IstioCertificateAuthority{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (authority *IstioCertificateAuthority) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(IstioCertificateAuthority_ARM)
+	typedInput, ok := armInput.(arm.IstioCertificateAuthority)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected IstioCertificateAuthority_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.IstioCertificateAuthority, got %T", armInput)
 	}
 
 	// Set property "Plugin":
@@ -26974,14 +27491,14 @@ var _ genruntime.FromARMConverter = &IstioCertificateAuthority_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (authority *IstioCertificateAuthority_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &IstioCertificateAuthority_STATUS_ARM{}
+	return &arm.IstioCertificateAuthority_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (authority *IstioCertificateAuthority_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(IstioCertificateAuthority_STATUS_ARM)
+	typedInput, ok := armInput.(arm.IstioCertificateAuthority_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected IstioCertificateAuthority_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.IstioCertificateAuthority_STATUS, got %T", armInput)
 	}
 
 	// Set property "Plugin":
@@ -27062,7 +27579,7 @@ func (components *IstioComponents) ConvertToARM(resolved genruntime.ConvertToARM
 	if components == nil {
 		return nil, nil
 	}
-	result := &IstioComponents_ARM{}
+	result := &arm.IstioComponents{}
 
 	// Set property "EgressGateways":
 	for _, item := range components.EgressGateways {
@@ -27070,7 +27587,7 @@ func (components *IstioComponents) ConvertToARM(resolved genruntime.ConvertToARM
 		if err != nil {
 			return nil, err
 		}
-		result.EgressGateways = append(result.EgressGateways, *item_ARM.(*IstioEgressGateway_ARM))
+		result.EgressGateways = append(result.EgressGateways, *item_ARM.(*arm.IstioEgressGateway))
 	}
 
 	// Set property "IngressGateways":
@@ -27079,21 +27596,21 @@ func (components *IstioComponents) ConvertToARM(resolved genruntime.ConvertToARM
 		if err != nil {
 			return nil, err
 		}
-		result.IngressGateways = append(result.IngressGateways, *item_ARM.(*IstioIngressGateway_ARM))
+		result.IngressGateways = append(result.IngressGateways, *item_ARM.(*arm.IstioIngressGateway))
 	}
 	return result, nil
 }
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (components *IstioComponents) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &IstioComponents_ARM{}
+	return &arm.IstioComponents{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (components *IstioComponents) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(IstioComponents_ARM)
+	typedInput, ok := armInput.(arm.IstioComponents)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected IstioComponents_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.IstioComponents, got %T", armInput)
 	}
 
 	// Set property "EgressGateways":
@@ -27228,14 +27745,14 @@ var _ genruntime.FromARMConverter = &IstioComponents_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (components *IstioComponents_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &IstioComponents_STATUS_ARM{}
+	return &arm.IstioComponents_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (components *IstioComponents_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(IstioComponents_STATUS_ARM)
+	typedInput, ok := armInput.(arm.IstioComponents_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected IstioComponents_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.IstioComponents_STATUS, got %T", armInput)
 	}
 
 	// Set property "EgressGateways":
@@ -27372,7 +27889,7 @@ func (instrumentation *ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrum
 	if instrumentation == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrumentation_ARM{}
+	result := &arm.ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrumentation{}
 
 	// Set property "Enabled":
 	if instrumentation.Enabled != nil {
@@ -27384,14 +27901,14 @@ func (instrumentation *ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrum
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (instrumentation *ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrumentation) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrumentation_ARM{}
+	return &arm.ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrumentation{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (instrumentation *ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrumentation) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrumentation_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrumentation)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrumentation_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrumentation, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -27455,14 +27972,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterAzureMonitorProfileAppMonitor
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (instrumentation *ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrumentation_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrumentation_STATUS_ARM{}
+	return &arm.ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrumentation_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (instrumentation *ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrumentation_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrumentation_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrumentation_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrumentation_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAzureMonitorProfileAppMonitoringAutoInstrumentation_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -27532,7 +28049,7 @@ func (logs *ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs) Con
 	if logs == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs_ARM{}
+	result := &arm.ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs{}
 
 	// Set property "Enabled":
 	if logs.Enabled != nil {
@@ -27550,14 +28067,14 @@ func (logs *ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs) Con
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (logs *ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs_ARM{}
+	return &arm.ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (logs *ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -27636,14 +28153,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterAzureMonitorProfileAppMonitor
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (logs *ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs_STATUS_ARM{}
+	return &arm.ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (logs *ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryLogs_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -27725,7 +28242,7 @@ func (metrics *ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetric
 	if metrics == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetrics_ARM{}
+	result := &arm.ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetrics{}
 
 	// Set property "Enabled":
 	if metrics.Enabled != nil {
@@ -27743,14 +28260,14 @@ func (metrics *ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetric
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (metrics *ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetrics) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetrics_ARM{}
+	return &arm.ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetrics{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (metrics *ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetrics) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetrics_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetrics)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetrics_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetrics, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -27829,14 +28346,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterAzureMonitorProfileAppMonitor
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (metrics *ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetrics_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetrics_STATUS_ARM{}
+	return &arm.ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetrics_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (metrics *ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetrics_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetrics_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetrics_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetrics_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAzureMonitorProfileAppMonitoringOpenTelemetryMetrics_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -27918,7 +28435,7 @@ func (metrics *ManagedClusterAzureMonitorProfileKubeStateMetrics) ConvertToARM(r
 	if metrics == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterAzureMonitorProfileKubeStateMetrics_ARM{}
+	result := &arm.ManagedClusterAzureMonitorProfileKubeStateMetrics{}
 
 	// Set property "MetricAnnotationsAllowList":
 	if metrics.MetricAnnotationsAllowList != nil {
@@ -27936,14 +28453,14 @@ func (metrics *ManagedClusterAzureMonitorProfileKubeStateMetrics) ConvertToARM(r
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (metrics *ManagedClusterAzureMonitorProfileKubeStateMetrics) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAzureMonitorProfileKubeStateMetrics_ARM{}
+	return &arm.ManagedClusterAzureMonitorProfileKubeStateMetrics{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (metrics *ManagedClusterAzureMonitorProfileKubeStateMetrics) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAzureMonitorProfileKubeStateMetrics_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAzureMonitorProfileKubeStateMetrics)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAzureMonitorProfileKubeStateMetrics_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAzureMonitorProfileKubeStateMetrics, got %T", armInput)
 	}
 
 	// Set property "MetricAnnotationsAllowList":
@@ -28012,14 +28529,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterAzureMonitorProfileKubeStateM
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (metrics *ManagedClusterAzureMonitorProfileKubeStateMetrics_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterAzureMonitorProfileKubeStateMetrics_STATUS_ARM{}
+	return &arm.ManagedClusterAzureMonitorProfileKubeStateMetrics_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (metrics *ManagedClusterAzureMonitorProfileKubeStateMetrics_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterAzureMonitorProfileKubeStateMetrics_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterAzureMonitorProfileKubeStateMetrics_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterAzureMonitorProfileKubeStateMetrics_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterAzureMonitorProfileKubeStateMetrics_STATUS, got %T", armInput)
 	}
 
 	// Set property "MetricAnnotationsAllowList":
@@ -28148,7 +28665,7 @@ func (iPs *ManagedClusterLoadBalancerProfile_ManagedOutboundIPs) ConvertToARM(re
 	if iPs == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterLoadBalancerProfile_ManagedOutboundIPs_ARM{}
+	result := &arm.ManagedClusterLoadBalancerProfile_ManagedOutboundIPs{}
 
 	// Set property "Count":
 	if iPs.Count != nil {
@@ -28166,14 +28683,14 @@ func (iPs *ManagedClusterLoadBalancerProfile_ManagedOutboundIPs) ConvertToARM(re
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (iPs *ManagedClusterLoadBalancerProfile_ManagedOutboundIPs) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterLoadBalancerProfile_ManagedOutboundIPs_ARM{}
+	return &arm.ManagedClusterLoadBalancerProfile_ManagedOutboundIPs{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (iPs *ManagedClusterLoadBalancerProfile_ManagedOutboundIPs) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterLoadBalancerProfile_ManagedOutboundIPs_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterLoadBalancerProfile_ManagedOutboundIPs)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterLoadBalancerProfile_ManagedOutboundIPs_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterLoadBalancerProfile_ManagedOutboundIPs, got %T", armInput)
 	}
 
 	// Set property "Count":
@@ -28261,14 +28778,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterLoadBalancerProfile_ManagedOu
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (iPs *ManagedClusterLoadBalancerProfile_ManagedOutboundIPs_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterLoadBalancerProfile_ManagedOutboundIPs_STATUS_ARM{}
+	return &arm.ManagedClusterLoadBalancerProfile_ManagedOutboundIPs_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (iPs *ManagedClusterLoadBalancerProfile_ManagedOutboundIPs_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterLoadBalancerProfile_ManagedOutboundIPs_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterLoadBalancerProfile_ManagedOutboundIPs_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterLoadBalancerProfile_ManagedOutboundIPs_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterLoadBalancerProfile_ManagedOutboundIPs_STATUS, got %T", armInput)
 	}
 
 	// Set property "Count":
@@ -28334,7 +28851,7 @@ func (prefixes *ManagedClusterLoadBalancerProfile_OutboundIPPrefixes) ConvertToA
 	if prefixes == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterLoadBalancerProfile_OutboundIPPrefixes_ARM{}
+	result := &arm.ManagedClusterLoadBalancerProfile_OutboundIPPrefixes{}
 
 	// Set property "PublicIPPrefixes":
 	for _, item := range prefixes.PublicIPPrefixes {
@@ -28342,21 +28859,21 @@ func (prefixes *ManagedClusterLoadBalancerProfile_OutboundIPPrefixes) ConvertToA
 		if err != nil {
 			return nil, err
 		}
-		result.PublicIPPrefixes = append(result.PublicIPPrefixes, *item_ARM.(*ResourceReference_ARM))
+		result.PublicIPPrefixes = append(result.PublicIPPrefixes, *item_ARM.(*arm.ResourceReference))
 	}
 	return result, nil
 }
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (prefixes *ManagedClusterLoadBalancerProfile_OutboundIPPrefixes) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterLoadBalancerProfile_OutboundIPPrefixes_ARM{}
+	return &arm.ManagedClusterLoadBalancerProfile_OutboundIPPrefixes{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (prefixes *ManagedClusterLoadBalancerProfile_OutboundIPPrefixes) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterLoadBalancerProfile_OutboundIPPrefixes_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterLoadBalancerProfile_OutboundIPPrefixes)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterLoadBalancerProfile_OutboundIPPrefixes_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterLoadBalancerProfile_OutboundIPPrefixes, got %T", armInput)
 	}
 
 	// Set property "PublicIPPrefixes":
@@ -28441,14 +28958,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterLoadBalancerProfile_OutboundI
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (prefixes *ManagedClusterLoadBalancerProfile_OutboundIPPrefixes_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterLoadBalancerProfile_OutboundIPPrefixes_STATUS_ARM{}
+	return &arm.ManagedClusterLoadBalancerProfile_OutboundIPPrefixes_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (prefixes *ManagedClusterLoadBalancerProfile_OutboundIPPrefixes_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterLoadBalancerProfile_OutboundIPPrefixes_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterLoadBalancerProfile_OutboundIPPrefixes_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterLoadBalancerProfile_OutboundIPPrefixes_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterLoadBalancerProfile_OutboundIPPrefixes_STATUS, got %T", armInput)
 	}
 
 	// Set property "PublicIPPrefixes":
@@ -28536,7 +29053,7 @@ func (iPs *ManagedClusterLoadBalancerProfile_OutboundIPs) ConvertToARM(resolved 
 	if iPs == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterLoadBalancerProfile_OutboundIPs_ARM{}
+	result := &arm.ManagedClusterLoadBalancerProfile_OutboundIPs{}
 
 	// Set property "PublicIPs":
 	for _, item := range iPs.PublicIPs {
@@ -28544,21 +29061,21 @@ func (iPs *ManagedClusterLoadBalancerProfile_OutboundIPs) ConvertToARM(resolved 
 		if err != nil {
 			return nil, err
 		}
-		result.PublicIPs = append(result.PublicIPs, *item_ARM.(*ResourceReference_ARM))
+		result.PublicIPs = append(result.PublicIPs, *item_ARM.(*arm.ResourceReference))
 	}
 	return result, nil
 }
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (iPs *ManagedClusterLoadBalancerProfile_OutboundIPs) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterLoadBalancerProfile_OutboundIPs_ARM{}
+	return &arm.ManagedClusterLoadBalancerProfile_OutboundIPs{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (iPs *ManagedClusterLoadBalancerProfile_OutboundIPs) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterLoadBalancerProfile_OutboundIPs_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterLoadBalancerProfile_OutboundIPs)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterLoadBalancerProfile_OutboundIPs_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterLoadBalancerProfile_OutboundIPs, got %T", armInput)
 	}
 
 	// Set property "PublicIPs":
@@ -28643,14 +29160,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterLoadBalancerProfile_OutboundI
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (iPs *ManagedClusterLoadBalancerProfile_OutboundIPs_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterLoadBalancerProfile_OutboundIPs_STATUS_ARM{}
+	return &arm.ManagedClusterLoadBalancerProfile_OutboundIPs_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (iPs *ManagedClusterLoadBalancerProfile_OutboundIPs_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterLoadBalancerProfile_OutboundIPs_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterLoadBalancerProfile_OutboundIPs_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterLoadBalancerProfile_OutboundIPs_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterLoadBalancerProfile_OutboundIPs_STATUS, got %T", armInput)
 	}
 
 	// Set property "PublicIPs":
@@ -28742,7 +29259,7 @@ func (profile *ManagedClusterManagedOutboundIPProfile) ConvertToARM(resolved gen
 	if profile == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterManagedOutboundIPProfile_ARM{}
+	result := &arm.ManagedClusterManagedOutboundIPProfile{}
 
 	// Set property "Count":
 	if profile.Count != nil {
@@ -28754,14 +29271,14 @@ func (profile *ManagedClusterManagedOutboundIPProfile) ConvertToARM(resolved gen
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterManagedOutboundIPProfile) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterManagedOutboundIPProfile_ARM{}
+	return &arm.ManagedClusterManagedOutboundIPProfile{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterManagedOutboundIPProfile) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterManagedOutboundIPProfile_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterManagedOutboundIPProfile)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterManagedOutboundIPProfile_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterManagedOutboundIPProfile, got %T", armInput)
 	}
 
 	// Set property "Count":
@@ -28824,14 +29341,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterManagedOutboundIPProfile_STAT
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (profile *ManagedClusterManagedOutboundIPProfile_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterManagedOutboundIPProfile_STATUS_ARM{}
+	return &arm.ManagedClusterManagedOutboundIPProfile_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (profile *ManagedClusterManagedOutboundIPProfile_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterManagedOutboundIPProfile_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterManagedOutboundIPProfile_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterManagedOutboundIPProfile_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterManagedOutboundIPProfile_STATUS, got %T", armInput)
 	}
 
 	// Set property "Count":
@@ -28882,14 +29399,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterPodIdentity_ProvisioningInfo_
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (info *ManagedClusterPodIdentity_ProvisioningInfo_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterPodIdentity_ProvisioningInfo_STATUS_ARM{}
+	return &arm.ManagedClusterPodIdentity_ProvisioningInfo_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (info *ManagedClusterPodIdentity_ProvisioningInfo_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterPodIdentity_ProvisioningInfo_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterPodIdentity_ProvisioningInfo_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterPodIdentity_ProvisioningInfo_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterPodIdentity_ProvisioningInfo_STATUS, got %T", armInput)
 	}
 
 	// Set property "Error":
@@ -28988,7 +29505,7 @@ func (monitoring *ManagedClusterSecurityProfileDefenderSecurityMonitoring) Conve
 	if monitoring == nil {
 		return nil, nil
 	}
-	result := &ManagedClusterSecurityProfileDefenderSecurityMonitoring_ARM{}
+	result := &arm.ManagedClusterSecurityProfileDefenderSecurityMonitoring{}
 
 	// Set property "Enabled":
 	if monitoring.Enabled != nil {
@@ -29000,14 +29517,14 @@ func (monitoring *ManagedClusterSecurityProfileDefenderSecurityMonitoring) Conve
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (monitoring *ManagedClusterSecurityProfileDefenderSecurityMonitoring) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterSecurityProfileDefenderSecurityMonitoring_ARM{}
+	return &arm.ManagedClusterSecurityProfileDefenderSecurityMonitoring{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (monitoring *ManagedClusterSecurityProfileDefenderSecurityMonitoring) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterSecurityProfileDefenderSecurityMonitoring_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterSecurityProfileDefenderSecurityMonitoring)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterSecurityProfileDefenderSecurityMonitoring_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterSecurityProfileDefenderSecurityMonitoring, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -29069,14 +29586,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterSecurityProfileDefenderSecuri
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (monitoring *ManagedClusterSecurityProfileDefenderSecurityMonitoring_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterSecurityProfileDefenderSecurityMonitoring_STATUS_ARM{}
+	return &arm.ManagedClusterSecurityProfileDefenderSecurityMonitoring_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (monitoring *ManagedClusterSecurityProfileDefenderSecurityMonitoring_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterSecurityProfileDefenderSecurityMonitoring_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterSecurityProfileDefenderSecurityMonitoring_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterSecurityProfileDefenderSecurityMonitoring_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterSecurityProfileDefenderSecurityMonitoring_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -29168,7 +29685,7 @@ func (reference *ResourceReference) ConvertToARM(resolved genruntime.ConvertToAR
 	if reference == nil {
 		return nil, nil
 	}
-	result := &ResourceReference_ARM{}
+	result := &arm.ResourceReference{}
 
 	// Set property "Id":
 	if reference.Reference != nil {
@@ -29184,14 +29701,14 @@ func (reference *ResourceReference) ConvertToARM(resolved genruntime.ConvertToAR
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (reference *ResourceReference) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ResourceReference_ARM{}
+	return &arm.ResourceReference{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (reference *ResourceReference) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	_, ok := armInput.(ResourceReference_ARM)
+	_, ok := armInput.(arm.ResourceReference)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ResourceReference_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ResourceReference, got %T", armInput)
 	}
 
 	// no assignment for property "Reference"
@@ -29249,14 +29766,14 @@ var _ genruntime.FromARMConverter = &ResourceReference_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (reference *ResourceReference_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ResourceReference_STATUS_ARM{}
+	return &arm.ResourceReference_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (reference *ResourceReference_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ResourceReference_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ResourceReference_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ResourceReference_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ResourceReference_STATUS, got %T", armInput)
 	}
 
 	// Set property "Id":
@@ -29339,7 +29856,7 @@ func (gateway *IstioEgressGateway) ConvertToARM(resolved genruntime.ConvertToARM
 	if gateway == nil {
 		return nil, nil
 	}
-	result := &IstioEgressGateway_ARM{}
+	result := &arm.IstioEgressGateway{}
 
 	// Set property "Enabled":
 	if gateway.Enabled != nil {
@@ -29351,14 +29868,14 @@ func (gateway *IstioEgressGateway) ConvertToARM(resolved genruntime.ConvertToARM
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (gateway *IstioEgressGateway) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &IstioEgressGateway_ARM{}
+	return &arm.IstioEgressGateway{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (gateway *IstioEgressGateway) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(IstioEgressGateway_ARM)
+	typedInput, ok := armInput.(arm.IstioEgressGateway)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected IstioEgressGateway_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.IstioEgressGateway, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -29420,14 +29937,14 @@ var _ genruntime.FromARMConverter = &IstioEgressGateway_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (gateway *IstioEgressGateway_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &IstioEgressGateway_STATUS_ARM{}
+	return &arm.IstioEgressGateway_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (gateway *IstioEgressGateway_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(IstioEgressGateway_STATUS_ARM)
+	typedInput, ok := armInput.(arm.IstioEgressGateway_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected IstioEgressGateway_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.IstioEgressGateway_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -29498,7 +30015,7 @@ func (gateway *IstioIngressGateway) ConvertToARM(resolved genruntime.ConvertToAR
 	if gateway == nil {
 		return nil, nil
 	}
-	result := &IstioIngressGateway_ARM{}
+	result := &arm.IstioIngressGateway{}
 
 	// Set property "Enabled":
 	if gateway.Enabled != nil {
@@ -29508,7 +30025,9 @@ func (gateway *IstioIngressGateway) ConvertToARM(resolved genruntime.ConvertToAR
 
 	// Set property "Mode":
 	if gateway.Mode != nil {
-		mode := *gateway.Mode
+		var temp string
+		temp = string(*gateway.Mode)
+		mode := arm.IstioIngressGateway_Mode(temp)
 		result.Mode = &mode
 	}
 	return result, nil
@@ -29516,14 +30035,14 @@ func (gateway *IstioIngressGateway) ConvertToARM(resolved genruntime.ConvertToAR
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (gateway *IstioIngressGateway) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &IstioIngressGateway_ARM{}
+	return &arm.IstioIngressGateway{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (gateway *IstioIngressGateway) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(IstioIngressGateway_ARM)
+	typedInput, ok := armInput.(arm.IstioIngressGateway)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected IstioIngressGateway_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.IstioIngressGateway, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -29534,7 +30053,9 @@ func (gateway *IstioIngressGateway) PopulateFromARM(owner genruntime.ArbitraryOw
 
 	// Set property "Mode":
 	if typedInput.Mode != nil {
-		mode := *typedInput.Mode
+		var temp string
+		temp = string(*typedInput.Mode)
+		mode := IstioIngressGateway_Mode(temp)
 		gateway.Mode = &mode
 	}
 
@@ -29612,14 +30133,14 @@ var _ genruntime.FromARMConverter = &IstioIngressGateway_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (gateway *IstioIngressGateway_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &IstioIngressGateway_STATUS_ARM{}
+	return &arm.IstioIngressGateway_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (gateway *IstioIngressGateway_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(IstioIngressGateway_STATUS_ARM)
+	typedInput, ok := armInput.(arm.IstioIngressGateway_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected IstioIngressGateway_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.IstioIngressGateway_STATUS, got %T", armInput)
 	}
 
 	// Set property "Enabled":
@@ -29630,7 +30151,9 @@ func (gateway *IstioIngressGateway_STATUS) PopulateFromARM(owner genruntime.Arbi
 
 	// Set property "Mode":
 	if typedInput.Mode != nil {
-		mode := *typedInput.Mode
+		var temp string
+		temp = string(*typedInput.Mode)
+		mode := IstioIngressGateway_Mode_STATUS(temp)
 		gateway.Mode = &mode
 	}
 
@@ -29719,7 +30242,7 @@ func (authority *IstioPluginCertificateAuthority) ConvertToARM(resolved genrunti
 	if authority == nil {
 		return nil, nil
 	}
-	result := &IstioPluginCertificateAuthority_ARM{}
+	result := &arm.IstioPluginCertificateAuthority{}
 
 	// Set property "CertChainObjectName":
 	if authority.CertChainObjectName != nil {
@@ -29759,14 +30282,14 @@ func (authority *IstioPluginCertificateAuthority) ConvertToARM(resolved genrunti
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (authority *IstioPluginCertificateAuthority) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &IstioPluginCertificateAuthority_ARM{}
+	return &arm.IstioPluginCertificateAuthority{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (authority *IstioPluginCertificateAuthority) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(IstioPluginCertificateAuthority_ARM)
+	typedInput, ok := armInput.(arm.IstioPluginCertificateAuthority)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected IstioPluginCertificateAuthority_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.IstioPluginCertificateAuthority, got %T", armInput)
 	}
 
 	// Set property "CertChainObjectName":
@@ -29884,14 +30407,14 @@ var _ genruntime.FromARMConverter = &IstioPluginCertificateAuthority_STATUS{}
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (authority *IstioPluginCertificateAuthority_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &IstioPluginCertificateAuthority_STATUS_ARM{}
+	return &arm.IstioPluginCertificateAuthority_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (authority *IstioPluginCertificateAuthority_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(IstioPluginCertificateAuthority_STATUS_ARM)
+	typedInput, ok := armInput.(arm.IstioPluginCertificateAuthority_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected IstioPluginCertificateAuthority_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.IstioPluginCertificateAuthority_STATUS, got %T", armInput)
 	}
 
 	// Set property "CertChainObjectName":
@@ -29991,14 +30514,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterPodIdentityProvisioningError_
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (error *ManagedClusterPodIdentityProvisioningError_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterPodIdentityProvisioningError_STATUS_ARM{}
+	return &arm.ManagedClusterPodIdentityProvisioningError_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (error *ManagedClusterPodIdentityProvisioningError_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterPodIdentityProvisioningError_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterPodIdentityProvisioningError_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterPodIdentityProvisioningError_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterPodIdentityProvisioningError_STATUS, got %T", armInput)
 	}
 
 	// Set property "Error":
@@ -30109,14 +30632,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterPodIdentityProvisioningErrorB
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (body *ManagedClusterPodIdentityProvisioningErrorBody_STATUS) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterPodIdentityProvisioningErrorBody_STATUS_ARM{}
+	return &arm.ManagedClusterPodIdentityProvisioningErrorBody_STATUS{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (body *ManagedClusterPodIdentityProvisioningErrorBody_STATUS) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterPodIdentityProvisioningErrorBody_STATUS_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterPodIdentityProvisioningErrorBody_STATUS)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterPodIdentityProvisioningErrorBody_STATUS_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterPodIdentityProvisioningErrorBody_STATUS, got %T", armInput)
 	}
 
 	// Set property "Code":
@@ -30243,14 +30766,14 @@ var _ genruntime.FromARMConverter = &ManagedClusterPodIdentityProvisioningErrorB
 
 // NewEmptyARMValue returns an empty ARM value suitable for deserializing into
 func (unrolled *ManagedClusterPodIdentityProvisioningErrorBody_STATUS_Unrolled) NewEmptyARMValue() genruntime.ARMResourceStatus {
-	return &ManagedClusterPodIdentityProvisioningErrorBody_STATUS_Unrolled_ARM{}
+	return &arm.ManagedClusterPodIdentityProvisioningErrorBody_STATUS_Unrolled{}
 }
 
 // PopulateFromARM populates a Kubernetes CRD object from an Azure ARM object
 func (unrolled *ManagedClusterPodIdentityProvisioningErrorBody_STATUS_Unrolled) PopulateFromARM(owner genruntime.ArbitraryOwnerReference, armInput interface{}) error {
-	typedInput, ok := armInput.(ManagedClusterPodIdentityProvisioningErrorBody_STATUS_Unrolled_ARM)
+	typedInput, ok := armInput.(arm.ManagedClusterPodIdentityProvisioningErrorBody_STATUS_Unrolled)
 	if !ok {
-		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected ManagedClusterPodIdentityProvisioningErrorBody_STATUS_Unrolled_ARM, got %T", armInput)
+		return fmt.Errorf("unexpected type supplied for PopulateFromARM() function. Expected arm.ManagedClusterPodIdentityProvisioningErrorBody_STATUS_Unrolled, got %T", armInput)
 	}
 
 	// Set property "Code":

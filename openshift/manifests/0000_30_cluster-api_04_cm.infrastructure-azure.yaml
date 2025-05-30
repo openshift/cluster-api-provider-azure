@@ -1817,6 +1817,11 @@ data:
                         description: PrivateDNSZoneName defines the zone name for the
                           Azure Private DNS.
                         type: string
+                      privateDNSZoneResourceGroup:
+                        description: |-
+                          PrivateDNSZoneResourceGroup defines the resource group to be used for Azure Private DNS Zone.
+                          If not specified, the resource group of the cluster will be used to create the Azure Private DNS Zone.
+                        type: string
                       subnets:
                         description: Subnets is the configuration for the control-plane
                           subnet and the node subnet.
@@ -2949,6 +2954,11 @@ data:
                               privateDNSZoneName:
                                 description: PrivateDNSZoneName defines the zone name
                                   for the Azure Private DNS.
+                                type: string
+                              privateDNSZoneResourceGroup:
+                                description: |-
+                                  PrivateDNSZoneResourceGroup defines the resource group to be used for Azure Private DNS Zone.
+                                  If not specified, the resource group of the cluster will be used to create the Azure Private DNS Zone.
                                 type: string
                               subnets:
                                 description: Subnets is the configuration for the control-plane
@@ -10017,8 +10027,7 @@ data:
     - apiGroups:
       - bootstrap.cluster.x-k8s.io
       resources:
-      - kubeadmconfigs
-      - kubeadmconfigs/status
+      - '*'
       verbs:
       - get
       - list
@@ -10394,6 +10403,10 @@ data:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
             image: to.be/replaced:v99
             imagePullPolicy: Always
             livenessProbe:
@@ -10986,6 +10999,9 @@ data:
       - major: 1
         minor: 18
         contract: v1beta1
+      - major: 1
+        minor: 19
+        contract: v1beta1
 kind: ConfigMap
 metadata:
   annotations:
@@ -10997,6 +11013,6 @@ metadata:
   labels:
     provider.cluster.x-k8s.io/name: azure
     provider.cluster.x-k8s.io/type: infrastructure
-    provider.cluster.x-k8s.io/version: 1.18.0
+    provider.cluster.x-k8s.io/version: v1.19.4
   name: azure
   namespace: openshift-cluster-api

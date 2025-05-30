@@ -6,7 +6,8 @@
 package secrets
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 
 	"github.com/pkg/errors"
 	"golang.org/x/exp/maps"
@@ -53,11 +54,11 @@ func (c *Collector) get(dest *genruntime.SecretDestination) *v1.Secret {
 
 func (c *Collector) errIfKeyExists(val *v1.Secret, key string) error {
 	if _, ok := val.StringData[key]; ok {
-		return errors.Errorf("key collision, entry exists for key %s in StringData", key)
+		return errors.Errorf("key collision, entry exists for key '%s' in StringData", key)
 	}
 
 	if _, ok := val.Data[key]; ok {
-		return errors.Errorf("key collision, entry exists for key %s in Data", key)
+		return errors.Errorf("key collision, entry exists for key '%s' in Data", key)
 	}
 
 	return nil
@@ -115,11 +116,12 @@ func (c *Collector) Values() ([]*v1.Secret, error) {
 	result := maps.Values(c.secrets)
 
 	// Force a deterministic ordering
-	sort.Slice(result, func(i, j int) bool {
-		left := result[i]
-		right := result[j]
+	slices.SortFunc(result, func(left, right *v1.Secret) int {
+		if c := cmp.Compare(left.Namespace, right.Namespace); c != 0 {
+			return c
+		}
 
-		return left.Namespace < right.Namespace || (left.Namespace == right.Namespace && left.Name < right.Name)
+		return cmp.Compare(left.Name, right.Name)
 	})
 
 	return result, nil

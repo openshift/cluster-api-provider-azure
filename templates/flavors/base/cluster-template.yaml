@@ -58,8 +58,7 @@ spec:
     clusterConfiguration:
       apiServer:
         timeoutForControlPlane: 20m
-        extraArgs:
-          cloud-provider: external
+        extraArgs: {}
       controllerManager:
         extraArgs:
           allocate-node-cidrs: "false"
@@ -100,6 +99,7 @@ spec:
         - /var/lib/etcddisk
     preKubeadmCommands: []
     postKubeadmCommands: []
+    verbosity: 10
   version: "${KUBERNETES_VERSION}"
 ---
 kind: AzureMachineTemplate

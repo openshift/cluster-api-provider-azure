@@ -4259,13 +4259,26 @@ spec:
               type:
                 description: |-
                   Type is the type of Azure Identity used.
-                  ServicePrincipal, ServicePrincipalCertificate, UserAssignedMSI, ManualServicePrincipal or WorkloadIdentity.
+                  ServicePrincipal, ServicePrincipalCertificate, UserAssignedMSI, ManualServicePrincipal, UserAssignedIdentityCredential, or WorkloadIdentity.
                 enum:
                 - ServicePrincipal
                 - UserAssignedMSI
                 - ManualServicePrincipal
                 - ServicePrincipalCertificate
                 - WorkloadIdentity
+                - UserAssignedIdentityCredential
+                type: string
+              userAssignedIdentityCredentialsCloudType:
+                description: |-
+                  UserAssignedIdentityCredentialsCloudType is used with UserAssignedIdentityCredentialsPath to specify the Cloud
+                  type. Can only be one of the following values: public, china, or usgovernment
+                  If a value is not specified, defaults to public
+                type: string
+              userAssignedIdentityCredentialsPath:
+                description: |-
+                  UserAssignedIdentityCredentialsPath is the path where an existing JSON file exists containing the JSON format of
+                  a UserAssignedIdentityCredentials struct.
+                  See the msi-dataplane for more details on UserAssignedIdentityCredentials - https://github.com/Azure/msi-dataplane/blob/main/pkg/dataplane/internal/client/models.go#L125
                 type: string
             required:
             - clientID
@@ -10858,7 +10871,7 @@ spec:
   selector:
     cluster.x-k8s.io/provider: infrastructure-azure
 ---
-apiVersion: admissionregistration.k8s.io/v1beta1
+apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
   name: openshift-cluster-api-protect-azurecluster
@@ -10882,7 +10895,7 @@ spec:
     message: InfraCluster resources with metadata.name corresponding to the cluster
       infrastructureName cannot be deleted.
 ---
-apiVersion: admissionregistration.k8s.io/v1beta1
+apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
 metadata:
   name: openshift-cluster-api-protect-azurecluster

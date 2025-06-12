@@ -51,7 +51,6 @@ const (
 	HuaweiProviderName         = "huawei"
 	OutscaleProviderName       = "outscale"
 	IBMCloudProviderName       = "ibmcloud"
-	InMemoryProviderName       = "in-memory"
 	LinodeProviderName         = "linode-linode"
 	Metal3ProviderName         = "metal3"
 	NestedProviderName         = "nested"
@@ -288,11 +287,6 @@ func (p *providersClient) defaults() []Provider {
 		&provider{
 			name:         IBMCloudProviderName,
 			url:          "https://github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/releases/latest/infrastructure-components.yaml",
-			providerType: clusterctlv1.InfrastructureProviderType,
-		},
-		&provider{
-			name:         InMemoryProviderName,
-			url:          "https://github.com/kubernetes-sigs/cluster-api/releases/latest/infrastructure-components-in-memory-development.yaml",
 			providerType: clusterctlv1.InfrastructureProviderType,
 		},
 		&provider{

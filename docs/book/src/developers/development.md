@@ -388,7 +388,7 @@ export CONTROL_PLANE_MACHINE_COUNT=3
 export AZURE_CONTROL_PLANE_MACHINE_TYPE="Standard_B2s"
 export AZURE_NODE_MACHINE_TYPE="Standard_B2s"
 export WORKER_MACHINE_COUNT=2
-export KUBERNETES_VERSION="v1.25.6"
+export KUBERNETES_VERSION="v1.32.2"
 
 # Identity secret.
 export AZURE_CLUSTER_IDENTITY_SECRET_NAME="cluster-identity-secret"
@@ -506,6 +506,8 @@ To run E2E locally, set `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_SUBSCRI
 ```bash
 ./scripts/ci-e2e.sh
 ```
+
+Note: Users that have a restrictive environment and want to leverage API Server ILB in their flavors and to run e2e tests locally should refer to the detailed explanation in [running e2e tests locally leveraging apiserver ilb solution](./tilt-with-aks-as-mgmt-ilb.md#running-e2e-tests-locally-using-api-server-ilbs-networking-solution)
 
 You can optionally set the following variables:
 

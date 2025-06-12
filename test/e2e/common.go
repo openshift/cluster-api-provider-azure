@@ -43,6 +43,7 @@ import (
 	capi_e2e "sigs.k8s.io/cluster-api/test/e2e"
 	"sigs.k8s.io/cluster-api/test/framework"
 	"sigs.k8s.io/cluster-api/test/framework/clusterctl"
+	"sigs.k8s.io/cluster-api/util/conditions"
 	"sigs.k8s.io/cluster-api/util/kubeconfig"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -163,9 +164,11 @@ func dumpSpecResourcesAndCleanup(ctx context.Context, input cleanupInput) {
 	Logf("Dumping all the Cluster API resources in the %q namespace", input.Namespace.Name)
 	// Dump all Cluster API related resources to artifacts before deleting them.
 	framework.DumpAllResources(ctx, framework.DumpAllResourcesInput{
-		Lister:    input.ClusterProxy.GetClient(),
-		Namespace: input.Namespace.Name,
-		LogPath:   filepath.Join(input.ArtifactFolder, "clusters", input.ClusterProxy.GetName(), "resources"),
+		Lister:               input.ClusterProxy.GetClient(),
+		KubeConfigPath:       input.ClusterProxy.GetKubeconfigPath(),
+		ClusterctlConfigPath: clusterctlConfigPath,
+		Namespace:            input.Namespace.Name,
+		LogPath:              filepath.Join(input.ArtifactFolder, "clusters", input.ClusterProxy.GetName(), "resources"),
 	})
 
 	if input.Cluster == nil {
@@ -188,9 +191,10 @@ func dumpSpecResourcesAndCleanup(ctx context.Context, input cleanupInput) {
 		deleteTimeoutConfig = "wait-delete-cluster-aks"
 	}
 	framework.DeleteAllClustersAndWait(ctx, framework.DeleteAllClustersAndWaitInput{
-		Client:         input.ClusterProxy.GetClient(),
-		Namespace:      input.Namespace.Name,
-		ArtifactFolder: input.ArtifactFolder,
+		ClusterProxy:         input.ClusterProxy,
+		ClusterctlConfigPath: clusterctlConfigPath,
+		Namespace:            input.Namespace.Name,
+		ArtifactFolder:       input.ArtifactFolder,
 	}, input.IntervalsGetter(input.SpecName, deleteTimeoutConfig)...)
 
 	Logf("Deleting namespace used for hosting the %q test spec", input.SpecName)
@@ -226,7 +230,7 @@ func redactLogs() {
 	By("Redacting sensitive information from logs")
 	Expect(e2eConfig.Variables).To(HaveKey(RedactLogScriptPath))
 	//nolint:gosec // Ignore warning about running a command constructed from user input
-	cmd := exec.Command(e2eConfig.GetVariable(RedactLogScriptPath))
+	cmd := exec.Command(e2eConfig.MustGetVariable(RedactLogScriptPath))
 	if err := cmd.Run(); err != nil {
 		LogWarningf("Redact logs command failed: %v", err)
 	}
@@ -308,6 +312,33 @@ func ensureControlPlaneInitialized(ctx context.Context, input clusterctl.ApplyCu
 	result.ControlPlane = controlPlane
 }
 
+// ensureContolPlaneReplicasMatch waits for the control plane machine replicas to be created.
+func ensureContolPlaneReplicasMatch(ctx context.Context, proxy framework.ClusterProxy, ns, clusterName string, replicas int, intervals []interface{}) {
+	By("Waiting for all control plane nodes to exist")
+	inClustersNamespaceListOption := client.InNamespace(ns)
+	// ControlPlane labels
+	matchClusterListOption := client.MatchingLabels{
+		clusterv1.MachineControlPlaneLabel: "",
+		clusterv1.ClusterNameLabel:         clusterName,
+	}
+
+	Eventually(func() (int, error) {
+		machineList := &clusterv1.MachineList{}
+		lister := proxy.GetClient()
+		if err := lister.List(ctx, machineList, inClustersNamespaceListOption, matchClusterListOption); err != nil {
+			Logf("Failed to list the machines: %+v", err)
+			return 0, err
+		}
+		count := 0
+		for _, machine := range machineList.Items {
+			if condition := conditions.Get(&machine, clusterv1.MachineReadyV1Beta2Condition); condition != nil && condition.Status == corev1.ConditionTrue {
+				count++
+			}
+		}
+		return count, nil
+	}, intervals...).Should(Equal(replicas), "Timed out waiting for %d control plane machines to exist", replicas)
+}
+
 // CheckTestBeforeCleanup checks to see if the current running Ginkgo test failed, and prints
 // a status message regarding cleanup.
 func CheckTestBeforeCleanup() {
@@ -335,7 +366,7 @@ func createApplyClusterTemplateInput(specName string, changes ...func(*clusterct
 			Flavor:                   clusterctl.DefaultFlavor,
 			Namespace:                "default",
 			ClusterName:              "cluster",
-			KubernetesVersion:        e2eConfig.GetVariable(capi_e2e.KubernetesVersion),
+			KubernetesVersion:        e2eConfig.MustGetVariable(capi_e2e.KubernetesVersion),
 			ControlPlaneMachineCount: ptr.To[int64](1),
 			WorkerMachineCount:       ptr.To[int64](1),
 		},

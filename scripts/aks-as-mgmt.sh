@@ -23,9 +23,9 @@ source "${REPO_ROOT}/hack/ensure-azcli.sh" # install az cli and login using WI
 # shellcheck source=hack/ensure-tags.sh
 source "${REPO_ROOT}/hack/ensure-tags.sh" # set the right timestamp and job name
 
-export MGMT_CLUSTER_NAME="${MGMT_CLUSTER_NAME:-aks-mgmt-capz-${RANDOM_SUFFIX}}" # management cluster name
-export AKS_RESOURCE_GROUP="${AKS_RESOURCE_GROUP:-aks-mgmt-capz-${RANDOM_SUFFIX}}" # resource group name
-export AKS_NODE_RESOURCE_GROUP="node-${AKS_RESOURCE_GROUP}"
+export MGMT_CLUSTER_NAME="${MGMT_CLUSTER_NAME:-aks-mgmt-$(date +%s)}" # management cluster name
+export AKS_RESOURCE_GROUP="${AKS_RESOURCE_GROUP:-"${MGMT_CLUSTER_NAME}"}" # resource group name
+export AKS_NODE_RESOURCE_GROUP="${AKS_RESOURCE_GROUP}-nodes"
 export AKS_MGMT_KUBERNETES_VERSION="${AKS_MGMT_KUBERNETES_VERSION:-v1.30.2}"
 export AZURE_LOCATION="${AZURE_LOCATION:-westus2}"
 export AKS_NODE_VM_SIZE="${AKS_NODE_VM_SIZE:-"Standard_B2s"}"
@@ -33,11 +33,11 @@ export AKS_NODE_COUNT="${AKS_NODE_COUNT:-2}"
 export MGMT_CLUSTER_KUBECONFIG="${MGMT_CLUSTER_KUBECONFIG:-$REPO_ROOT/aks-mgmt.config}"
 export AZURE_IDENTITY_ID_FILEPATH="${AZURE_IDENTITY_ID_FILEPATH:-$REPO_ROOT/azure_identity_id}"
 export REGISTRY="${REGISTRY:-}"
-export AKS_MGMT_VNET_NAME="${AKS_MGMT_VNET_NAME:-"aks-mgmt-vnet-${RANDOM_SUFFIX}"}"
+export AKS_MGMT_VNET_NAME="${AKS_MGMT_VNET_NAME:-"${MGMT_CLUSTER_NAME}-vnet"}"
 export AKS_MGMT_VNET_CIDR="${AKS_MGMT_VNET_CIDR:-"20.255.0.0/16"}"
 export AKS_MGMT_SERVICE_CIDR="${AKS_MGMT_SERVICE_CIDR:-"20.255.254.0/24"}"
 export AKS_MGMT_DNS_SERVICE_IP="${AKS_MGMT_DNS_SERVICE_IP:-"20.255.254.100"}"
-export AKS_MGMT_SUBNET_NAME="${AKS_MGMT_SUBNET_NAME:-"aks-mgmt-subnet-${RANDOM_SUFFIX}"}"
+export AKS_MGMT_SUBNET_NAME="${AKS_MGMT_SUBNET_NAME:-"${MGMT_CLUSTER_NAME}-subnet"}"
 export AKS_MGMT_SUBNET_CIDR="${AKS_MGMT_SUBNET_CIDR:-"20.255.0.0/24"}"
 
 
@@ -57,42 +57,44 @@ export SKIP_AKS_CREATE="${SKIP_AKS_CREATE:-false}"
 
 main() {
 
-  echo "--------------------------------"
-  echo "MGMT_CLUSTER_NAME:                    $MGMT_CLUSTER_NAME"
-  echo "AKS_RESOURCE_GROUP:                   $AKS_RESOURCE_GROUP"
-  echo "AKS_NODE_RESOURCE_GROUP:              $AKS_NODE_RESOURCE_GROUP"
-  echo "AKS_MGMT_KUBERNETES_VERSION:          $AKS_MGMT_KUBERNETES_VERSION"
-  echo "AZURE_LOCATION:                       $AZURE_LOCATION"
-  echo "AKS_NODE_VM_SIZE:                     $AKS_NODE_VM_SIZE"
-  echo "AKS_NODE_COUNT:                       $AKS_NODE_COUNT"
-  echo "MGMT_CLUSTER_KUBECONFIG:              $MGMT_CLUSTER_KUBECONFIG"
-  echo "AZURE_IDENTITY_ID_FILEPATH:           $AZURE_IDENTITY_ID_FILEPATH"
-  echo "REGISTRY:                             $REGISTRY"
-  echo "AKS_MGMT_VNET_NAME:                   $AKS_MGMT_VNET_NAME"
-  echo "AKS_MGMT_VNET_CIDR:                   $AKS_MGMT_VNET_CIDR"
-  echo "AKS_MGMT_SERVICE_CIDR:                $AKS_MGMT_SERVICE_CIDR"
-  echo "AKS_MGMT_DNS_SERVICE_IP:              $AKS_MGMT_DNS_SERVICE_IP"
-  echo "AKS_MGMT_SUBNET_NAME:                 $AKS_MGMT_SUBNET_NAME"
-  echo "AKS_MGMT_SUBNET_CIDR:                 $AKS_MGMT_SUBNET_CIDR"
-
-  echo "AZURE_SUBSCRIPTION_ID:                $AZURE_SUBSCRIPTION_ID"
-  echo "AZURE_CLIENT_ID:                      $AZURE_CLIENT_ID"
-  echo "AZURE_TENANT_ID:                      $AZURE_TENANT_ID"
-  echo "APISERVER_LB_DNS_SUFFIX:              $APISERVER_LB_DNS_SUFFIX"
-  echo "AKS_MI_CLIENT_ID:                     $AKS_MI_CLIENT_ID"
-  echo "AKS_MI_OBJECT_ID:                     $AKS_MI_OBJECT_ID"
-  echo "AKS_MI_RESOURCE_ID:                   $AKS_MI_RESOURCE_ID"
-  echo "MANAGED_IDENTITY_NAME:                $MANAGED_IDENTITY_NAME"
-  echo "MANAGED_IDENTITY_RG:                  $MANAGED_IDENTITY_RG"
-  echo "ASO_CREDENTIAL_SECRET_MODE:           $ASO_CREDENTIAL_SECRET_MODE"
-  echo "SKIP_AKS_CREATE:                      $SKIP_AKS_CREATE"
-  echo "--------------------------------"
-
   # if using SKIP_AKS_CREATE=true, skip creating the AKS cluster
   if [[ "${SKIP_AKS_CREATE}" == "true" ]]; then
     echo "Skipping AKS cluster creation"
     return
   fi
+
+  echo "--------------------------------"
+  echo "MGMT_CLUSTER_NAME:                        $MGMT_CLUSTER_NAME"
+  echo "AKS_RESOURCE_GROUP:                       $AKS_RESOURCE_GROUP"
+  echo "AKS_NODE_RESOURCE_GROUP:                  $AKS_NODE_RESOURCE_GROUP"
+  echo "AKS_MGMT_KUBERNETES_VERSION:              $AKS_MGMT_KUBERNETES_VERSION"
+  echo "AZURE_LOCATION:                           $AZURE_LOCATION"
+  echo "AKS_NODE_VM_SIZE:                         $AKS_NODE_VM_SIZE"
+  echo "AKS_NODE_COUNT:                           $AKS_NODE_COUNT"
+  echo "MGMT_CLUSTER_KUBECONFIG:                  $MGMT_CLUSTER_KUBECONFIG"
+  echo "AZURE_IDENTITY_ID_FILEPATH:               $AZURE_IDENTITY_ID_FILEPATH"
+  echo "REGISTRY:                                 $REGISTRY"
+  echo "AKS_MGMT_VNET_NAME:                       $AKS_MGMT_VNET_NAME"
+  echo "AKS_MGMT_VNET_CIDR:                       $AKS_MGMT_VNET_CIDR"
+  echo "AKS_MGMT_SERVICE_CIDR:                    $AKS_MGMT_SERVICE_CIDR"
+  echo "AKS_MGMT_DNS_SERVICE_IP:                  $AKS_MGMT_DNS_SERVICE_IP"
+  echo "AKS_MGMT_SUBNET_NAME:                     $AKS_MGMT_SUBNET_NAME"
+  echo "AKS_MGMT_SUBNET_CIDR:                     $AKS_MGMT_SUBNET_CIDR"
+  echo "AZURE_SUBSCRIPTION_ID:                    $AZURE_SUBSCRIPTION_ID"
+  echo "AZURE_CLIENT_ID:                          $AZURE_CLIENT_ID"
+  echo "AZURE_TENANT_ID:                          $AZURE_TENANT_ID"
+  echo "APISERVER_LB_DNS_SUFFIX:                  $APISERVER_LB_DNS_SUFFIX"
+  echo "AKS_MI_CLIENT_ID:                         $AKS_MI_CLIENT_ID"
+  echo "AKS_MI_OBJECT_ID:                         $AKS_MI_OBJECT_ID"
+  echo "AKS_MI_RESOURCE_ID:                       $AKS_MI_RESOURCE_ID"
+  echo "MANAGED_IDENTITY_NAME:                    $MANAGED_IDENTITY_NAME"
+  echo "MANAGED_IDENTITY_RG:                      $MANAGED_IDENTITY_RG"
+  echo "ASO_CREDENTIAL_SECRET_MODE:               $ASO_CREDENTIAL_SECRET_MODE"
+  echo "SKIP_AKS_CREATE:                          $SKIP_AKS_CREATE"
+  echo "AZURE_CLIENT_ID_USER_ASSIGNED_IDENTITY:   ${AZURE_CLIENT_ID_USER_ASSIGNED_IDENTITY:-}"
+  echo "AZURE_OBJECT_ID_USER_ASSIGNED_IDENTITY:   ${AZURE_OBJECT_ID_USER_ASSIGNED_IDENTITY:-}"
+  echo "AZURE_USER_ASSIGNED_IDENTITY_RESOURCE_ID: ${AZURE_USER_ASSIGNED_IDENTITY_RESOURCE_ID:-}"
+  echo "--------------------------------"
 
   create_aks_cluster
   set_env_variables
@@ -131,6 +133,7 @@ create_aks_cluster() {
     --node-vm-size "${AKS_NODE_VM_SIZE}" \
     --node-resource-group "${AKS_NODE_RESOURCE_GROUP}" \
     --vm-set-type VirtualMachineScaleSets \
+    --enable-managed-identity \
     --generate-ssh-keys \
     --network-plugin azure \
     --vnet-subnet-id "/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${AKS_RESOURCE_GROUP}/providers/Microsoft.Network/virtualNetworks/${AKS_MGMT_VNET_NAME}/subnets/${AKS_MGMT_SUBNET_NAME}" \
@@ -155,44 +158,90 @@ create_aks_cluster() {
   az aks get-credentials --name "${MGMT_CLUSTER_NAME}" --resource-group "${AKS_RESOURCE_GROUP}" \
   --overwrite-existing --only-show-errors
 
-  # echo "fetching Client ID for ${MGMT_CLUSTER_NAME}"
-  AKS_MI_CLIENT_ID=$(az aks show -n "${MGMT_CLUSTER_NAME}" -g "${AKS_RESOURCE_GROUP}" --output json \
-  --only-show-errors | jq -r '.identityProfile.kubeletidentity.clientId')
-  export AKS_MI_CLIENT_ID
-  echo "mgmt client identity: ${AKS_MI_CLIENT_ID}"
-  echo "${AKS_MI_CLIENT_ID}" > "${AZURE_IDENTITY_ID_FILEPATH}"
+  if [[ -n "${AZURE_CLIENT_ID_USER_ASSIGNED_IDENTITY:-}" ]] && \
+     [[ -n "${AZURE_OBJECT_ID_USER_ASSIGNED_IDENTITY:-}" ]] && \
+     [[ -n "${AZURE_USER_ASSIGNED_IDENTITY_RESOURCE_ID:-}" ]]; then
+    echo "using user-provided Managed Identity"
+    # echo "fetching Client ID for ${MGMT_CLUSTER_NAME}"
+    AKS_MI_CLIENT_ID=${AZURE_CLIENT_ID_USER_ASSIGNED_IDENTITY}
+    export AKS_MI_CLIENT_ID
+    echo "mgmt client identity: ${AKS_MI_CLIENT_ID}"
+    echo "${AKS_MI_CLIENT_ID}" > "${AZURE_IDENTITY_ID_FILEPATH}"
 
-  # echo "fetching Object ID for ${MGMT_CLUSTER_NAME}"
-  AKS_MI_OBJECT_ID=$(az aks show -n "${MGMT_CLUSTER_NAME}" -g "${AKS_RESOURCE_GROUP}" --output json \
-  --only-show-errors | jq -r '.identityProfile.kubeletidentity.objectId')
-  export AKS_MI_OBJECT_ID
-  echo "mgmt object identity: ${AKS_MI_OBJECT_ID}"
+    # echo "fetching Object ID for ${MGMT_CLUSTER_NAME}"
+    AKS_MI_OBJECT_ID=${AZURE_OBJECT_ID_USER_ASSIGNED_IDENTITY}
+    export AKS_MI_OBJECT_ID
+    echo "mgmt object identity: ${AKS_MI_OBJECT_ID}"
 
-  # echo "fetching Resource ID for ${MGMT_CLUSTER_NAME}"
-  AKS_MI_RESOURCE_ID=$(az aks show -n "${MGMT_CLUSTER_NAME}" -g "${AKS_RESOURCE_GROUP}" --output json \
-  --only-show-errors | jq -r '.identityProfile.kubeletidentity.resourceId')
-  export AKS_MI_RESOURCE_ID
-  echo "mgmt resource identity: ${AKS_MI_RESOURCE_ID}"
+    # echo "fetching Resource ID for ${MGMT_CLUSTER_NAME}"
+    AKS_MI_RESOURCE_ID=${AZURE_USER_ASSIGNED_IDENTITY_RESOURCE_ID}
+    export AKS_MI_RESOURCE_ID
+    echo "mgmt resource identity: ${AKS_MI_RESOURCE_ID}"
 
-  # save resource identity name and resource group
-  MANAGED_IDENTITY_NAME=$(az identity show --ids "${AKS_MI_RESOURCE_ID}" --output json | jq -r '.name')
-  # export MANAGED_IDENTITY_NAME
-  echo "mgmt resource identity name: ${MANAGED_IDENTITY_NAME}"
-  USER_IDENTITY=$MANAGED_IDENTITY_NAME
-  export USER_IDENTITY
+    # save resource identity name and resource group
+    MANAGED_IDENTITY_NAME=$(az identity show --ids "${AKS_MI_RESOURCE_ID}" --output json | jq -r '.name')
+    # export MANAGED_IDENTITY_NAME
+    echo "mgmt resource identity name: ${MANAGED_IDENTITY_NAME}"
+    USER_IDENTITY=$MANAGED_IDENTITY_NAME
+    export USER_IDENTITY
+
+    echo "assigning user-assigned managed identity to the AKS cluster"
+    az aks update --resource-group "${AKS_RESOURCE_GROUP}" \
+    --name "${MGMT_CLUSTER_NAME}" \
+    --enable-managed-identity \
+    --assign-identity "${AKS_MI_RESOURCE_ID}" \
+    --assign-kubelet-identity "${AKS_MI_RESOURCE_ID}" \
+    --output none --only-show-errors --yes
+
+  else
+    # echo "fetching Client ID for ${MGMT_CLUSTER_NAME}"
+    AKS_MI_CLIENT_ID=$(az aks show -n "${MGMT_CLUSTER_NAME}" -g "${AKS_RESOURCE_GROUP}" --output json \
+    --only-show-errors | jq -r '.identityProfile.kubeletidentity.clientId')
+    export AKS_MI_CLIENT_ID
+    echo "mgmt client identity: ${AKS_MI_CLIENT_ID}"
+    echo "${AKS_MI_CLIENT_ID}" > "${AZURE_IDENTITY_ID_FILEPATH}"
+
+    # echo "fetching Object ID for ${MGMT_CLUSTER_NAME}"
+    AKS_MI_OBJECT_ID=$(az aks show -n "${MGMT_CLUSTER_NAME}" -g "${AKS_RESOURCE_GROUP}" --output json \
+    --only-show-errors | jq -r '.identityProfile.kubeletidentity.objectId')
+    export AKS_MI_OBJECT_ID
+    echo "mgmt object identity: ${AKS_MI_OBJECT_ID}"
+
+    # echo "fetching Resource ID for ${MGMT_CLUSTER_NAME}"
+    AKS_MI_RESOURCE_ID=$(az aks show -n "${MGMT_CLUSTER_NAME}" -g "${AKS_RESOURCE_GROUP}" --output json \
+    --only-show-errors | jq -r '.identityProfile.kubeletidentity.resourceId')
+    export AKS_MI_RESOURCE_ID
+    echo "mgmt resource identity: ${AKS_MI_RESOURCE_ID}"
+
+    # save resource identity name and resource group
+    MANAGED_IDENTITY_NAME=$(az identity show --ids "${AKS_MI_RESOURCE_ID}" --output json | jq -r '.name')
+    # export MANAGED_IDENTITY_NAME
+    echo "mgmt resource identity name: ${MANAGED_IDENTITY_NAME}"
+    USER_IDENTITY=$MANAGED_IDENTITY_NAME
+    export USER_IDENTITY
+
+  fi
 
   MANAGED_IDENTITY_RG=$(az identity show --ids "${AKS_MI_RESOURCE_ID}" --output json | jq -r '.resourceGroup')
   export MANAGED_IDENTITY_RG
   echo "mgmt resource identity resource group: ${MANAGED_IDENTITY_RG}"
 
-  echo "assigning contributor role to the service principal"
+
+  echo "assigning contributor role to managed identity over the $AZURE_SUBSCRIPTION_ID subscription"
+  # Note: Even though --assignee-principal-type ServicePrincipal is specified, this does not mean that the role assignment is for a secret of type service principal.
+  # Creating a role assignment for a managed identity using other assignee-principal-type from (Group, User, ForeignGroup) will lead to RBAC error.
+  # To avoid RBAC error, we need to assign the role to the managed identity using the --assignee-principal-type ServicePrincipal.
+  # refer: https://learn.microsoft.com/en-us/azure/role-based-access-control/troubleshooting?tabs=bicep#symptom---assigning-a-role-to-a-new-principal-sometimes-fails
   until az role assignment create --assignee-object-id "${AKS_MI_OBJECT_ID}" --role "Contributor" \
   --scope "/subscriptions/${AZURE_SUBSCRIPTION_ID}" --assignee-principal-type ServicePrincipal --output none \
   --only-show-errors; do
-    echo "retrying to assign role to the service principal"
+    echo "retrying to assign contributor role"
     sleep 5
   done
 
+  # Set the ASO_CREDENTIAL_SECRET_MODE to podidentity to
+  # use the client ID of the managed identity created by AKS for authentication
+  # refer: https://github.com/Azure/azure-service-operator/blob/190edf60f1d84da7ae4ee5c4df9806068c0cd982/v2/internal/identity/credential_provider.go#L279-L301
   echo "using ASO_CREDENTIAL_SECRET_MODE as podidentity"
   ASO_CREDENTIAL_SECRET_MODE="podidentity"
 }

@@ -98,6 +98,8 @@ spec:
     installation:
       cni:
         type: Calico
+        ipam:
+          type: Calico
       calicoNetwork:
         bgp: Disabled
         mtu: 1350
@@ -208,6 +210,7 @@ data:
               hostProcess: true
               runAsUserName: "NT AUTHORITY\\system"
           hostNetwork: true
+          priorityClassName: system-node-critical
           containers:
           - image: sigwindowstools/kube-proxy:${KUBERNETES_VERSION/+/_}-calico-hostprocess
             args: ["$env:CONTAINER_SANDBOX_MOUNT_POINT/kube-proxy/start.ps1"]

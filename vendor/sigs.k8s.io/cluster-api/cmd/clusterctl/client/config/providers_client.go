@@ -51,7 +51,6 @@ const (
 	HuaweiProviderName         = "huawei"
 	OutscaleProviderName       = "outscale"
 	IBMCloudProviderName       = "ibmcloud"
-	InMemoryProviderName       = "in-memory"
 	LinodeProviderName         = "linode-linode"
 	Metal3ProviderName         = "metal3"
 	NestedProviderName         = "nested"
@@ -288,11 +287,6 @@ func (p *providersClient) defaults() []Provider {
 		&provider{
 			name:         IBMCloudProviderName,
 			url:          "https://github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/releases/latest/infrastructure-components.yaml",
-			providerType: clusterctlv1.InfrastructureProviderType,
-		},
-		&provider{
-			name:         InMemoryProviderName,
-			url:          "https://github.com/kubernetes-sigs/cluster-api/releases/latest/infrastructure-components-in-memory-development.yaml",
 			providerType: clusterctlv1.InfrastructureProviderType,
 		},
 		&provider{
@@ -536,6 +530,10 @@ func (p *providersClient) Get(name string, providerType clusterctlv1.ProviderTyp
 func validateProvider(r Provider) error {
 	if r.Name() == "" {
 		return errors.New("name value cannot be empty")
+	}
+
+	if r.Name() != strings.ToLower(r.Name()) {
+		return errors.Errorf("provider name %s must be in lower case", r.Name())
 	}
 
 	if (r.Name() == ClusterAPIProviderName) != (r.Type() == clusterctlv1.CoreProviderType) {

@@ -260,6 +260,11 @@ data:
                       Use this setting only if VMExtensions are not supported by your image, as it disables CAPZ bootstrapping extension used for detecting Kubernetes bootstrap failure.
                       This may only be set to True when no extensions are configured on the virtual machine.
                     type: boolean
+                  disableVMBootstrapExtension:
+                    description: |-
+                      DisableVMBootstrapExtension specifies whether the VM bootstrap extension should be disabled on the virtual machine.
+                      Use this setting if you want to disable only the bootstrapping extension and not all extensions.
+                    type: boolean
                   dnsServers:
                     description: DNSServers adds a list of DNS Server IP addresses to
                       the VM NICs.
@@ -765,27 +770,32 @@ data:
                       properties:
                         lastTransitionTime:
                           description: |-
-                            Last time the condition transitioned from one status to another.
+                            lastTransitionTime is the last time the condition transitioned from one status to another.
                             This should be when the underlying condition changed. If that is not known, then using the time when
                             the API field changed is acceptable.
                           format: date-time
                           type: string
                         message:
                           description: |-
-                            A human readable message indicating details about the transition.
+                            message is a human readable message indicating details about the transition.
                             This field may be empty.
+                          maxLength: 10240
+                          minLength: 1
                           type: string
                         reason:
                           description: |-
-                            The reason for the condition's last transition in CamelCase.
+                            reason is the reason for the condition's last transition in CamelCase.
                             The specific API may choose whether or not this field is considered a guaranteed API.
                             This field may be empty.
+                          maxLength: 256
+                          minLength: 1
                           type: string
                         severity:
                           description: |-
                             severity provides an explicit classification of Reason code, so the users or machines can immediately
                             understand the current situation and act accordingly.
                             The Severity field MUST be set only when Status=False.
+                          maxLength: 32
                           type: string
                         status:
                           description: status of the condition, one of True, False, Unknown.
@@ -795,6 +805,8 @@ data:
                             type of condition in CamelCase or in foo.example.com/CamelCase.
                             Many .condition.type values are consistent across resources like Available, but because arbitrary conditions
                             can be useful (see .node.status.conditions), the ability to deconflict is important.
+                          maxLength: 256
+                          minLength: 1
                           type: string
                       required:
                       - lastTransitionTime
@@ -1467,10 +1479,11 @@ data:
                       this when creating an AzureCluster as CAPZ will set this for you. However, if it is set, CAPZ will not change it.
                     properties:
                       host:
-                        description: The hostname on which the API server is serving.
+                        description: host is the hostname on which the API server is serving.
+                        maxLength: 512
                         type: string
                       port:
-                        description: The port on which the API server is serving.
+                        description: port is the port on which the API server is serving.
                         format: int32
                         type: integer
                     required:
@@ -1566,6 +1579,26 @@ data:
                     description: NetworkSpec encapsulates all things related to Azure
                       network.
                     properties:
+                      additionalAPIServerLBPorts:
+                        description: |-
+                          AdditionalAPIServerLBPorts specifies extra inbound ports for the APIServer load balancer.
+                          Each port specified (e.g., 9345) creates an inbound rule where the frontend port and the backend port are the same.
+                        items:
+                          description: LoadBalancerPort specifies additional port for
+                            the API server load balancer.
+                          properties:
+                            name:
+                              description: Name for the additional port within LB definition
+                              type: string
+                            port:
+                              description: Port for the LB definition
+                              format: int32
+                              type: integer
+                          required:
+                          - name
+                          - port
+                          type: object
+                        type: array
                       apiServerLB:
                         description: APIServerLB is the configuration for the control-plane
                           load balancer.
@@ -2253,27 +2286,32 @@ data:
                       properties:
                         lastTransitionTime:
                           description: |-
-                            Last time the condition transitioned from one status to another.
+                            lastTransitionTime is the last time the condition transitioned from one status to another.
                             This should be when the underlying condition changed. If that is not known, then using the time when
                             the API field changed is acceptable.
                           format: date-time
                           type: string
                         message:
                           description: |-
-                            A human readable message indicating details about the transition.
+                            message is a human readable message indicating details about the transition.
                             This field may be empty.
+                          maxLength: 10240
+                          minLength: 1
                           type: string
                         reason:
                           description: |-
-                            The reason for the condition's last transition in CamelCase.
+                            reason is the reason for the condition's last transition in CamelCase.
                             The specific API may choose whether or not this field is considered a guaranteed API.
                             This field may be empty.
+                          maxLength: 256
+                          minLength: 1
                           type: string
                         severity:
                           description: |-
                             severity provides an explicit classification of Reason code, so the users or machines can immediately
                             understand the current situation and act accordingly.
                             The Severity field MUST be set only when Status=False.
+                          maxLength: 32
                           type: string
                         status:
                           description: status of the condition, one of True, False, Unknown.
@@ -2283,6 +2321,8 @@ data:
                             type of condition in CamelCase or in foo.example.com/CamelCase.
                             Many .condition.type values are consistent across resources like Available, but because arbitrary conditions
                             can be useful (see .node.status.conditions), the ability to deconflict is important.
+                          maxLength: 256
+                          minLength: 1
                           type: string
                       required:
                       - lastTransitionTime
@@ -2899,6 +2939,27 @@ data:
                             description: NetworkSpec encapsulates all things related to
                               Azure network.
                             properties:
+                              additionalAPIServerLBPorts:
+                                description: |-
+                                  AdditionalAPIServerLBPorts is the configuration for the additional inbound control-plane load balancer ports
+                                  Each port specified (e.g., 9345) creates an inbound rule where the frontend port and the backend port are the same.
+                                items:
+                                  description: LoadBalancerPort specifies additional port
+                                    for the API server load balancer.
+                                  properties:
+                                    name:
+                                      description: Name for the additional port within
+                                        LB definition
+                                      type: string
+                                    port:
+                                      description: Port for the LB definition
+                                      format: int32
+                                      type: integer
+                                  required:
+                                  - name
+                                  - port
+                                  type: object
+                                type: array
                               apiServerLB:
                                 description: APIServerLB is the configuration for the
                                   control-plane load balancer.
@@ -3428,7 +3489,7 @@ data:
                             additionalProperties:
                               type: string
                             description: |-
-                              Map of string keys and values that can be used to organize and categorize
+                              labels is a map of string keys and values that can be used to organize and categorize
                               (scope and select) objects. May match selectors of replication controllers
                               and services.
                               More info: http://kubernetes.io/docs/user-guide/labels
@@ -3603,6 +3664,11 @@ data:
                               DisableExtensionOperations specifies whether extension operations should be disabled on the virtual machine.
                               Use this setting only if VMExtensions are not supported by your image, as it disables CAPZ bootstrapping extension used for detecting Kubernetes bootstrap failure.
                               This may only be set to True when no extensions are configured on the virtual machine.
+                            type: boolean
+                          disableVMBootstrapExtension:
+                            description: |-
+                              DisableVMBootstrapExtension specifies whether the VM bootstrap extension should be disabled on the virtual machine.
+                              Use this setting if you want to disable only the bootstrapping extension and not all extensions.
                             type: boolean
                           dnsServers:
                             description: DNSServers adds a list of DNS Server IP addresses
@@ -4309,27 +4375,32 @@ data:
                       properties:
                         lastTransitionTime:
                           description: |-
-                            Last time the condition transitioned from one status to another.
+                            lastTransitionTime is the last time the condition transitioned from one status to another.
                             This should be when the underlying condition changed. If that is not known, then using the time when
                             the API field changed is acceptable.
                           format: date-time
                           type: string
                         message:
                           description: |-
-                            A human readable message indicating details about the transition.
+                            message is a human readable message indicating details about the transition.
                             This field may be empty.
+                          maxLength: 10240
+                          minLength: 1
                           type: string
                         reason:
                           description: |-
-                            The reason for the condition's last transition in CamelCase.
+                            reason is the reason for the condition's last transition in CamelCase.
                             The specific API may choose whether or not this field is considered a guaranteed API.
                             This field may be empty.
+                          maxLength: 256
+                          minLength: 1
                           type: string
                         severity:
                           description: |-
                             severity provides an explicit classification of Reason code, so the users or machines can immediately
                             understand the current situation and act accordingly.
                             The Severity field MUST be set only when Status=False.
+                          maxLength: 32
                           type: string
                         status:
                           description: status of the condition, one of True, False, Unknown.
@@ -4339,6 +4410,8 @@ data:
                             type of condition in CamelCase or in foo.example.com/CamelCase.
                             Many .condition.type values are consistent across resources like Available, but because arbitrary conditions
                             can be useful (see .node.status.conditions), the ability to deconflict is important.
+                          maxLength: 256
+                          minLength: 1
                           type: string
                       required:
                       - lastTransitionTime
@@ -4605,6 +4678,17 @@ data:
                         description: 'Deprecated: AcceleratedNetworking should be set
                           in the networkInterfaces field.'
                         type: boolean
+                      additionalCapabilities:
+                        description: AdditionalCapabilities specifies additional capabilities
+                          enabled or disabled on the virtual machine.
+                        properties:
+                          ultraSSDEnabled:
+                            description: |-
+                              UltraSSDEnabled enables or disables Azure UltraSSD capability for the virtual machine.
+                              Defaults to true if Ultra SSD data disks are specified,
+                              otherwise it doesn't set the capability on the VM.
+                            type: boolean
+                        type: object
                       dataDisks:
                         description: DataDisks specifies the list of data disks to be
                           created for a Virtual Machine
@@ -5176,27 +5260,32 @@ data:
                       properties:
                         lastTransitionTime:
                           description: |-
-                            Last time the condition transitioned from one status to another.
+                            lastTransitionTime is the last time the condition transitioned from one status to another.
                             This should be when the underlying condition changed. If that is not known, then using the time when
                             the API field changed is acceptable.
                           format: date-time
                           type: string
                         message:
                           description: |-
-                            A human readable message indicating details about the transition.
+                            message is a human readable message indicating details about the transition.
                             This field may be empty.
+                          maxLength: 10240
+                          minLength: 1
                           type: string
                         reason:
                           description: |-
-                            The reason for the condition's last transition in CamelCase.
+                            reason is the reason for the condition's last transition in CamelCase.
                             The specific API may choose whether or not this field is considered a guaranteed API.
                             This field may be empty.
+                          maxLength: 256
+                          minLength: 1
                           type: string
                         severity:
                           description: |-
                             severity provides an explicit classification of Reason code, so the users or machines can immediately
                             understand the current situation and act accordingly.
                             The Severity field MUST be set only when Status=False.
+                          maxLength: 32
                           type: string
                         status:
                           description: status of the condition, one of True, False, Unknown.
@@ -5206,6 +5295,8 @@ data:
                             type of condition in CamelCase or in foo.example.com/CamelCase.
                             Many .condition.type values are consistent across resources like Available, but because arbitrary conditions
                             can be useful (see .node.status.conditions), the ability to deconflict is important.
+                          maxLength: 256
+                          minLength: 1
                           type: string
                       required:
                       - lastTransitionTime
@@ -6174,27 +6265,32 @@ data:
                       properties:
                         lastTransitionTime:
                           description: |-
-                            Last time the condition transitioned from one status to another.
+                            lastTransitionTime is the last time the condition transitioned from one status to another.
                             This should be when the underlying condition changed. If that is not known, then using the time when
                             the API field changed is acceptable.
                           format: date-time
                           type: string
                         message:
                           description: |-
-                            A human readable message indicating details about the transition.
+                            message is a human readable message indicating details about the transition.
                             This field may be empty.
+                          maxLength: 10240
+                          minLength: 1
                           type: string
                         reason:
                           description: |-
-                            The reason for the condition's last transition in CamelCase.
+                            reason is the reason for the condition's last transition in CamelCase.
                             The specific API may choose whether or not this field is considered a guaranteed API.
                             This field may be empty.
+                          maxLength: 256
+                          minLength: 1
                           type: string
                         severity:
                           description: |-
                             severity provides an explicit classification of Reason code, so the users or machines can immediately
                             understand the current situation and act accordingly.
                             The Severity field MUST be set only when Status=False.
+                          maxLength: 32
                           type: string
                         status:
                           description: status of the condition, one of True, False, Unknown.
@@ -6204,6 +6300,8 @@ data:
                             type of condition in CamelCase or in foo.example.com/CamelCase.
                             Many .condition.type values are consistent across resources like Available, but because arbitrary conditions
                             can be useful (see .node.status.conditions), the ability to deconflict is important.
+                          maxLength: 256
+                          minLength: 1
                           type: string
                       required:
                       - lastTransitionTime
@@ -6354,10 +6452,11 @@ data:
                       in the API schema to permit resource admission.
                     properties:
                       host:
-                        description: The hostname on which the API server is serving.
+                        description: host is the hostname on which the API server is serving.
+                        maxLength: 512
                         type: string
                       port:
-                        description: The port on which the API server is serving.
+                        description: port is the port on which the API server is serving.
                         format: int32
                         type: integer
                     required:
@@ -6701,10 +6800,11 @@ data:
                       Immutable, populated by the AKS API at create.
                     properties:
                       host:
-                        description: The hostname on which the API server is serving.
+                        description: host is the hostname on which the API server is serving.
+                        maxLength: 512
                         type: string
                       port:
-                        description: The port on which the API server is serving.
+                        description: port is the port on which the API server is serving.
                         format: int32
                         type: integer
                     required:
@@ -7320,27 +7420,32 @@ data:
                       properties:
                         lastTransitionTime:
                           description: |-
-                            Last time the condition transitioned from one status to another.
+                            lastTransitionTime is the last time the condition transitioned from one status to another.
                             This should be when the underlying condition changed. If that is not known, then using the time when
                             the API field changed is acceptable.
                           format: date-time
                           type: string
                         message:
                           description: |-
-                            A human readable message indicating details about the transition.
+                            message is a human readable message indicating details about the transition.
                             This field may be empty.
+                          maxLength: 10240
+                          minLength: 1
                           type: string
                         reason:
                           description: |-
-                            The reason for the condition's last transition in CamelCase.
+                            reason is the reason for the condition's last transition in CamelCase.
                             The specific API may choose whether or not this field is considered a guaranteed API.
                             This field may be empty.
+                          maxLength: 256
+                          minLength: 1
                           type: string
                         severity:
                           description: |-
                             severity provides an explicit classification of Reason code, so the users or machines can immediately
                             understand the current situation and act accordingly.
                             The Severity field MUST be set only when Status=False.
+                          maxLength: 32
                           type: string
                         status:
                           description: status of the condition, one of True, False, Unknown.
@@ -7350,6 +7455,8 @@ data:
                             type of condition in CamelCase or in foo.example.com/CamelCase.
                             Many .condition.type values are consistent across resources like Available, but because arbitrary conditions
                             can be useful (see .node.status.conditions), the ability to deconflict is important.
+                          maxLength: 256
+                          minLength: 1
                           type: string
                       required:
                       - lastTransitionTime
@@ -7534,27 +7641,32 @@ data:
                       properties:
                         lastTransitionTime:
                           description: |-
-                            Last time the condition transitioned from one status to another.
+                            lastTransitionTime is the last time the condition transitioned from one status to another.
                             This should be when the underlying condition changed. If that is not known, then using the time when
                             the API field changed is acceptable.
                           format: date-time
                           type: string
                         message:
                           description: |-
-                            A human readable message indicating details about the transition.
+                            message is a human readable message indicating details about the transition.
                             This field may be empty.
+                          maxLength: 10240
+                          minLength: 1
                           type: string
                         reason:
                           description: |-
-                            The reason for the condition's last transition in CamelCase.
+                            reason is the reason for the condition's last transition in CamelCase.
                             The specific API may choose whether or not this field is considered a guaranteed API.
                             This field may be empty.
+                          maxLength: 256
+                          minLength: 1
                           type: string
                         severity:
                           description: |-
                             severity provides an explicit classification of Reason code, so the users or machines can immediately
                             understand the current situation and act accordingly.
                             The Severity field MUST be set only when Status=False.
+                          maxLength: 32
                           type: string
                         status:
                           description: status of the condition, one of True, False, Unknown.
@@ -7564,6 +7676,8 @@ data:
                             type of condition in CamelCase or in foo.example.com/CamelCase.
                             Many .condition.type values are consistent across resources like Available, but because arbitrary conditions
                             can be useful (see .node.status.conditions), the ability to deconflict is important.
+                          maxLength: 256
+                          minLength: 1
                           type: string
                       required:
                       - lastTransitionTime
@@ -9341,7 +9455,7 @@ data:
       creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
-        cluster.x-k8s.io/v1beta1: v1alpha1
+        cluster.x-k8s.io/v1beta1: v1beta1
         clusterctl.cluster.x-k8s.io: ""
       name: azureasomanagedclusters.infrastructure.cluster.x-k8s.io
     spec:
@@ -9353,7 +9467,11 @@ data:
         singular: azureasomanagedcluster
       scope: Namespaced
       versions:
-      - name: v1alpha1
+      - deprecated: true
+        deprecationWarning: infrastructure.cluster.x-k8s.io/v1alpha1 AzureASOManagedCluster
+          is deprecated. infrastructure.cluster.x-k8s.io/v1beta1 is equivalent and should
+          be used instead.
+        name: v1alpha1
         schema:
           openAPIV3Schema:
             description: AzureASOManagedCluster is the Schema for the azureasomanagedclusters
@@ -9387,10 +9505,107 @@ data:
                       in the API schema to permit resource admission.
                     properties:
                       host:
-                        description: The hostname on which the API server is serving.
+                        description: host is the hostname on which the API server is serving.
+                        maxLength: 512
                         type: string
                       port:
-                        description: The port on which the API server is serving.
+                        description: port is the port on which the API server is serving.
+                        format: int32
+                        type: integer
+                    required:
+                    - host
+                    - port
+                    type: object
+                  resources:
+                    description: Resources are embedded ASO resources to be managed by
+                      this resource.
+                    items:
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+                    type: array
+                type: object
+              status:
+                description: AzureASOManagedClusterStatus defines the observed state of
+                  AzureASOManagedCluster.
+                properties:
+                  ready:
+                    description: |-
+                      Ready represents whether or not the cluster has been provisioned and is ready. It fulfills Cluster
+                      API's cluster infrastructure provider contract.
+                    type: boolean
+                  resources:
+                    items:
+                      description: ResourceStatus represents the status of a resource.
+                      properties:
+                        ready:
+                          type: boolean
+                        resource:
+                          description: StatusResource is a handle to a resource.
+                          properties:
+                            group:
+                              type: string
+                            kind:
+                              type: string
+                            name:
+                              type: string
+                            version:
+                              type: string
+                          required:
+                          - group
+                          - kind
+                          - name
+                          - version
+                          type: object
+                      required:
+                      - ready
+                      - resource
+                      type: object
+                    type: array
+                type: object
+            type: object
+        served: true
+        storage: false
+        subresources:
+          status: {}
+      - name: v1beta1
+        schema:
+          openAPIV3Schema:
+            description: AzureASOManagedCluster is the Schema for the azureasomanagedclusters
+              API.
+            properties:
+              apiVersion:
+                description: |-
+                  APIVersion defines the versioned schema of this representation of an object.
+                  Servers should convert recognized schemas to the latest internal value, and
+                  may reject unrecognized values.
+                  More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+                type: string
+              kind:
+                description: |-
+                  Kind is a string value representing the REST resource this object represents.
+                  Servers may infer this from the endpoint the client submits requests to.
+                  Cannot be updated.
+                  In CamelCase.
+                  More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                type: string
+              metadata:
+                type: object
+              spec:
+                description: AzureASOManagedClusterSpec defines the desired state of AzureASOManagedCluster.
+                properties:
+                  controlPlaneEndpoint:
+                    description: |-
+                      ControlPlaneEndpoint is the location of the API server within the control plane. CAPZ manages this field
+                      and it should not be set by the user. It fulfills Cluster API's cluster infrastructure provider contract.
+                      Because this field is programmatically set by CAPZ after resource creation, we define it as +optional
+                      in the API schema to permit resource admission.
+                    properties:
+                      host:
+                        description: host is the hostname on which the API server is serving.
+                        maxLength: 512
+                        type: string
+                      port:
+                        description: port is the port on which the API server is serving.
                         format: int32
                         type: integer
                     required:
@@ -9467,7 +9682,7 @@ data:
       creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
-        cluster.x-k8s.io/v1beta1: v1alpha1
+        cluster.x-k8s.io/v1beta1: v1beta1
         clusterctl.cluster.x-k8s.io: ""
       name: azureasomanagedclustertemplates.infrastructure.cluster.x-k8s.io
     spec:
@@ -9479,7 +9694,61 @@ data:
         singular: azureasomanagedclustertemplate
       scope: Namespaced
       versions:
-      - name: v1alpha1
+      - deprecated: true
+        deprecationWarning: infrastructure.cluster.x-k8s.io/v1alpha1 AzureASOManagedClusterTemplate
+          is deprecated. infrastructure.cluster.x-k8s.io/v1beta1 is equivalent and should
+          be used instead.
+        name: v1alpha1
+        schema:
+          openAPIV3Schema:
+            description: AzureASOManagedClusterTemplate is the Schema for the azureasomanagedclustertemplates
+              API.
+            properties:
+              apiVersion:
+                description: |-
+                  APIVersion defines the versioned schema of this representation of an object.
+                  Servers should convert recognized schemas to the latest internal value, and
+                  may reject unrecognized values.
+                  More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+                type: string
+              kind:
+                description: |-
+                  Kind is a string value representing the REST resource this object represents.
+                  Servers may infer this from the endpoint the client submits requests to.
+                  Cannot be updated.
+                  In CamelCase.
+                  More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                type: string
+              metadata:
+                type: object
+              spec:
+                description: AzureASOManagedClusterTemplateSpec defines the desired state
+                  of AzureASOManagedClusterTemplate.
+                properties:
+                  template:
+                    description: AzureASOManagedClusterTemplateResource defines the templated
+                      resource.
+                    properties:
+                      spec:
+                        description: AzureASOManagedClusterTemplateResourceSpec defines
+                          the desired state of the templated resource.
+                        properties:
+                          resources:
+                            description: Resources are embedded ASO resources to be managed
+                              by this resource.
+                            items:
+                              type: object
+                              x-kubernetes-preserve-unknown-fields: true
+                            type: array
+                        type: object
+                    type: object
+                required:
+                - template
+                type: object
+            type: object
+        served: true
+        storage: false
+      - name: v1beta1
         schema:
           openAPIV3Schema:
             description: AzureASOManagedClusterTemplate is the Schema for the azureasomanagedclustertemplates
@@ -9548,7 +9817,7 @@ data:
       creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
-        cluster.x-k8s.io/v1beta1: v1alpha1
+        cluster.x-k8s.io/v1beta1: v1beta1
         clusterctl.cluster.x-k8s.io: ""
       name: azureasomanagedcontrolplanes.infrastructure.cluster.x-k8s.io
     spec:
@@ -9560,7 +9829,11 @@ data:
         singular: azureasomanagedcontrolplane
       scope: Namespaced
       versions:
-      - name: v1alpha1
+      - deprecated: true
+        deprecationWarning: infrastructure.cluster.x-k8s.io/v1alpha1 AzureASOManagedControlPlane
+          is deprecated. infrastructure.cluster.x-k8s.io/v1beta1 is equivalent and should
+          be used instead.
+        name: v1alpha1
         schema:
           openAPIV3Schema:
             description: AzureASOManagedControlPlane is the Schema for the azureasomanagedcontrolplanes
@@ -9609,10 +9882,120 @@ data:
                       cluster's API server.
                     properties:
                       host:
-                        description: The hostname on which the API server is serving.
+                        description: host is the hostname on which the API server is serving.
+                        maxLength: 512
                         type: string
                       port:
-                        description: The port on which the API server is serving.
+                        description: port is the port on which the API server is serving.
+                        format: int32
+                        type: integer
+                    required:
+                    - host
+                    - port
+                    type: object
+                  initialized:
+                    description: |-
+                      Initialized represents whether or not the API server has been provisioned. It fulfills Cluster API's
+                      control plane provider contract. For AKS, this is equivalent to `ready`.
+                    type: boolean
+                  ready:
+                    description: |-
+                      Ready represents whether or not the API server is ready to receive requests. It fulfills Cluster API's
+                      control plane provider contract. For AKS, this is equivalent to `initialized`.
+                    type: boolean
+                  resources:
+                    items:
+                      description: ResourceStatus represents the status of a resource.
+                      properties:
+                        ready:
+                          type: boolean
+                        resource:
+                          description: StatusResource is a handle to a resource.
+                          properties:
+                            group:
+                              type: string
+                            kind:
+                              type: string
+                            name:
+                              type: string
+                            version:
+                              type: string
+                          required:
+                          - group
+                          - kind
+                          - name
+                          - version
+                          type: object
+                      required:
+                      - ready
+                      - resource
+                      type: object
+                    type: array
+                  version:
+                    description: |-
+                      Version is the observed Kubernetes version of the control plane. It fulfills Cluster API's control
+                      plane provider contract.
+                    type: string
+                type: object
+            type: object
+        served: true
+        storage: false
+        subresources:
+          status: {}
+      - name: v1beta1
+        schema:
+          openAPIV3Schema:
+            description: AzureASOManagedControlPlane is the Schema for the azureasomanagedcontrolplanes
+              API.
+            properties:
+              apiVersion:
+                description: |-
+                  APIVersion defines the versioned schema of this representation of an object.
+                  Servers should convert recognized schemas to the latest internal value, and
+                  may reject unrecognized values.
+                  More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+                type: string
+              kind:
+                description: |-
+                  Kind is a string value representing the REST resource this object represents.
+                  Servers may infer this from the endpoint the client submits requests to.
+                  Cannot be updated.
+                  In CamelCase.
+                  More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                type: string
+              metadata:
+                type: object
+              spec:
+                description: AzureASOManagedControlPlaneSpec defines the desired state
+                  of AzureASOManagedControlPlane.
+                properties:
+                  resources:
+                    description: Resources are embedded ASO resources to be managed by
+                      this resource.
+                    items:
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+                    type: array
+                  version:
+                    description: |-
+                      Version is the Kubernetes version of the control plane. It fulfills Cluster API's control plane
+                      provider contract.
+                    type: string
+                type: object
+              status:
+                description: AzureASOManagedControlPlaneStatus defines the observed state
+                  of AzureASOManagedControlPlane.
+                properties:
+                  controlPlaneEndpoint:
+                    description: ControlPlaneEndpoint represents the endpoint for the
+                      cluster's API server.
+                    properties:
+                      host:
+                        description: host is the hostname on which the API server is serving.
+                        maxLength: 512
+                        type: string
+                      port:
+                        description: port is the port on which the API server is serving.
                         format: int32
                         type: integer
                     required:
@@ -9687,7 +10070,7 @@ data:
       creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
-        cluster.x-k8s.io/v1beta1: v1alpha1
+        cluster.x-k8s.io/v1beta1: v1beta1
         clusterctl.cluster.x-k8s.io: ""
       name: azureasomanagedcontrolplanetemplates.infrastructure.cluster.x-k8s.io
     spec:
@@ -9699,7 +10082,66 @@ data:
         singular: azureasomanagedcontrolplanetemplate
       scope: Namespaced
       versions:
-      - name: v1alpha1
+      - deprecated: true
+        deprecationWarning: infrastructure.cluster.x-k8s.io/v1alpha1 AzureASOManagedControlPlaneTemplate
+          is deprecated. infrastructure.cluster.x-k8s.io/v1beta1 is equivalent and should
+          be used instead.
+        name: v1alpha1
+        schema:
+          openAPIV3Schema:
+            description: AzureASOManagedControlPlaneTemplate is the Schema for the azureasomanagedcontrolplanetemplates
+              API.
+            properties:
+              apiVersion:
+                description: |-
+                  APIVersion defines the versioned schema of this representation of an object.
+                  Servers should convert recognized schemas to the latest internal value, and
+                  may reject unrecognized values.
+                  More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+                type: string
+              kind:
+                description: |-
+                  Kind is a string value representing the REST resource this object represents.
+                  Servers may infer this from the endpoint the client submits requests to.
+                  Cannot be updated.
+                  In CamelCase.
+                  More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                type: string
+              metadata:
+                type: object
+              spec:
+                description: AzureASOManagedControlPlaneTemplateSpec defines the desired
+                  state of AzureASOManagedControlPlane.
+                properties:
+                  template:
+                    description: AzureASOManagedControlPlaneResource defines the templated
+                      resource.
+                    properties:
+                      spec:
+                        description: AzureASOManagedControlPlaneTemplateResourceSpec defines
+                          the desired state of the templated resource.
+                        properties:
+                          resources:
+                            description: Resources are embedded ASO resources to be managed
+                              by this resource.
+                            items:
+                              type: object
+                              x-kubernetes-preserve-unknown-fields: true
+                            type: array
+                          version:
+                            description: |-
+                              Version is the Kubernetes version of the control plane. It fulfills Cluster API's control plane
+                              provider contract.
+                            type: string
+                        type: object
+                    type: object
+                required:
+                - template
+                type: object
+            type: object
+        served: true
+        storage: false
+      - name: v1beta1
         schema:
           openAPIV3Schema:
             description: AzureASOManagedControlPlaneTemplate is the Schema for the azureasomanagedcontrolplanetemplates
@@ -9773,7 +10215,7 @@ data:
       creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
-        cluster.x-k8s.io/v1beta1: v1alpha1
+        cluster.x-k8s.io/v1beta1: v1beta1
         clusterctl.cluster.x-k8s.io: ""
       name: azureasomanagedmachinepools.infrastructure.cluster.x-k8s.io
     spec:
@@ -9785,7 +10227,102 @@ data:
         singular: azureasomanagedmachinepool
       scope: Namespaced
       versions:
-      - name: v1alpha1
+      - deprecated: true
+        deprecationWarning: infrastructure.cluster.x-k8s.io/v1alpha1 AzureASOManagedMachinePool
+          is deprecated. infrastructure.cluster.x-k8s.io/v1beta1 is equivalent and should
+          be used instead.
+        name: v1alpha1
+        schema:
+          openAPIV3Schema:
+            description: AzureASOManagedMachinePool is the Schema for the azureasomanagedmachinepools
+              API.
+            properties:
+              apiVersion:
+                description: |-
+                  APIVersion defines the versioned schema of this representation of an object.
+                  Servers should convert recognized schemas to the latest internal value, and
+                  may reject unrecognized values.
+                  More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+                type: string
+              kind:
+                description: |-
+                  Kind is a string value representing the REST resource this object represents.
+                  Servers may infer this from the endpoint the client submits requests to.
+                  Cannot be updated.
+                  In CamelCase.
+                  More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                type: string
+              metadata:
+                type: object
+              spec:
+                description: AzureASOManagedMachinePoolSpec defines the desired state
+                  of AzureASOManagedMachinePool.
+                properties:
+                  providerIDList:
+                    description: |-
+                      ProviderIDList is the list of cloud provider IDs for the instances. It fulfills Cluster API's machine
+                      pool infrastructure provider contract.
+                    items:
+                      type: string
+                    type: array
+                  resources:
+                    description: Resources are embedded ASO resources to be managed by
+                      this resource.
+                    items:
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+                    type: array
+                type: object
+              status:
+                description: AzureASOManagedMachinePoolStatus defines the observed state
+                  of AzureASOManagedMachinePool.
+                properties:
+                  ready:
+                    description: |-
+                      Ready represents whether or not the infrastructure is ready to be used. It fulfills Cluster API's
+                      machine pool infrastructure provider contract.
+                    type: boolean
+                  replicas:
+                    description: |-
+                      Replicas is the current number of provisioned replicas. It fulfills Cluster API's machine pool
+                      infrastructure provider contract.
+                    format: int32
+                    type: integer
+                  resources:
+                    items:
+                      description: ResourceStatus represents the status of a resource.
+                      properties:
+                        ready:
+                          type: boolean
+                        resource:
+                          description: StatusResource is a handle to a resource.
+                          properties:
+                            group:
+                              type: string
+                            kind:
+                              type: string
+                            name:
+                              type: string
+                            version:
+                              type: string
+                          required:
+                          - group
+                          - kind
+                          - name
+                          - version
+                          type: object
+                      required:
+                      - ready
+                      - resource
+                      type: object
+                    type: array
+                type: object
+            type: object
+        served: true
+        storage: false
+        subresources:
+          status: {}
+      - name: v1beta1
         schema:
           openAPIV3Schema:
             description: AzureASOManagedMachinePool is the Schema for the azureasomanagedmachinepools
@@ -9895,7 +10432,7 @@ data:
       creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
-        cluster.x-k8s.io/v1beta1: v1alpha1
+        cluster.x-k8s.io/v1beta1: v1beta1
         clusterctl.cluster.x-k8s.io: ""
       name: azureasomanagedmachinepooltemplates.infrastructure.cluster.x-k8s.io
     spec:
@@ -9907,7 +10444,66 @@ data:
         singular: azureasomanagedmachinepooltemplate
       scope: Namespaced
       versions:
-      - name: v1alpha1
+      - deprecated: true
+        deprecationWarning: infrastructure.cluster.x-k8s.io/v1alpha1 AzureASOManagedMachinePoolTemplate
+          is deprecated. infrastructure.cluster.x-k8s.io/v1beta1 is equivalent and should
+          be used instead.
+        name: v1alpha1
+        schema:
+          openAPIV3Schema:
+            description: AzureASOManagedMachinePoolTemplate is the Schema for the azureasomanagedmachinepooltemplates
+              API.
+            properties:
+              apiVersion:
+                description: |-
+                  APIVersion defines the versioned schema of this representation of an object.
+                  Servers should convert recognized schemas to the latest internal value, and
+                  may reject unrecognized values.
+                  More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+                type: string
+              kind:
+                description: |-
+                  Kind is a string value representing the REST resource this object represents.
+                  Servers may infer this from the endpoint the client submits requests to.
+                  Cannot be updated.
+                  In CamelCase.
+                  More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                type: string
+              metadata:
+                type: object
+              spec:
+                description: AzureASOManagedMachinePoolTemplateSpec defines the desired
+                  state of AzureASOManagedMachinePoolTemplate.
+                properties:
+                  template:
+                    description: AzureASOManagedControlPlaneResource defines the templated
+                      resource.
+                    properties:
+                      spec:
+                        description: AzureASOManagedControlPlaneTemplateResourceSpec defines
+                          the desired state of the templated resource.
+                        properties:
+                          resources:
+                            description: Resources are embedded ASO resources to be managed
+                              by this resource.
+                            items:
+                              type: object
+                              x-kubernetes-preserve-unknown-fields: true
+                            type: array
+                          version:
+                            description: |-
+                              Version is the Kubernetes version of the control plane. It fulfills Cluster API's control plane
+                              provider contract.
+                            type: string
+                        type: object
+                    type: object
+                required:
+                - template
+                type: object
+            type: object
+        served: true
+        storage: false
+      - name: v1beta1
         schema:
           openAPIV3Schema:
             description: AzureASOManagedMachinePoolTemplate is the Schema for the azureasomanagedmachinepooltemplates
@@ -10658,14 +11254,14 @@ data:
         service:
           name: capz-webhook-service
           namespace: openshift-cluster-api
-          path: /validate-infrastructure-cluster-x-k8s-io-v1alpha1-azureasomanagedcontrolplane
+          path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-azureasomanagedcontrolplane
       failurePolicy: Fail
       name: validation.azureasomanagedcontrolplane.infrastructure.cluster.x-k8s.io
       rules:
       - apiGroups:
         - infrastructure.cluster.x-k8s.io
         apiVersions:
-        - v1alpha1
+        - v1beta1
         operations:
         - CREATE
         resources:
@@ -10678,14 +11274,14 @@ data:
         service:
           name: capz-webhook-service
           namespace: openshift-cluster-api
-          path: /validate-infrastructure-cluster-x-k8s-io-v1alpha1-azureasomanagedmachinepool
+          path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-azureasomanagedmachinepool
       failurePolicy: Fail
       name: validation.azureasomanagedmachinepool.infrastructure.cluster.x-k8s.io
       rules:
       - apiGroups:
         - infrastructure.cluster.x-k8s.io
         apiVersions:
-        - v1alpha1
+        - v1beta1
         operations:
         - CREATE
         resources:
@@ -11002,6 +11598,9 @@ data:
       - major: 1
         minor: 19
         contract: v1beta1
+      - major: 1
+        minor: 20
+        contract: v1beta1
 kind: ConfigMap
 metadata:
   annotations:
@@ -11013,6 +11612,6 @@ metadata:
   labels:
     provider.cluster.x-k8s.io/name: azure
     provider.cluster.x-k8s.io/type: infrastructure
-    provider.cluster.x-k8s.io/version: v1.19.4
+    provider.cluster.x-k8s.io/version: v1.20.1
   name: azure
   namespace: openshift-cluster-api

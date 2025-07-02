@@ -101,9 +101,11 @@ func TestGetCloudProviderConfig(t *testing.T) {
 
 	cluster := newCluster("foo")
 	azureCluster := newAzureCluster("bar")
-	azureCluster.Default()
+
+	g.Expect((&infrav1.AzureClusterWebhook{}).Default(context.Background(), azureCluster)).To(Succeed())
+
 	azureClusterCustomVnet := newAzureClusterWithCustomVnet("bar")
-	azureClusterCustomVnet.Default()
+	g.Expect((&infrav1.AzureClusterWebhook{}).Default(context.Background(), azureClusterCustomVnet)).NotTo(HaveOccurred())
 
 	cases := map[string]struct {
 		cluster                    *clusterv1.Cluster
@@ -165,9 +167,9 @@ func TestGetCloudProviderConfig(t *testing.T) {
 		},
 	}
 
-	os.Setenv("AZURE_CLIENT_ID", "fooClient")     //nolint:tenv // we want to use os.Setenv here instead of t.Setenv
-	os.Setenv("AZURE_CLIENT_SECRET", "fooSecret") //nolint:tenv // we want to use os.Setenv here instead of t.Setenv
-	os.Setenv("AZURE_TENANT_ID", "fooTenant")     //nolint:tenv // we want to use os.Setenv here instead of t.Setenv
+	os.Setenv("AZURE_CLIENT_ID", "fooClient")     //nolint:gosec,usetesting // we want to use os.Setenv here instead of t.Setenv
+	os.Setenv("AZURE_CLIENT_SECRET", "fooSecret") //nolint:gosec,usetesting // we want to use os.Setenv here instead of t.Setenv
+	os.Setenv("AZURE_TENANT_ID", "fooTenant")     //nolint:gosec,usetesting // we want to use os.Setenv here instead of t.Setenv
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -301,7 +303,8 @@ func TestReconcileAzureSecret(t *testing.T) {
 	cluster := newCluster("foo")
 	azureCluster := newAzureCluster("bar")
 
-	azureCluster.Default()
+	err := (&infrav1.AzureClusterWebhook{}).Default(context.Background(), azureCluster)
+	g.Expect(err).NotTo(HaveOccurred())
 	cluster.Name = "testCluster"
 
 	fakeIdentity := &infrav1.AzureClusterIdentity{

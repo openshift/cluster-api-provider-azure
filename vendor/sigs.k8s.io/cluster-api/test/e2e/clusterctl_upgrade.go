@@ -106,7 +106,7 @@ type ClusterctlUpgradeSpecInput struct {
 	// InfrastructureProviders specifies the infrastructure to use for clusterctl
 	// operations (Example: get cluster templates).
 	// Note: In most cases this need not be specified. It only needs to be specified when
-	// multiple infrastructure providers (ex: CAPD + in-memory) are installed on the cluster as clusterctl will not be
+	// multiple infrastructure providers are installed on the cluster as clusterctl will not be
 	// able to identify the default.
 	InfrastructureProvider *string
 	// Allows to inject a function to be run after test namespace is created.
@@ -154,6 +154,9 @@ type ClusterctlUpgradeSpecInputUpgrade struct {
 	IPAMProviders             []string
 	RuntimeExtensionProviders []string
 	AddonProviders            []string
+
+	// PostUpgrade is called after the upgrade is completed.
+	PostUpgrade func(proxy framework.ClusterProxy, namespace string, clusterName string)
 }
 
 // ClusterctlUpgradeSpec implements a test that verifies clusterctl upgrade of a management cluster.
@@ -274,7 +277,7 @@ func ClusterctlUpgradeSpec(ctx context.Context, inputGetter func() ClusterctlUpg
 				RequiresDockerSock: input.E2EConfig.HasDockerProvider(),
 				// Note: most of this images won't be used while starting the controllers, because it is used to spin up older versions of CAPI. Those images will be eventually used when upgrading to current.
 				Images:    input.E2EConfig.Images,
-				IPFamily:  input.E2EConfig.GetVariable(IPFamily),
+				IPFamily:  input.E2EConfig.MustGetVariable(IPFamily),
 				LogFolder: filepath.Join(managementClusterLogFolder, "logs-kind"),
 			})
 			Expect(managementClusterProvider).ToNot(BeNil(), "Failed to create a kind cluster")
@@ -417,7 +420,7 @@ func ClusterctlUpgradeSpec(ctx context.Context, inputGetter func() ClusterctlUpg
 		workloadClusterNamespace := testNamespace.Name
 		kubernetesVersion := input.WorkloadKubernetesVersion
 		if kubernetesVersion == "" {
-			kubernetesVersion = input.E2EConfig.GetVariable(KubernetesVersion)
+			kubernetesVersion = input.E2EConfig.MustGetVariable(KubernetesVersion)
 		}
 		controlPlaneMachineCount := ptr.To[int64](1)
 		if input.ControlPlaneMachineCount != nil {
@@ -699,6 +702,10 @@ func ClusterctlUpgradeSpec(ctx context.Context, inputGetter func() ClusterctlUpg
 				}
 			}
 
+			if upgrade.PostUpgrade != nil {
+				upgrade.PostUpgrade(managementClusterProxy, workloadCluster.Namespace, workloadCluster.Name)
+			}
+
 			Byf("[%d] Verify v1beta2 Available and Ready conditions (if exist) to be true for Cluster and Machines", i)
 			verifyV1Beta2ConditionsTrue(ctx, managementClusterProxy.GetClient(), workloadCluster.Name, workloadCluster.Namespace,
 				[]string{clusterv1.AvailableV1Beta2Condition, clusterv1.ReadyV1Beta2Condition})
@@ -723,7 +730,7 @@ func ClusterctlUpgradeSpec(ctx context.Context, inputGetter func() ClusterctlUpg
 	AfterEach(func() {
 		if testNamespace != nil {
 			// Dump all the logs from the workload cluster before deleting them.
-			framework.DumpAllResourcesAndLogs(ctx, managementClusterProxy, input.ArtifactFolder, testNamespace, managementClusterResources.Cluster)
+			framework.DumpAllResourcesAndLogs(ctx, managementClusterProxy, input.ClusterctlConfigPath, input.ArtifactFolder, testNamespace, managementClusterResources.Cluster)
 
 			if !input.SkipCleanup {
 				Byf("Deleting all clusters in namespace %s in management cluster %s", testNamespace.Name, managementClusterName)
@@ -760,7 +767,7 @@ func ClusterctlUpgradeSpec(ctx context.Context, inputGetter func() ClusterctlUpg
 				managementClusterProvider.Dispose(ctx)
 			}
 		} else {
-			framework.DumpSpecResourcesAndCleanup(ctx, specName, input.BootstrapClusterProxy, input.ArtifactFolder, managementClusterNamespace, managementClusterCancelWatches, managementClusterResources.Cluster, input.E2EConfig.GetIntervals, input.SkipCleanup)
+			framework.DumpSpecResourcesAndCleanup(ctx, specName, input.BootstrapClusterProxy, input.ClusterctlConfigPath, input.ArtifactFolder, managementClusterNamespace, managementClusterCancelWatches, managementClusterResources.Cluster, input.E2EConfig.GetIntervals, input.SkipCleanup)
 		}
 	})
 }

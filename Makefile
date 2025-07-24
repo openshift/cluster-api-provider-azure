@@ -34,7 +34,7 @@ export GOPROXY
 export GO111MODULE=on
 
 # Kubebuilder.
-export KUBEBUILDER_ENVTEST_KUBERNETES_VERSION ?= 1.31.0
+export KUBEBUILDER_ENVTEST_KUBERNETES_VERSION ?= 1.32.0
 export KUBEBUILDER_CONTROLPLANE_START_TIMEOUT ?= 60s
 export KUBEBUILDER_CONTROLPLANE_STOP_TIMEOUT ?= 60s
 
@@ -114,7 +114,7 @@ GINKGO_VER := $(shell go list -m -f '{{.Version}}' github.com/onsi/ginkgo/v2)
 GINKGO_BIN := ginkgo
 GINKGO := $(TOOLS_BIN_DIR)/$(GINKGO_BIN)-$(GINKGO_VER)
 
-KUBECTL_VER := v1.29.10
+KUBECTL_VER := v1.32.2
 KUBECTL_BIN := kubectl
 KUBECTL := $(TOOLS_BIN_DIR)/$(KUBECTL_BIN)-$(KUBECTL_VER)
 
@@ -168,7 +168,7 @@ CRD_ROOT ?= $(MANIFEST_ROOT)/crd/bases
 WEBHOOK_ROOT ?= $(MANIFEST_ROOT)/webhook
 RBAC_ROOT ?= $(MANIFEST_ROOT)/rbac
 ASO_CRDS_PATH := $(MANIFEST_ROOT)/aso/crds.yaml
-ASO_VERSION := v2.9.0
+ASO_VERSION := v2.11.0
 ASO_CRDS := resourcegroups.resources.azure.com natgateways.network.azure.com managedclusters.containerservice.azure.com managedclustersagentpools.containerservice.azure.com bastionhosts.network.azure.com virtualnetworks.network.azure.com virtualnetworkssubnets.network.azure.com privateendpoints.network.azure.com fleetsmembers.containerservice.azure.com extensions.kubernetesconfiguration.azure.com
 
 # Allow overriding the imagePullPolicy
@@ -199,7 +199,7 @@ LDFLAGS := $(shell hack/version.sh)
 CLUSTER_TEMPLATE ?= cluster-template.yaml
 
 export KIND_CLUSTER_NAME ?= capz
-export RANDOM_SUFFIX := $(shell /bin/bash -c "echo $$RANDOM")
+export RANDOM_SUFFIX := $(shell od -An -N8 -tx8 /dev/urandom | tr -d ' ' | head -c 16)
 export AZWI_RESOURCE_GROUP ?= capz-wi-$(RANDOM_SUFFIX)
 export CI_RG ?= $(AZWI_RESOURCE_GROUP)
 export USER_IDENTITY ?= $(addsuffix $(RANDOM_SUFFIX),$(CI_RG))
@@ -328,7 +328,7 @@ create-management-cluster: $(KUSTOMIZE) $(ENVSUBST) $(KUBECTL) $(KIND) ## Create
 	./hack/create-custom-cloud-provider-config.sh
 
 	# Deploy CAPI
-	timeout --foreground 300 bash -c "until curl --retry $(CURL_RETRIES) -sSL https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.9.4/cluster-api-components.yaml | $(ENVSUBST) | $(KUBECTL) apply -f -; do sleep 5; done"
+	timeout --foreground 300 bash -c "until curl --retry $(CURL_RETRIES) -sSL https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.9.10/cluster-api-components.yaml | $(ENVSUBST) | $(KUBECTL) apply -f -; do sleep 5; done"
 
 	# Deploy CAAPH
 	timeout --foreground 300 bash -c "until curl --retry $(CURL_RETRIES) -sSL https://github.com/kubernetes-sigs/cluster-api-addon-provider-helm/releases/download/v0.2.5/addon-components.yaml | $(ENVSUBST) | $(KUBECTL) apply -f -; do sleep 5; done"
@@ -753,6 +753,7 @@ kind-create: $(KUBECTL) ## Create capz kind cluster if needed.
 .PHONY: aks-create
 aks-create: $(KUBECTL) ## Create aks cluster as mgmt cluster.
 	./scripts/aks-as-mgmt.sh
+	MANIFEST_IMG=$(CONTROLLER_IMG) MANIFEST_TAG=$(TAG) $(MAKE) set-manifest-image
 
 .PHONY: tilt-up
 tilt-up: install-tools ## Start tilt and build kind cluster if needed.

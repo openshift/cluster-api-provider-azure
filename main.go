@@ -30,6 +30,7 @@ import (
 	asocontainerservicev1api20231001 "github.com/Azure/azure-service-operator/v2/api/containerservice/v1api20231001"
 	asocontainerservicev1api20231102preview "github.com/Azure/azure-service-operator/v2/api/containerservice/v1api20231102preview"
 	asocontainerservicev1api20240402preview "github.com/Azure/azure-service-operator/v2/api/containerservice/v1api20240402preview"
+	asocontainerservicev1api20240901 "github.com/Azure/azure-service-operator/v2/api/containerservice/v1api20240901"
 	asokubernetesconfigurationv1 "github.com/Azure/azure-service-operator/v2/api/kubernetesconfiguration/v1api20230501"
 	asonetworkv1api20201101 "github.com/Azure/azure-service-operator/v2/api/network/v1api20201101"
 	asonetworkv1api20220701 "github.com/Azure/azure-service-operator/v2/api/network/v1api20220701"
@@ -66,6 +67,7 @@ import (
 	"sigs.k8s.io/cluster-api-provider-azure/feature"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/coalescing"
 	"sigs.k8s.io/cluster-api-provider-azure/pkg/ot"
+	"sigs.k8s.io/cluster-api-provider-azure/util/components"
 	"sigs.k8s.io/cluster-api-provider-azure/util/reconciler"
 	"sigs.k8s.io/cluster-api-provider-azure/version"
 )
@@ -92,6 +94,7 @@ func init() {
 	_ = asocontainerservicev1api20230315preview.AddToScheme(scheme)
 	_ = asocontainerservicev1api20231102preview.AddToScheme(scheme)
 	_ = asocontainerservicev1api20240402preview.AddToScheme(scheme)
+	_ = asocontainerservicev1api20240901.AddToScheme(scheme)
 	_ = asokubernetesconfigurationv1.AddToScheme(scheme)
 	// +kubebuilder:scaffold:scheme
 }
@@ -109,7 +112,7 @@ var (
 	azureMachineConcurrency            int
 	azureMachinePoolConcurrency        int
 	azureMachinePoolMachineConcurrency int
-	azureBootrapConfigGVK              string
+	deprecatedAzureBootrapConfigGVK    string // Deprecated in v1.19.0
 	debouncingTimer                    time.Duration
 	syncPeriod                         time.Duration
 	healthAddr                         string
@@ -118,6 +121,7 @@ var (
 	managerOptions                     = flags.ManagerOptions{}
 	timeouts                           reconciler.Timeouts
 	enableTracing                      bool
+	disableControllersOrWebhooks       []string
 )
 
 // InitFlags initializes all command-line flags.
@@ -258,10 +262,16 @@ func InitFlags(fs *pflag.FlagSet) {
 		"Enable tracing to the opentelemetry-collector service in the same namespace.",
 	)
 
-	fs.StringVar(&azureBootrapConfigGVK,
+	fs.StringVar(&deprecatedAzureBootrapConfigGVK,
 		"bootstrap-config-gvk",
 		"",
-		"Provide fully qualified GVK string to override default kubeadm config watch source, in the form of Kind.version.group (default: KubeadmConfig.v1beta1.bootstrap.cluster.x-k8s.io)",
+		"(Deprecated) Provide fully qualified GVK string to override default kubeadm config watch source, in the form of Kind.version.group (default: KubeadmConfig.v1beta1.bootstrap.cluster.x-k8s.io)",
+	)
+
+	fs.StringSliceVar(&disableControllersOrWebhooks,
+		"disable-controllers-or-webhooks",
+		[]string{},
+		"Comma-separated list of controllers or webhooks to disable. The list can contain the following values: DisableASOSecretController,DisableAzureJSONMachineController",
 	)
 
 	flags.AddManagerOptions(fs, &managerOptions)
@@ -294,11 +304,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	if deprecatedAzureBootrapConfigGVK != "" {
+		setupLog.Error(fmt.Errorf("bootstrap-config-gvk argument is deprecated and no longer needed"), "Deprecated argument")
+	}
+
 	var watchNamespaces map[string]cache.Config
 	if watchNamespace != "" {
 		setupLog.Info("Watching cluster-api objects only in namespace for reconciliation", "namespace", watchNamespace)
 		watchNamespaces = map[string]cache.Config{
 			watchNamespace: {},
+		}
+	}
+
+	// Validate valid disable components were passed in the flag
+	if len(disableControllersOrWebhooks) > 0 {
+		for _, component := range disableControllersOrWebhooks {
+			if ok := components.IsValidDisableComponent(component); !ok {
+				setupLog.Error(fmt.Errorf("invalid disable-controllers-or-webhooks value %s", component), "Invalid argument")
+				os.Exit(1)
+			}
 		}
 	}
 
@@ -414,26 +438,30 @@ func registerControllers(ctx context.Context, mgr manager.Manager) {
 		os.Exit(1)
 	}
 
-	if err := (&controllers.AzureJSONMachineReconciler{
-		Client:           mgr.GetClient(),
-		Recorder:         mgr.GetEventRecorderFor("azurejsonmachine-reconciler"),
-		Timeouts:         timeouts,
-		WatchFilterValue: watchFilterValue,
-		CredentialCache:  credCache,
-	}).SetupWithManager(ctx, mgr, controller.Options{MaxConcurrentReconciles: azureMachineConcurrency, SkipNameValidation: ptr.To(true)}); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "AzureJSONMachine")
-		os.Exit(1)
+	if !components.IsComponentDisabled(disableControllersOrWebhooks, infrav1.DisableAzureJSONMachineController) {
+		if err := (&controllers.AzureJSONMachineReconciler{
+			Client:           mgr.GetClient(),
+			Recorder:         mgr.GetEventRecorderFor("azurejsonmachine-reconciler"),
+			Timeouts:         timeouts,
+			WatchFilterValue: watchFilterValue,
+			CredentialCache:  credCache,
+		}).SetupWithManager(ctx, mgr, controller.Options{MaxConcurrentReconciles: azureMachineConcurrency, SkipNameValidation: ptr.To(true)}); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "AzureJSONMachine")
+			os.Exit(1)
+		}
 	}
 
-	if err := (&controllers.ASOSecretReconciler{
-		Client:           mgr.GetClient(),
-		Recorder:         mgr.GetEventRecorderFor("asosecret-reconciler"),
-		Timeouts:         timeouts,
-		WatchFilterValue: watchFilterValue,
-		CredentialCache:  credCache,
-	}).SetupWithManager(ctx, mgr, controller.Options{MaxConcurrentReconciles: azureClusterConcurrency}); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ASOSecret")
-		os.Exit(1)
+	if !components.IsComponentDisabled(disableControllersOrWebhooks, infrav1.DisableASOSecretController) {
+		if err := (&controllers.ASOSecretReconciler{
+			Client:           mgr.GetClient(),
+			Recorder:         mgr.GetEventRecorderFor("asosecret-reconciler"),
+			Timeouts:         timeouts,
+			WatchFilterValue: watchFilterValue,
+			CredentialCache:  credCache,
+		}).SetupWithManager(ctx, mgr, controller.Options{MaxConcurrentReconciles: azureClusterConcurrency}); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "ASOSecret")
+			os.Exit(1)
+		}
 	}
 
 	// just use CAPI MachinePool feature flag rather than create a new one
@@ -449,7 +477,6 @@ func registerControllers(ctx context.Context, mgr manager.Manager) {
 			mgr.GetEventRecorderFor("azuremachinepool-reconciler"),
 			timeouts,
 			watchFilterValue,
-			azureBootrapConfigGVK,
 			credCache,
 		).SetupWithManager(ctx, mgr, controllers.Options{Options: controller.Options{MaxConcurrentReconciles: azureMachinePoolConcurrency}, Cache: mpCache}); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "AzureMachinePool")

@@ -21,8 +21,8 @@
     - [Tilt for dev in CAPZ](#tilt-for-dev-in-capz)
     - [Tilt for dev in both CAPZ and CAPI](#tilt-for-dev-in-both-capz-and-capi)
     - [Deploying a workload cluster](#deploying-a-workload-cluster)
-    - [Tilt for dev using internal load balancer (ILB) for intra-cluster node-apiserver traffic](#tilt-for-dev-using-internal-load-balancer-ilb-for-intra-cluster-node-apiserver-traffic)
-      - [Flavors for dev using internal load balancer (ILB) for intra-cluster node-apiserver traffic](#flavors-for-dev-using-internal-load-balancer-ilb-for-intra-cluster-node-apiserver-traffic)
+    - [Tilt for dev using internal load balancer (ILB) for intra-cluster node-apiserver traffic](./tilt-with-aks-as-mgmt-ilb.md#tilt-workflow-for-aks-as-management-cluster-with-internal-load-balancer)
+      - [Flavors for dev using internal load balancer (ILB) for intra-cluster node-apiserver traffic](./tilt-with-aks-as-mgmt-ilb.md#flavors-leveraging-internal-load-balancer)
     - [Viewing Telemetry](#viewing-telemetry)
     - [Debugging](#debugging)
   - [Manual Testing](#manual-testing)
@@ -154,15 +154,11 @@ development will span both CAPZ and CAPI, then follow the [CAPI and CAPZ instruc
 #### Tilt for dev in CAPZ
 
 <aside class="note warning">
-  <h2>Warning</h2>
-  <p>
-    To use an internal load balancer (ILB) intra-cluster node-apiserver traffic in your workload cluster, follow the
-    instructions in the
-    <a href="#tilt-for-dev-using-internal-load-balancer-ilb-for-intra-cluster-node-apiserver-traffic">
-      Tilt for Dev: Internal LB for Cluster VNet Communication
-    </a> section.
-  </p>
+  <h1>Warning</h1>
+  To use an internal load balancer (ILB) for intra-cluster node-apiserver traffic in your workload cluster, please refer to the
+  <a href="tilt-with-aks-as-mgmt-ilb.md">Tilt with AKS as Management Cluster</a> guide.
 </aside>
+
 
 If you want to develop in CAPZ and get a local development cluster working quickly, this is the path for you.
 
@@ -181,8 +177,11 @@ You should have these values saved from the [getting started prerequisites](../g
 To build a kind cluster and start Tilt, just run:
 
 ```shell
-make tilt-up
+make kind-create tilt-up
 ```
+
+**Note**: You can also choose an AKS cluster as a management cluster by using `aks-create` instead of `kind-create`.
+
 By default, the Cluster API components deployed by Tilt have experimental features turned off.
 If you would like to enable these features, add `extra_args` as specified in [The Cluster API Book](https://cluster-api.sigs.k8s.io/developer/tilt.html#create-a-tilt-settingsjson-file).
 
@@ -259,36 +258,6 @@ make delete-workload-cluster
 ```
 
 > Check out the [self-managed](../self-managed/troubleshooting.md) and [managed](../managed/troubleshooting.md) troubleshooting guides for common errors you might run into.
-
-#### Tilt for dev using internal load balancer (ILB) for intra-cluster node-apiserver traffic
-
-This flow is for developers who want to leverage the internal load balancer for intra-cluster node-apiserver traffic.
-You can achieve this by setting the `EXP_APISERVER_ILB` environment variable to `true` in your shell (run `export EXP_APISERVER_ILB=true`) and then create the CAPZ management cluster.
-
-We also encourage you to use AKS cluster as your management cluster.
-
-Outline of the steps:
-- `make clean`
-- `make generate`
-- Set `REGISTRY` in your env. Preferably an Azure Container Registry.
-- Run `docker-build-all` to build all the images.
-- Run `make acr-login` to login to your ACR.
-- Run `docker-push-all` to push all the images to your ACR.
-- Run `make aks-create` to create an AKS cluster. _Notice the changes that get applied to the `tilt-settings.yaml` file._
-- Run `export EXP_APISERVER_ILB=true` in your shell.
-- Run `make tilt-up` to start Tilt.
-
-```
-TODO:
-1. Come up with a shorter make target to do all the above steps for MS Tenants.
-2. VNet peering should be exported out as a shell script for users to run.
-```
-
-##### Flavors for dev using internal load balancer (ILB) for intra-cluster node-apiserver traffic
-
-There are two flavors available for development in CAPZ for MSFT Tenant:
-- [apiserver-ilb](../../../../templates/cluster-template-apiserver-ilb.yaml): VM based default flavor that brings up native K8s clusters with Linux nodes.
-- [apiserver-ilb-windows](../../../../templates/cluster-template-windows-apiserver-ilb.yaml): VM based flavor that brings up native K8s clusters with Linux and Windows nodes.
 
 #### Viewing Telemetry
 
@@ -419,7 +388,7 @@ export CONTROL_PLANE_MACHINE_COUNT=3
 export AZURE_CONTROL_PLANE_MACHINE_TYPE="Standard_B2s"
 export AZURE_NODE_MACHINE_TYPE="Standard_B2s"
 export WORKER_MACHINE_COUNT=2
-export KUBERNETES_VERSION="v1.25.6"
+export KUBERNETES_VERSION="v1.32.2"
 
 # Identity secret.
 export AZURE_CLUSTER_IDENTITY_SECRET_NAME="cluster-identity-secret"
@@ -574,7 +543,7 @@ Optional settings are:
 | `WINDOWS`            | `false`       | Run conformance against Windows nodes                                                              |
 | `CONFORMANCE_NODES`  | `1`           | Number of parallel ginkgo nodes to run                                                             |
 | `CONFORMANCE_FLAVOR` | `""`          | The flavor of the cluster to run conformance against. If not set, the default flavor will be used. |
-| `IP_FAMILY`          | `IPv4`        | Set to `IPv6` to run conformance against single-stack IPv6, or `dual` for dual-stack.              |
+| `IP_FAMILY`          | `ipv4`        | Set to `ipv6` to run conformance against single-stack IPv6, or `dual` for dual-stack.              |
 
 With the following environment variables defined, you can build a CAPZ cluster from the HEAD of Kubernetes main branch or release branch, and run the Conformance test suite against it.
 

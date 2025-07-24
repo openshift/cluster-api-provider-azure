@@ -3,11 +3,11 @@ managementClusterName: capz-e2e
 images:
   - name: ${MANAGER_IMAGE}
     loadBehavior: mustLoad
-  - name: registry.k8s.io/cluster-api/cluster-api-controller:v1.9.4
+  - name: registry.k8s.io/cluster-api/cluster-api-controller:v1.9.10
     loadBehavior: tryLoad
-  - name: registry.k8s.io/cluster-api/kubeadm-bootstrap-controller:v1.9.4
+  - name: registry.k8s.io/cluster-api/kubeadm-bootstrap-controller:v1.9.10
     loadBehavior: tryLoad
-  - name: registry.k8s.io/cluster-api/kubeadm-control-plane-controller:v1.9.4
+  - name: registry.k8s.io/cluster-api/kubeadm-control-plane-controller:v1.9.10
     loadBehavior: tryLoad
   - name: registry.k8s.io/cluster-api-helm/cluster-api-helm-controller:v0.2.5
     loadBehavior: tryLoad
@@ -16,8 +16,8 @@ providers:
   - name: cluster-api
     type: CoreProvider
     versions:
-    - name: v1.8.9 # latest patch of earliest minor in supported v1beta1 releases; this is used for v1beta1 old --> v1beta1 latest clusterctl upgrades test only.
-      value: "https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.8.9/core-components.yaml"
+    - name: v1.8.12 # latest patch of earliest minor in supported v1beta1 releases; this is used for v1beta1 old --> v1beta1 latest clusterctl upgrades test only.
+      value: "https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.8.12/core-components.yaml"
       type: "url"
       contract: v1beta1
       replacements:
@@ -25,8 +25,8 @@ providers:
           new: --metrics-addr=:8080
       files:
         - sourcePath: "../data/shared/v1beta1/metadata.yaml"
-    - name: v1.9.4
-      value: https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.9.4/core-components.yaml
+    - name: v1.9.10
+      value: https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.9.10/core-components.yaml
       type: url
       contract: v1beta1
       files:
@@ -39,8 +39,8 @@ providers:
   - name: kubeadm
     type: BootstrapProvider
     versions:
-    - name: v1.8.9 # latest patch of earliest minor in supported v1beta1 releases; this is used for v1beta1 old --> v1beta1 latest clusterctl upgrades test only.
-      value: "https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.8.9/bootstrap-components.yaml"
+    - name: v1.8.12 # latest patch of earliest minor in supported v1beta1 releases; this is used for v1beta1 old --> v1beta1 latest clusterctl upgrades test only.
+      value: "https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.8.12/bootstrap-components.yaml"
       type: "url"
       contract: v1beta1
       replacements:
@@ -48,8 +48,8 @@ providers:
           new: --metrics-addr=:8080
       files:
         - sourcePath: "../data/shared/v1beta1/metadata.yaml"
-    - name: v1.9.4
-      value: https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.9.4/bootstrap-components.yaml
+    - name: v1.9.10
+      value: https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.9.10/bootstrap-components.yaml
       type: url
       contract: v1beta1
       files:
@@ -61,8 +61,8 @@ providers:
   - name: kubeadm
     type: ControlPlaneProvider
     versions:
-    - name: v1.8.9 # latest patch of earliest minor in supported v1beta1 releases; this is used for v1beta1 old --> v1beta1 latest clusterctl upgrades test only.
-      value: "https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.8.9/control-plane-components.yaml"
+    - name: v1.8.12 # latest patch of earliest minor in supported v1beta1 releases; this is used for v1beta1 old --> v1beta1 latest clusterctl upgrades test only.
+      value: "https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.8.12/control-plane-components.yaml"
       type: "url"
       contract: v1beta1
       replacements:
@@ -70,8 +70,8 @@ providers:
           new: --metrics-addr=:8080
       files:
         - sourcePath: "../data/shared/v1beta1/metadata.yaml"
-    - name: v1.9.4
-      value: https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.9.4/control-plane-components.yaml
+    - name: v1.9.10
+      value: https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.9.10/control-plane-components.yaml
       type: url
       contract: v1beta1
       files:
@@ -83,33 +83,33 @@ providers:
   - name: azure
     type: InfrastructureProvider
     versions:
-    - name: v1.16.3 # latest patch of earliest minor in supported v1beta1 releases; this is used for v1beta1 old --> v1beta1 latest clusterctl upgrades test only.
-      value: https://github.com/kubernetes-sigs/cluster-api-provider-azure/releases/download/v1.16.3/infrastructure-components.yaml
+    - name: v1.17.3 # latest patch of earliest minor in supported v1beta1 releases; this is used for v1beta1 old --> v1beta1 latest clusterctl upgrades test only.
+      value: https://github.com/kubernetes-sigs/cluster-api-provider-azure/releases/download/v1.17.3/infrastructure-components.yaml
       type: url
       contract: v1beta1
       files:
       - sourcePath: "../data/shared/v1beta1_provider/metadata.yaml"
-      - sourcePath: "../data/infrastructure-azure/v1.16.3/cluster-template-prow.yaml"
+      - sourcePath: "../data/infrastructure-azure/v1.17.3/cluster-template-prow.yaml"
         targetName: "cluster-template.yaml"
-      - sourcePath: "../data/infrastructure-azure/v1.16.3/cluster-template-prow-machine-and-machine-pool.yaml"
+      - sourcePath: "../data/infrastructure-azure/v1.17.3/cluster-template-prow-machine-and-machine-pool.yaml"
         targetName: "cluster-template-machine-and-machine-pool.yaml"
       replacements:
       - old: "imagePullPolicy: Always"
         new: "imagePullPolicy: IfNotPresent"
-    - name: v1.17.1 # latest patch of latest minor in supported v1beta1 releases; this is used for v1beta1 latest --> v1beta1 current clusterctl upgrades test only.
-      value: https://github.com/kubernetes-sigs/cluster-api-provider-azure/releases/download/v1.17.1/infrastructure-components.yaml
+    - name: v1.18.0 # latest patch of latest minor in supported v1beta1 releases; this is used for v1beta1 latest --> v1beta1 current clusterctl upgrades test only.
+      value: https://github.com/kubernetes-sigs/cluster-api-provider-azure/releases/download/v1.18.0/infrastructure-components.yaml
       type: url
       contract: v1beta1
       files:
       - sourcePath: "../data/shared/v1beta1_provider/metadata.yaml"
-      - sourcePath: "../data/infrastructure-azure/v1.17.1/cluster-template-prow.yaml"
+      - sourcePath: "../data/infrastructure-azure/v1.18.0/cluster-template-prow.yaml"
         targetName: "cluster-template.yaml"
-      - sourcePath: "../data/infrastructure-azure/v1.17.1/cluster-template-prow-machine-and-machine-pool.yaml"
+      - sourcePath: "../data/infrastructure-azure/v1.18.0/cluster-template-prow-machine-and-machine-pool.yaml"
         targetName: "cluster-template-machine-and-machine-pool.yaml"
       replacements:
       - old: "imagePullPolicy: Always"
         new: "imagePullPolicy: IfNotPresent"
-    - name: v1.18.99 # "vNext"; use manifests from local source files
+    - name: v1.19.99 # "vNext"; use manifests from local source files
       value: "${PWD}/config/default"
       contract: v1beta1
       files:
@@ -202,14 +202,14 @@ providers:
 variables:
   AKS_KUBERNETES_VERSION: "latest"
   AKS_KUBERNETES_VERSION_UPGRADE_FROM: "latest-1"
-  KUBERNETES_VERSION: "${KUBERNETES_VERSION:-stable-1.29}"
+  KUBERNETES_VERSION: "${KUBERNETES_VERSION:-stable-1.32}"
   FLATCAR_KUBERNETES_VERSION: "${FLATCAR_KUBERNETES_VERSION:-stable-1.26}"
-  KUBERNETES_VERSION_API_UPGRADE_FROM: "v1.28.10"
+  KUBERNETES_VERSION_API_UPGRADE_FROM: "v1.31.9"
   FLATCAR_VERSION: "${FLATCAR_VERSION:-latest}"
-  ETCD_VERSION_UPGRADE_TO: "3.5.10-0"
-  COREDNS_VERSION_UPGRADE_TO: "v1.11.1"
-  KUBERNETES_VERSION_UPGRADE_TO: "${KUBERNETES_VERSION_UPGRADE_TO:-stable-1.29}"
-  KUBERNETES_VERSION_UPGRADE_FROM: "${KUBERNETES_VERSION_UPGRADE_FROM:-stable-1.28}"
+  ETCD_VERSION_UPGRADE_TO: "" # Use default
+  COREDNS_VERSION_UPGRADE_TO: "" # Use default
+  KUBERNETES_VERSION_UPGRADE_TO: "${KUBERNETES_VERSION_UPGRADE_TO:-stable-1.32}"
+  KUBERNETES_VERSION_UPGRADE_FROM: "${KUBERNETES_VERSION_UPGRADE_FROM:-stable-1.31}"
   CNI: "${PWD}/templates/addons/calico.yaml"
   ADDONS_PATH: "${PWD}/templates/addons"
   REDACT_LOG_SCRIPT: "${PWD}/hack/log/redact.sh"
@@ -225,7 +225,7 @@ variables:
   CONFORMANCE_CONTROL_PLANE_MACHINE_COUNT: "${CONFORMANCE_CONTROL_PLANE_MACHINE_COUNT:-1}"
   CONFORMANCE_IMAGE: "${CONFORMANCE_IMAGE:-}"
   CONFORMANCE_NODES: "${CONFORMANCE_NODES:-1}"
-  IP_FAMILY: "IPv4"
+  IP_FAMILY: "ipv4"
   CLUSTER_IDENTITY_NAME: "cluster-identity-ci"
   ASO_CREDENTIAL_SECRET_NAME: "aso-credentials"
   ASO_CREDENTIAL_SECRET_MODE: workloadidentity
@@ -234,10 +234,10 @@ variables:
   KUBETEST_CONFIGURATION: "./data/kubetest/conformance.yaml"
   WINDOWS_CONTAINERD_URL: "${WINDOWS_CONTAINERD_URL:-}"
   AZURE_CNI_V1_MANIFEST_PATH: "${PWD}/templates/addons/azure-cni-v1.yaml"
-  OLD_CAPI_UPGRADE_VERSION: "v1.8.9"
-  LATEST_CAPI_UPGRADE_VERSION: "v1.9.4"
-  OLD_PROVIDER_UPGRADE_VERSION: "v1.16.3"
-  LATEST_PROVIDER_UPGRADE_VERSION: "v1.17.1"
+  OLD_CAPI_UPGRADE_VERSION: "v1.8.12"
+  LATEST_CAPI_UPGRADE_VERSION: "v1.9.10"
+  OLD_PROVIDER_UPGRADE_VERSION: "v1.17.3"
+  LATEST_PROVIDER_UPGRADE_VERSION: "v1.18.0"
   OLD_CAAPH_UPGRADE_VERSION: "v0.1.0-alpha.10"
   LATEST_CAAPH_UPGRADE_VERSION: "v0.2.5"
   CI_RG: capz-ci
@@ -249,7 +249,7 @@ intervals:
   default/wait-cluster: ["20m", "10s"]
   default/wait-private-cluster: ["30m", "10s"]
   default/wait-control-plane: ["20m", "10s"]
-  default/wait-control-plane-ha: ["30m", "10s"]
+  default/wait-control-plane-ha: ["60m", "10s"]
   default/wait-worker-nodes: ["25m", "10s"]
   default/wait-gpu-nodes: ["30m", "10s"]
   default/wait-delete-cluster: ["30m", "10s"]

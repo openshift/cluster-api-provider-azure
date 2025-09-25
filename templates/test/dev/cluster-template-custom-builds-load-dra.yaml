@@ -73,6 +73,8 @@ spec:
           cloud-provider: external
           cluster-name: ${CLUSTER_NAME}
           feature-gates: DynamicResourceAllocation=true
+          kube-api-burst: "150"
+          kube-api-qps: "75"
           v: "4"
       etcd:
         local:
@@ -728,7 +730,7 @@ spec:
   namespace: tigera-operator
   releaseName: projectcalico
   repoURL: https://docs.tigera.io/calico/charts
-  valuesTemplate: |-
+  valuesTemplate: |
     installation:
       cni:
         type: Calico
@@ -741,6 +743,31 @@ spec:
         ipPools:{{range $i, $cidr := .Cluster.spec.clusterNetwork.pods.cidrBlocks }}
         - cidr: {{ $cidr }}
           encapsulation: VXLAN{{end}}
+      typhaDeployment:
+        spec:
+          template:
+            spec:
+              # By default, typha tolerates all NoSchedule taints. This breaks
+              # scale-ins when it continuously gets scheduled onto an
+              # out-of-date Node that is being deleted. Tolerate only the
+              # NoSchedule taints that are expected.
+              tolerations:
+                - effect: NoExecute
+                  operator: Exists
+                - effect: NoSchedule
+                  key: node-role.kubernetes.io/control-plane
+                  operator: Exists
+                - effect: NoSchedule
+                  key: node.kubernetes.io/not-ready
+                  operator: Exists
+              affinity:
+                nodeAffinity:
+                  preferredDuringSchedulingIgnoredDuringExecution:
+                  - weight: 50
+                    preference:
+                      matchExpressions:
+                      - key: node-role.kubernetes.io/control-plane
+                        operator: Exists
       registry: mcr.microsoft.com/oss
     # Image and registry configuration for the tigera/operator pod.
     tigeraOperator:
@@ -748,6 +775,18 @@ spec:
       registry: mcr.microsoft.com/oss
     calicoctl:
       image: mcr.microsoft.com/oss/calico/ctl
+    # By default, tigera tolerates all NoSchedule taints. This breaks upgrades
+    # when it continuously gets scheduled onto an out-of-date Node that is being
+    # deleted. Tolerate only the NoSchedule taints that are expected.
+    tolerations:
+      - effect: NoExecute
+        operator: Exists
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+      - effect: NoSchedule
+        key: node.kubernetes.io/not-ready
+        operator: Exists
   version: ${CALICO_VERSION}
 ---
 apiVersion: addons.cluster.x-k8s.io/v1alpha1
@@ -1401,6 +1440,143 @@ metadata:
     type: generated
   name: metrics-server-${CLUSTER_NAME}
   namespace: default
+---
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: MachineDeployment
+metadata:
+  name: ${CLUSTER_NAME}-monitoring
+  namespace: default
+spec:
+  clusterName: ${CLUSTER_NAME}
+  replicas: ${MONITORING_MACHINE_COUNT:=0}
+  selector: {}
+  template:
+    spec:
+      bootstrap:
+        configRef:
+          apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+          kind: KubeadmConfigTemplate
+          name: ${CLUSTER_NAME}-monitoring
+      clusterName: ${CLUSTER_NAME}
+      infrastructureRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+        kind: AzureMachineTemplate
+        name: ${CLUSTER_NAME}-monitoring
+      version: ${KUBERNETES_VERSION}
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: AzureMachineTemplate
+metadata:
+  name: ${CLUSTER_NAME}-monitoring
+  namespace: default
+spec:
+  template:
+    spec:
+      additionalTags:
+        monitoring: dra
+      identity: UserAssigned
+      image:
+        marketplace:
+          offer: capi
+          publisher: cncf-upstream
+          sku: ubuntu-2204-gen1
+          version: latest
+      osDisk:
+        diskSizeGB: 128
+        osType: Linux
+      sshPublicKey: ${AZURE_SSH_PUBLIC_KEY_B64:=""}
+      userAssignedIdentities:
+      - providerID: /subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${CI_RG}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/${USER_IDENTITY}
+      vmSize: ${AZURE_CONTROL_PLANE_MACHINE_TYPE}
+---
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+kind: KubeadmConfigTemplate
+metadata:
+  name: ${CLUSTER_NAME}-monitoring
+  namespace: default
+spec:
+  template:
+    spec:
+      files:
+      - contentFrom:
+          secret:
+            key: worker-node-azure.json
+            name: ${CLUSTER_NAME}-monitoring-azure-json
+        owner: root:root
+        path: /etc/kubernetes/azure.json
+        permissions: "0644"
+      - content: |
+          #!/bin/bash
+
+          set -o nounset
+          set -o pipefail
+          set -o errexit
+          [[ $(id -u) != 0 ]] && SUDO="sudo" || SUDO=""
+
+          # Run the az login command with managed identity
+          if az login --identity > /dev/null 2>&1; then
+            echo "Logged in Azure with managed identity"
+            echo "Use OOT credential provider"
+            mkdir -p /var/lib/kubelet/credential-provider
+            az storage blob download --blob-url "https://${AZURE_STORAGE_ACCOUNT}.blob.core.windows.net/${AZURE_BLOB_CONTAINER_NAME}/${IMAGE_TAG_ACR_CREDENTIAL_PROVIDER}/azure-acr-credential-provider" -f /var/lib/kubelet/credential-provider/acr-credential-provider --auth-mode login
+            chmod 755 /var/lib/kubelet/credential-provider/acr-credential-provider
+            az storage blob download --blob-url "https://${AZURE_STORAGE_ACCOUNT}.blob.core.windows.net/${AZURE_BLOB_CONTAINER_NAME}/${IMAGE_TAG_ACR_CREDENTIAL_PROVIDER}/credential-provider-config.yaml" -f /var/lib/kubelet/credential-provider-config.yaml --auth-mode login
+            chmod 644 /var/lib/kubelet/credential-provider-config.yaml
+          else
+            echo "Use OOT credential provider"
+            mkdir -p /var/lib/kubelet/credential-provider
+            curl --retry 10 --retry-delay 5 -w "response status code is %{http_code}" -Lo /var/lib/kubelet/credential-provider/acr-credential-provider "https://${AZURE_STORAGE_ACCOUNT}.blob.core.windows.net/${AZURE_BLOB_CONTAINER_NAME}/${IMAGE_TAG_ACR_CREDENTIAL_PROVIDER}/azure-acr-credential-provider"
+            chmod 755 /var/lib/kubelet/credential-provider/acr-credential-provider
+            curl --retry 10 --retry-delay 5 -w "response status code is %{http_code}" -Lo /var/lib/kubelet/credential-provider-config.yaml "https://${AZURE_STORAGE_ACCOUNT}.blob.core.windows.net/${AZURE_BLOB_CONTAINER_NAME}/${IMAGE_TAG_ACR_CREDENTIAL_PROVIDER}/credential-provider-config.yaml"
+            chmod 644 /var/lib/kubelet/credential-provider-config.yaml
+          fi
+        owner: root:root
+        path: /tmp/oot-cred-provider.sh
+        permissions: "0744"
+      - content: |
+          #!/bin/bash
+
+          set -o nounset
+          set -o pipefail
+          set -o errexit
+
+          systemctl stop kubelet
+          declare -a BINARIES=("kubeadm" "kubectl" "kubelet")
+          az login --identity
+          for BINARY in "$${BINARIES[@]}"; do
+            echo "* installing package: $${BINARY} ${KUBE_GIT_VERSION}"
+            az storage blob download --blob-url "https://${AZURE_STORAGE_ACCOUNT}.blob.core.windows.net/${AZURE_BLOB_CONTAINER_NAME}/${KUBE_GIT_VERSION}/bin/linux/amd64/$${BINARY}" -f "/usr/bin/$${BINARY}" --auth-mode login
+          done
+          systemctl restart kubelet
+
+          echo "kubeadm version: $(kubeadm version -o=short)"
+          echo "kubectl version: $(kubectl version --client=true)"
+          echo "kubelet version: $(kubelet --version)"
+        owner: root:root
+        path: /tmp/replace-k8s-binaries.sh
+        permissions: "0744"
+      - content: |
+          #!/bin/bash
+
+          echo "enabling containerd CDI plugin"
+          sed -i '/\[plugins."io.containerd.grpc.v1.cri"\]/a\    enable_cdi = true' /etc/containerd/config.toml
+          systemctl restart containerd
+        owner: root:root
+        path: /tmp/containerd-config.sh
+        permissions: "0744"
+      joinConfiguration:
+        nodeRegistration:
+          kubeletExtraArgs:
+            cloud-provider: external
+            feature-gates: ${NODE_FEATURE_GATES:-"DynamicResourceAllocation=true"}
+            image-credential-provider-bin-dir: /var/lib/kubelet/credential-provider
+            image-credential-provider-config: /var/lib/kubelet/credential-provider-config.yaml
+            register-with-taints: monitoring:NoSchedule
+          name: '{{ ds.meta_data["local_hostname"] }}'
+      preKubeadmCommands:
+      - bash -c /tmp/containerd-config.sh
+      - bash -c /tmp/oot-cred-provider.sh
+      - bash -c /tmp/replace-k8s-binaries.sh
 ---
 apiVersion: addons.cluster.x-k8s.io/v1beta1
 kind: ClusterResourceSet

@@ -187,7 +187,7 @@ func dumpSpecResourcesAndCleanup(ctx context.Context, input cleanupInput) {
 	// that cluster variable is not set even if the cluster exists, so we are calling DeleteAllClustersAndWait
 	// instead of DeleteClusterAndWait
 	deleteTimeoutConfig := "wait-delete-cluster"
-	if strings.Contains(input.Cluster.Name, aksClusterNameSuffix) {
+	if input.Cluster != nil && strings.Contains(input.Cluster.Name, aksClusterNameSuffix) {
 		deleteTimeoutConfig = "wait-delete-cluster-aks"
 	}
 	framework.DeleteAllClustersAndWait(ctx, framework.DeleteAllClustersAndWaitInput{
@@ -218,11 +218,15 @@ func dumpSpecResourcesAndCleanup(ctx context.Context, input cleanupInput) {
 // ExpectResourceGroupToBe404 performs a GET request to Azure to determine if the cluster resource group still exists.
 // If it does still exist, it means the cluster was not deleted and is leaking Azure resources.
 func ExpectResourceGroupToBe404(ctx context.Context) {
+	resourceGroup := os.Getenv(AzureResourceGroup)
+	if resourceGroup == "" {
+		return
+	}
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	Expect(err).NotTo(HaveOccurred())
 	groupsClient, err := armresources.NewResourceGroupsClient(getSubscriptionID(Default), cred, nil)
 	Expect(err).NotTo(HaveOccurred())
-	_, err = groupsClient.Get(ctx, os.Getenv(AzureResourceGroup), nil)
+	_, err = groupsClient.Get(ctx, resourceGroup, nil)
 	Expect(azure.ResourceNotFound(err)).To(BeTrue(), "The resource group in Azure still exists. After deleting the cluster all of the Azure resources should also be deleted.")
 }
 
@@ -254,26 +258,10 @@ func createRestConfig(ctx context.Context, tmpdir, namespace, clusterName string
 }
 
 // EnsureControlPlaneInitialized waits for the cluster KubeadmControlPlane object to be initialized
-// and then installs cloud-provider-azure components via Helm.
+// and then waits for cloud-provider-azure components installed via CAAPH.
 // Fulfills the clusterctl.Waiter type so that it can be used as ApplyClusterTemplateAndWaitInput data
 // in the flow of a clusterctl.ApplyClusterTemplateAndWait E2E test scenario.
 func EnsureControlPlaneInitialized(ctx context.Context, input clusterctl.ApplyCustomClusterTemplateAndWaitInput, result *clusterctl.ApplyCustomClusterTemplateAndWaitResult) {
-	ensureControlPlaneInitialized(ctx, input, result, true)
-}
-
-// EnsureControlPlaneInitializedNoAddons waits for the cluster KubeadmControlPlane object to be initialized
-// and then installs cloud-provider-azure components via Helm.
-// Fulfills the clusterctl.Waiter type so that it can be used as ApplyClusterTemplateAndWaitInput data
-// in the flow of a clusterctl.ApplyClusterTemplateAndWait E2E test scenario.
-func EnsureControlPlaneInitializedNoAddons(ctx context.Context, input clusterctl.ApplyCustomClusterTemplateAndWaitInput, result *clusterctl.ApplyCustomClusterTemplateAndWaitResult) {
-	ensureControlPlaneInitialized(ctx, input, result, false)
-}
-
-// ensureControlPlaneInitialized waits for the cluster KubeadmControlPlane object to be initialized
-// and then installs cloud-provider-azure components via Helm.
-// Fulfills the clusterctl.Waiter type so that it can be used as ApplyClusterTemplateAndWaitInput data
-// in the flow of a clusterctl.ApplyClusterTemplateAndWait E2E test scenario.
-func ensureControlPlaneInitialized(ctx context.Context, input clusterctl.ApplyCustomClusterTemplateAndWaitInput, result *clusterctl.ApplyCustomClusterTemplateAndWaitResult, installHelmCharts bool) {
 	getter := input.ClusterProxy.GetClient()
 	cluster := framework.GetClusterByName(ctx, framework.GetClusterByNameInput{
 		Getter:    getter,
@@ -303,12 +291,12 @@ func ensureControlPlaneInitialized(ctx context.Context, input clusterctl.ApplyCu
 
 	if kubeadmControlPlane.Spec.KubeadmConfigSpec.ClusterConfiguration.ControllerManager.ExtraArgs["cloud-provider"] != infrav1.AzureNetworkPluginName {
 		// There is a co-dependency between cloud-provider and CNI so we install both together if cloud-provider is external.
-		EnsureCNIAndCloudProviderAzureHelmChart(ctx, input, installHelmCharts, cluster.Spec.ClusterNetwork.Pods.CIDRBlocks, hasWindows)
+		EnsureCNIAndCloudProviderAzureHelmChart(ctx, input, hasWindows)
 	} else {
-		EnsureCNI(ctx, input, installHelmCharts, cluster.Spec.ClusterNetwork.Pods.CIDRBlocks, hasWindows)
+		EnsureCNI(ctx, input, hasWindows)
 	}
 	controlPlane := discoveryAndWaitForControlPlaneInitialized(ctx, input, result)
-	EnsureAzureDiskCSIDriverHelmChart(ctx, input, installHelmCharts, hasWindows)
+	EnsureAzureDiskCSIDriverHelmChart(ctx, input)
 	result.ControlPlane = controlPlane
 }
 

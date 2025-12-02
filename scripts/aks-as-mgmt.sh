@@ -26,7 +26,7 @@ source "${REPO_ROOT}/hack/ensure-tags.sh" # set the right timestamp and job name
 export MGMT_CLUSTER_NAME="${MGMT_CLUSTER_NAME:-aks-mgmt-$(date +%s)}" # management cluster name
 export AKS_RESOURCE_GROUP="${AKS_RESOURCE_GROUP:-"${MGMT_CLUSTER_NAME}"}" # resource group name
 export AKS_NODE_RESOURCE_GROUP="${AKS_RESOURCE_GROUP}-nodes"
-export AKS_MGMT_KUBERNETES_VERSION="${AKS_MGMT_KUBERNETES_VERSION:-v1.30.2}"
+export AKS_MGMT_KUBERNETES_VERSION="${AKS_MGMT_KUBERNETES_VERSION:-v1.33.2}"
 export AZURE_LOCATION="${AZURE_LOCATION:-westus2}"
 export AKS_NODE_VM_SIZE="${AKS_NODE_VM_SIZE:-"Standard_B2s"}"
 export AKS_NODE_COUNT="${AKS_NODE_COUNT:-2}"
@@ -186,12 +186,45 @@ create_aks_cluster() {
     export USER_IDENTITY
 
     echo "assigning user-assigned managed identity to the AKS cluster"
-    az aks update --resource-group "${AKS_RESOURCE_GROUP}" \
+    
+    # Wait for any ongoing cluster operations to complete before proceeding
+    echo "waiting for cluster to be in a ready state"
+    az aks wait --resource-group "${AKS_RESOURCE_GROUP}" --name "${MGMT_CLUSTER_NAME}" --created --timeout 600 --only-show-errors
+    
+    # Temporarily mitigate PDB issues by scaling up metrics-server before the update
+    echo "temporarily scaling up metrics-server to avoid PDB drain issues"
+    kubectl scale deployment metrics-server --replicas=3 -n kube-system || true
+    
+    # Wait a moment for the pods to be scheduled
+    sleep 15
+    
+    # Retry the managed identity assignment with exponential backoff
+    retry_count=0
+    max_retries=5
+    base_sleep=30
+    until az aks update --resource-group "${AKS_RESOURCE_GROUP}" \
     --name "${MGMT_CLUSTER_NAME}" \
     --enable-managed-identity \
     --assign-identity "${AKS_MI_RESOURCE_ID}" \
     --assign-kubelet-identity "${AKS_MI_RESOURCE_ID}" \
-    --output none --only-show-errors --yes
+    --output none --only-show-errors --yes; do
+      retry_count=$((retry_count + 1))
+      if [ $retry_count -ge $max_retries ]; then
+        echo "Failed to assign managed identity after $max_retries attempts"
+        # Restore original metrics-server replicas before failing
+        kubectl scale deployment metrics-server --replicas=2 -n kube-system || true
+        exit 1
+      fi
+      
+      # Exponential backoff with jitter: base_sleep * (2^retry_count) + random(0-10)
+      sleep_time=$((base_sleep * (1 << retry_count) + RANDOM % 11))
+      echo "Attempt $retry_count failed, retrying in $sleep_time seconds..."
+      sleep $sleep_time
+    done
+    
+    # Restore original metrics-server replica count
+    echo "restoring metrics-server to original replica count"
+    kubectl scale deployment metrics-server --replicas=2 -n kube-system || true
 
   else
     # echo "fetching Client ID for ${MGMT_CLUSTER_NAME}"
@@ -226,18 +259,25 @@ create_aks_cluster() {
   export MANAGED_IDENTITY_RG
   echo "mgmt resource identity resource group: ${MANAGED_IDENTITY_RG}"
 
-
-  echo "assigning contributor role to managed identity over the $AZURE_SUBSCRIPTION_ID subscription"
-  # Note: Even though --assignee-principal-type ServicePrincipal is specified, this does not mean that the role assignment is for a secret of type service principal.
-  # Creating a role assignment for a managed identity using other assignee-principal-type from (Group, User, ForeignGroup) will lead to RBAC error.
-  # To avoid RBAC error, we need to assign the role to the managed identity using the --assignee-principal-type ServicePrincipal.
-  # refer: https://learn.microsoft.com/en-us/azure/role-based-access-control/troubleshooting?tabs=bicep#symptom---assigning-a-role-to-a-new-principal-sometimes-fails
-  until az role assignment create --assignee-object-id "${AKS_MI_OBJECT_ID}" --role "Contributor" \
-  --scope "/subscriptions/${AZURE_SUBSCRIPTION_ID}" --assignee-principal-type ServicePrincipal --output none \
-  --only-show-errors; do
-    echo "retrying to assign contributor role"
-    sleep 5
-  done
+  # Only assign contributor role if using AKS-created managed identity (not user-provided)
+  # Check if all user-provided identity variables are set - if so, skip role assignment
+  if [[ -n "${AZURE_CLIENT_ID_USER_ASSIGNED_IDENTITY:-}" ]] && \
+     [[ -n "${AZURE_OBJECT_ID_USER_ASSIGNED_IDENTITY:-}" ]] && \
+     [[ -n "${AZURE_USER_ASSIGNED_IDENTITY_RESOURCE_ID:-}" ]]; then
+    echo "skipping contributor role assignment for user-provided managed identity (assuming it already has necessary permissions)"
+  else
+    echo "assigning contributor role to managed identity over the $AZURE_SUBSCRIPTION_ID subscription"
+    # Note: Even though --assignee-principal-type ServicePrincipal is specified, this does not mean that the role assignment is for a secret of type service principal.
+    # Creating a role assignment for a managed identity using other assignee-principal-type from (Group, User, ForeignGroup) will lead to RBAC error.
+    # To avoid RBAC error, we need to assign the role to the managed identity using the --assignee-principal-type ServicePrincipal.
+    # refer: https://learn.microsoft.com/en-us/azure/role-based-access-control/troubleshooting?tabs=bicep#symptom---assigning-a-role-to-a-new-principal-sometimes-fails
+    until az role assignment create --assignee-object-id "${AKS_MI_OBJECT_ID}" --role "Contributor" \
+    --scope "/subscriptions/${AZURE_SUBSCRIPTION_ID}" --assignee-principal-type ServicePrincipal --output none \
+    --only-show-errors; do
+      echo "retrying to assign contributor role"
+      sleep 5
+    done
+  fi
 
   # Set the ASO_CREDENTIAL_SECRET_MODE to podidentity to
   # use the client ID of the managed identity created by AKS for authentication

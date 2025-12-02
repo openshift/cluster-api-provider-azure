@@ -409,6 +409,7 @@ func (s *ClusterScope) NatGatewaySpecs() []azure.ASOResourceSpecGetter[*asonetwo
 					SubscriptionID: s.SubscriptionID(),
 					Location:       s.Location(),
 					ClusterName:    s.ClusterName(),
+					Zones:          subnet.NatGateway.Zones,
 					NatGatewayIP: infrav1.PublicIPSpec{
 						Name: subnet.NatGateway.NatGatewayIP.Name,
 					},
@@ -559,7 +560,7 @@ func (s *ClusterScope) VNetSpec() azure.ASOResourceSpecGetter[*asonetworkv1api20
 
 // PrivateDNSSpec returns the private dns zone spec.
 func (s *ClusterScope) PrivateDNSSpec() (zoneSpec azure.ResourceSpecGetter, linkSpec, recordSpec []azure.ResourceSpecGetter) {
-	if s.IsAPIServerPrivate() {
+	if s.IsAPIServerPrivate() && s.PrivateDNSZoneMode() != infrav1.PrivateDNSZoneModeNone {
 		resourceGroup := s.ResourceGroup()
 		if s.AzureCluster.Spec.NetworkSpec.PrivateDNSZoneResourceGroup != "" {
 			resourceGroup = s.AzureCluster.Spec.NetworkSpec.PrivateDNSZoneResourceGroup
@@ -1250,4 +1251,14 @@ func (s *ClusterScope) getLastAppliedSecurityRules(nsgName string) map[string]in
 		lastAppliedSecurityRules = map[string]interface{}{}
 	}
 	return lastAppliedSecurityRules
+}
+
+// PrivateDNSZoneMode returns the current Private DNS Zone mode.
+// When unconfigured, the method returns the default.
+// Returned value is used to determine if the Private DNS Zone should be created.
+func (s *ClusterScope) PrivateDNSZoneMode() infrav1.PrivateDNSZoneMode {
+	if s.AzureCluster.Spec.NetworkSpec.PrivateDNSZone == nil {
+		return infrav1.PrivateDNSZoneModeSystem
+	}
+	return *s.AzureCluster.Spec.NetworkSpec.PrivateDNSZone
 }

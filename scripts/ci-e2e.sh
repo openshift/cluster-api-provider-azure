@@ -70,19 +70,30 @@ export AZURE_CONTROL_PLANE_MACHINE_TYPE="${AZURE_CONTROL_PLANE_MACHINE_TYPE:-"St
 export AZURE_NODE_MACHINE_TYPE="${AZURE_NODE_MACHINE_TYPE:-"Standard_B2s"}"
 CALICO_VERSION=$(make get-calico-version)
 export CALICO_VERSION
+AZWI_RESOURCE_GROUP="${AZWI_RESOURCE_GROUP:-capz-wi-$(capz::util::random_suffix)}"
+export AZWI_RESOURCE_GROUP
+export WINDOWS_SERVER_VERSION="${WINDOWS_SERVER_VERSION:-windows-2022}"
 
 
 capz::util::generate_ssh_key
 
 capz::ci-e2e::cleanup() {
     "${REPO_ROOT}/hack/log/redact.sh" || true
+    make test-e2e-run-cleanup || true
 }
 
 trap capz::ci-e2e::cleanup EXIT
 # Image is configured as `${CONTROLLER_IMG}-${ARCH}:${TAG}` where `CONTROLLER_IMG` is defaulted to `${REGISTRY}/${IMAGE_NAME}`.
 if [[ "${BUILD_MANAGER_IMAGE}" == "false" ]]; then
   # Load an existing image, skip docker-build and docker-push.
-  make test-e2e-skip-build-and-push
+  if [[ -n "${CUSTOM_MANAGER_IMAGE:-}" ]]; then
+    # Use custom image format when CUSTOM_MANAGER_IMAGE is set
+    export MANAGER_IMAGE="${CUSTOM_MANAGER_IMAGE}"
+    make test-e2e-custom-image
+  else
+    # Use default image format
+    make test-e2e-skip-build-and-push
+  fi
 elif [[ "${USE_LOCAL_KIND_REGISTRY}" == "true" ]]; then
   # Build an image with kind local registry, skip docker-push. REGISTRY is set to `localhost:5000/ci-e2e`. TAG is set to `$(date -u '+%Y%m%d%H%M%S')`.
   make test-e2e-skip-push

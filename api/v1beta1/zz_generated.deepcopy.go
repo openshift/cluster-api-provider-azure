@@ -3690,6 +3690,11 @@ func (in *ManagedMachinePoolScaling) DeepCopy() *ManagedMachinePoolScaling {
 func (in *NatGateway) DeepCopyInto(out *NatGateway) {
 	*out = *in
 	in.NatGatewayIP.DeepCopyInto(&out.NatGatewayIP)
+	if in.Zones != nil {
+		in, out := &in.Zones, &out.Zones
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	out.NatGatewayClassSpec = in.NatGatewayClassSpec
 }
 
@@ -3783,6 +3788,11 @@ func (in *NetworkSpec) DeepCopyInto(out *NetworkSpec) {
 		in, out := &in.AdditionalAPIServerLBPorts, &out.AdditionalAPIServerLBPorts
 		*out = make([]LoadBalancerPort, len(*in))
 		copy(*out, *in)
+	}
+	if in.PrivateDNSZone != nil {
+		in, out := &in.PrivateDNSZone, &out.PrivateDNSZone
+		*out = new(PrivateDNSZoneMode)
+		**out = **in
 	}
 	out.NetworkClassSpec = in.NetworkClassSpec
 }

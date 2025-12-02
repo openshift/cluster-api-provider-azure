@@ -17,7 +17,6 @@ limitations under the License.
 package scope
 
 import (
-	"context"
 	"fmt"
 	"reflect"
 	"strings"
@@ -26,7 +25,6 @@ import (
 	asonetworkv1api20201101 "github.com/Azure/azure-service-operator/v2/api/network/v1api20201101"
 	asonetworkv1api20220701 "github.com/Azure/azure-service-operator/v2/api/network/v1api20220701"
 	asoresourcesv1 "github.com/Azure/azure-service-operator/v2/api/resources/v1api20200601"
-	"github.com/Azure/go-autorest/autorest/azure/auth"
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -103,7 +101,7 @@ func TestNewClusterScope(t *testing.T) {
 			},
 		},
 	}
-	err := (&infrav1.AzureClusterWebhook{}).Default(context.Background(), azureCluster)
+	err := (&infrav1.AzureClusterWebhook{}).Default(t.Context(), azureCluster)
 	g.Expect(err).NotTo(HaveOccurred())
 
 	fakeIdentity := &infrav1.AzureClusterIdentity{
@@ -118,7 +116,7 @@ func TestNewClusterScope(t *testing.T) {
 	initObjects := []runtime.Object{cluster, azureCluster, fakeIdentity, fakeSecret}
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
 
-	_, err = NewClusterScope(context.TODO(), ClusterScopeParams{
+	_, err = NewClusterScope(t.Context(), ClusterScopeParams{
 		Cluster:         cluster,
 		AzureCluster:    azureCluster,
 		Client:          fakeClient,
@@ -216,6 +214,58 @@ func TestAPIServerHost(t *testing.T) {
 			},
 			want: "apiserver.example.private",
 		},
+		{
+			name: "private apiserver without private dns zone",
+			azureCluster: infrav1.AzureCluster{
+				Spec: infrav1.AzureClusterSpec{
+					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
+						SubscriptionID: fakeSubscriptionID,
+						IdentityRef: &corev1.ObjectReference{
+							Kind: infrav1.AzureClusterIdentityKind,
+						},
+					},
+					ControlPlaneEnabled: true,
+					NetworkSpec: infrav1.NetworkSpec{
+						PrivateDNSZone: ptr.To(infrav1.PrivateDNSZoneModeNone),
+						NetworkClassSpec: infrav1.NetworkClassSpec{
+							PrivateDNSZoneName: "",
+						},
+						APIServerLB: &infrav1.LoadBalancerSpec{
+							LoadBalancerClassSpec: infrav1.LoadBalancerClassSpec{
+								Type: infrav1.Internal,
+							},
+						},
+					},
+				},
+			},
+			want: "apiserver.my-cluster.capz.io",
+		},
+		{
+			name: "private apiserver with private dns zone",
+			azureCluster: infrav1.AzureCluster{
+				Spec: infrav1.AzureClusterSpec{
+					AzureClusterClassSpec: infrav1.AzureClusterClassSpec{
+						SubscriptionID: fakeSubscriptionID,
+						IdentityRef: &corev1.ObjectReference{
+							Kind: infrav1.AzureClusterIdentityKind,
+						},
+					},
+					ControlPlaneEnabled: true,
+					NetworkSpec: infrav1.NetworkSpec{
+						PrivateDNSZone: ptr.To(infrav1.PrivateDNSZoneModeSystem),
+						NetworkClassSpec: infrav1.NetworkClassSpec{
+							PrivateDNSZoneName: "",
+						},
+						APIServerLB: &infrav1.LoadBalancerSpec{
+							LoadBalancerClassSpec: infrav1.LoadBalancerClassSpec{
+								Type: infrav1.Internal,
+							},
+						},
+					},
+				},
+			},
+			want: "apiserver.my-cluster.capz.io",
+		},
 	}
 
 	for _, tc := range tests {
@@ -231,7 +281,7 @@ func TestAPIServerHost(t *testing.T) {
 		tc.azureCluster.ObjectMeta = metav1.ObjectMeta{
 			Name: cluster.Name,
 		}
-		err := (&infrav1.AzureClusterWebhook{}).Default(context.Background(), &tc.azureCluster)
+		err := (&infrav1.AzureClusterWebhook{}).Default(t.Context(), &tc.azureCluster)
 		g.Expect(err).NotTo(HaveOccurred())
 
 		clusterScope := &ClusterScope{
@@ -390,7 +440,7 @@ func TestGettingSecurityRules(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			err := (&infrav1.AzureClusterWebhook{}).Default(context.Background(), tt.azureCluster)
+			err := (&infrav1.AzureClusterWebhook{}).Default(t.Context(), tt.azureCluster)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			clusterScope := &ClusterScope{
@@ -993,11 +1043,7 @@ func TestNatGatewaySpecs(t *testing.T) {
 					},
 				},
 				AzureClients: AzureClients{
-					EnvironmentSettings: auth.EnvironmentSettings{
-						Values: map[string]string{
-							auth.SubscriptionID: "123",
-						},
-					},
+					subscriptionID: "123",
 				},
 				AzureCluster: &infrav1.AzureCluster{
 					Spec: infrav1.AzureClusterSpec{
@@ -1067,11 +1113,7 @@ func TestNatGatewaySpecs(t *testing.T) {
 					},
 				},
 				AzureClients: AzureClients{
-					EnvironmentSettings: auth.EnvironmentSettings{
-						Values: map[string]string{
-							auth.SubscriptionID: "123",
-						},
-					},
+					subscriptionID: "123",
 				},
 				AzureCluster: &infrav1.AzureCluster{
 					Spec: infrav1.AzureClusterSpec{
@@ -1159,11 +1201,7 @@ func TestNatGatewaySpecs(t *testing.T) {
 					},
 				},
 				AzureClients: AzureClients{
-					EnvironmentSettings: auth.EnvironmentSettings{
-						Values: map[string]string{
-							auth.SubscriptionID: "123",
-						},
-					},
+					subscriptionID: "123",
 				},
 				AzureCluster: &infrav1.AzureCluster{
 					Spec: infrav1.AzureClusterSpec{
@@ -1459,11 +1497,7 @@ func TestSubnetSpecs(t *testing.T) {
 					},
 				},
 				AzureClients: AzureClients{
-					EnvironmentSettings: auth.EnvironmentSettings{
-						Values: map[string]string{
-							auth.SubscriptionID: "123",
-						},
-					},
+					subscriptionID: "123",
 				},
 				AzureCluster: &infrav1.AzureCluster{
 					Spec: infrav1.AzureClusterSpec{
@@ -1540,11 +1574,7 @@ func TestSubnetSpecs(t *testing.T) {
 					},
 				},
 				AzureClients: AzureClients{
-					EnvironmentSettings: auth.EnvironmentSettings{
-						Values: map[string]string{
-							auth.SubscriptionID: "123",
-						},
-					},
+					subscriptionID: "123",
 				},
 				AzureCluster: &infrav1.AzureCluster{
 					Spec: infrav1.AzureClusterSpec{
@@ -1836,11 +1866,7 @@ func TestAzureBastionSpec(t *testing.T) {
 					},
 				},
 				AzureClients: AzureClients{
-					EnvironmentSettings: auth.EnvironmentSettings{
-						Values: map[string]string{
-							auth.SubscriptionID: "123",
-						},
-					},
+					subscriptionID: "123",
 				},
 				AzureCluster: &infrav1.AzureCluster{
 					Spec: infrav1.AzureClusterSpec{
@@ -2279,7 +2305,7 @@ func TestOutboundLBName(t *testing.T) {
 				azureCluster.Spec.NetworkSpec.NodeOutboundLB = tc.nodeOutboundLB
 			}
 
-			err := (&infrav1.AzureClusterWebhook{}).Default(context.Background(), azureCluster)
+			err := (&infrav1.AzureClusterWebhook{}).Default(t.Context(), azureCluster)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			clusterScope := &ClusterScope{
@@ -2394,7 +2420,7 @@ func TestBackendPoolName(t *testing.T) {
 				},
 			}
 
-			err := (&infrav1.AzureClusterWebhook{}).Default(context.Background(), azureCluster)
+			err := (&infrav1.AzureClusterWebhook{}).Default(t.Context(), azureCluster)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			if tc.customAPIServerBackendPoolName != "" {
@@ -2508,7 +2534,7 @@ func TestOutboundPoolName(t *testing.T) {
 				}
 			}
 
-			err := (&infrav1.AzureClusterWebhook{}).Default(context.Background(), azureCluster)
+			err := (&infrav1.AzureClusterWebhook{}).Default(t.Context(), azureCluster)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			clusterScope := &ClusterScope{
@@ -3295,11 +3321,7 @@ func TestClusterScope_LBSpecs(t *testing.T) {
 				Cluster:      cluster,
 				AzureCluster: tc.azureCluster,
 				AzureClients: AzureClients{
-					EnvironmentSettings: auth.EnvironmentSettings{
-						Values: map[string]string{
-							auth.SubscriptionID: tc.azureCluster.Spec.SubscriptionID,
-						},
-					},
+					subscriptionID: tc.azureCluster.Spec.SubscriptionID,
 				},
 			}
 			if got := clusterScope.LBSpecs(); !reflect.DeepEqual(got, tc.want) {
@@ -3617,11 +3639,7 @@ func TestVNetPeerings(t *testing.T) {
 				Cluster:      cluster,
 				AzureCluster: azureCluster,
 				AzureClients: AzureClients{
-					EnvironmentSettings: auth.EnvironmentSettings{
-						Values: map[string]string{
-							auth.SubscriptionID: tc.subscriptionID,
-						},
-					},
+					subscriptionID: tc.subscriptionID,
 				},
 			}
 			got := clusterScope.VnetPeeringSpecs()
@@ -4134,6 +4152,98 @@ func TestAPIServerLBName(t *testing.T) {
 			g := NewWithT(t)
 			result := tt.cluster.APIServerLBName()
 			g.Expect(result).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestPrivateDNSSpec(t *testing.T) {
+	tests := []struct {
+		name                    string
+		clusterName             string
+		azureClusterNetworkSpec infrav1.NetworkSpec
+		expectPrivateDNSSpec    bool
+	}{
+		{
+			name:        "Default PrivateDNSZone (PrivateDNSZoneModeSystem)",
+			clusterName: "private-default",
+			azureClusterNetworkSpec: infrav1.NetworkSpec{
+				NetworkClassSpec: infrav1.NetworkClassSpec{
+					PrivateDNSZoneName: "fake-privateDNSZoneName",
+				},
+				APIServerLB: &infrav1.LoadBalancerSpec{
+					FrontendIPs: []infrav1.FrontendIP{
+						{
+							Name: "api-server-lb-internal-ip",
+							FrontendIPClass: infrav1.FrontendIPClass{
+								PrivateIPAddress: infrav1.DefaultInternalLBIPAddress,
+							},
+						},
+					},
+					LoadBalancerClassSpec: infrav1.LoadBalancerClassSpec{
+						Type: infrav1.Internal,
+					},
+				},
+			},
+			expectPrivateDNSSpec: true,
+		},
+		{
+			name:        "PrivateDNSZone set to PrivateDNSZoneModeNone",
+			clusterName: "private-none",
+			azureClusterNetworkSpec: infrav1.NetworkSpec{
+				PrivateDNSZone: ptr.To(infrav1.PrivateDNSZoneModeNone),
+				NetworkClassSpec: infrav1.NetworkClassSpec{
+					PrivateDNSZoneName: "fake-privateDNSZoneName",
+				},
+				APIServerLB: &infrav1.LoadBalancerSpec{
+					LoadBalancerClassSpec: infrav1.LoadBalancerClassSpec{
+						Type: infrav1.Internal,
+					},
+				},
+			},
+			expectPrivateDNSSpec: false,
+		},
+		{
+			name:        "Public LB",
+			clusterName: "public-none",
+			azureClusterNetworkSpec: infrav1.NetworkSpec{
+				PrivateDNSZone: ptr.To(infrav1.PrivateDNSZoneModeNone),
+				NetworkClassSpec: infrav1.NetworkClassSpec{
+					PrivateDNSZoneName: "fake-privateDNSZoneName",
+				},
+				APIServerLB: &infrav1.LoadBalancerSpec{
+					LoadBalancerClassSpec: infrav1.LoadBalancerClassSpec{
+						Type: infrav1.Public,
+					},
+				},
+			},
+			expectPrivateDNSSpec: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			cluster := &clusterv1.Cluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      tc.clusterName,
+					Namespace: "default",
+				},
+			}
+			azureCluster := &infrav1.AzureCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: tc.clusterName,
+				},
+				Spec: infrav1.AzureClusterSpec{
+					NetworkSpec: tc.azureClusterNetworkSpec,
+				},
+			}
+
+			clusterScope := &ClusterScope{
+				Cluster:      cluster,
+				AzureCluster: azureCluster,
+			}
+			zoneSpec, _, _ := clusterScope.PrivateDNSSpec()
+			g.Expect(zoneSpec != nil).Should(Equal(tc.expectPrivateDNSSpec))
 		})
 	}
 }

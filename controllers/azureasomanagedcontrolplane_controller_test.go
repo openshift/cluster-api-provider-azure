@@ -47,7 +47,7 @@ import (
 )
 
 func TestAzureASOManagedControlPlaneReconcile(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	s := runtime.NewScheme()
 	sb := runtime.NewSchemeBuilder(
@@ -435,7 +435,10 @@ func TestAzureASOManagedControlPlaneReconcile(t *testing.T) {
 			Client: &FakeClient{
 				Client: c,
 				patchFunc: func(_ context.Context, obj client.Object, _ client.Patch, _ ...client.PatchOption) error {
-					kubeconfigSecret := obj.(*corev1.Secret)
+					kubeconfigSecret, ok := obj.(*corev1.Secret)
+					if !ok {
+						return nil
+					}
 					g.Expect(kubeconfigSecret.Data[secret.KubeconfigDataName]).NotTo(BeEmpty())
 					kubeConfigPatched = true
 
@@ -571,7 +574,10 @@ func TestAzureASOManagedControlPlaneReconcile(t *testing.T) {
 			Client: &FakeClient{
 				Client: c,
 				patchFunc: func(_ context.Context, obj client.Object, _ client.Patch, _ ...client.PatchOption) error {
-					kubeconfigSecret := obj.(*corev1.Secret)
+					kubeconfigSecret, ok := obj.(*corev1.Secret)
+					if !ok {
+						return nil
+					}
 					g.Expect(kubeconfigSecret.Data[secret.KubeconfigDataName]).NotTo(BeEmpty())
 					kubeConfigPatched = true
 

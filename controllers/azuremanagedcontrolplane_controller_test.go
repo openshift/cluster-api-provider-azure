@@ -17,7 +17,6 @@ limitations under the License.
 package controllers
 
 import (
-	"context"
 	"testing"
 
 	asocontainerservicev1preview "github.com/Azure/azure-service-operator/v2/api/containerservice/v1api20230315preview"
@@ -31,8 +30,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	"sigs.k8s.io/cluster-api/util/patch"
+	"k8s.io/utils/ptr"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	v1beta1patch "sigs.k8s.io/cluster-api/util/deprecated/v1beta1/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -48,27 +48,33 @@ import (
 func TestClusterToAzureManagedControlPlane(t *testing.T) {
 	tests := []struct {
 		name            string
-		controlPlaneRef *corev1.ObjectReference
+		namespace       string
+		controlPlaneRef clusterv1.ContractVersionedObjectReference
 		expected        []ctrl.Request
 	}{
 		{
 			name:            "nil",
-			controlPlaneRef: nil,
+			namespace:       "",
+			controlPlaneRef: clusterv1.ContractVersionedObjectReference{},
 			expected:        nil,
 		},
 		{
-			name: "bad kind",
-			controlPlaneRef: &corev1.ObjectReference{
-				Kind: "NotAzureManagedControlPlane",
+			name:      "bad kind",
+			namespace: "",
+			controlPlaneRef: clusterv1.ContractVersionedObjectReference{
+				Kind:     "NotAzureManagedControlPlane",
+				Name:     "foo",
+				APIGroup: infrav1.GroupVersion.Group,
 			},
 			expected: nil,
 		},
 		{
-			name: "ok",
-			controlPlaneRef: &corev1.ObjectReference{
-				Kind:      infrav1.AzureManagedControlPlaneKind,
-				Name:      "name",
-				Namespace: "namespace",
+			name:      "ok",
+			namespace: "namespace",
+			controlPlaneRef: clusterv1.ContractVersionedObjectReference{
+				Kind:     infrav1.AzureManagedControlPlaneKind,
+				Name:     "name",
+				APIGroup: infrav1.GroupVersion.Group,
 			},
 			expected: []ctrl.Request{
 				{
@@ -84,7 +90,10 @@ func TestClusterToAzureManagedControlPlane(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewWithT(t)
-			actual := (&AzureManagedControlPlaneReconciler{}).ClusterToAzureManagedControlPlane(context.TODO(), &clusterv1.Cluster{
+			actual := (&AzureManagedControlPlaneReconciler{}).ClusterToAzureManagedControlPlane(t.Context(), &clusterv1.Cluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: test.namespace,
+				},
 				Spec: clusterv1.ClusterSpec{
 					ControlPlaneRef: test.controlPlaneRef,
 				},
@@ -101,7 +110,7 @@ func TestClusterToAzureManagedControlPlane(t *testing.T) {
 func TestAzureManagedControlPlaneReconcilePaused(t *testing.T) {
 	g := NewWithT(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	sb := runtime.NewSchemeBuilder(
 		clusterv1.AddToScheme,
@@ -137,7 +146,7 @@ func TestAzureManagedControlPlaneReconcilePaused(t *testing.T) {
 			Namespace: namespace,
 		},
 		Spec: clusterv1.ClusterSpec{
-			Paused: true,
+			Paused: ptr.To(true),
 		},
 	}
 	g.Expect(c.Create(ctx, cluster)).To(Succeed())
@@ -247,7 +256,7 @@ func TestAzureManagedControlPlaneReconcilePaused(t *testing.T) {
 	}
 	g.Expect(c.Create(ctx, subnet)).To(Succeed())
 
-	result, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+	result, err := reconciler.Reconcile(t.Context(), ctrl.Request{
 		NamespacedName: client.ObjectKey{
 			Namespace: instance.Namespace,
 			Name:      instance.Name,
@@ -260,7 +269,7 @@ func TestAzureManagedControlPlaneReconcilePaused(t *testing.T) {
 
 func TestAzureManagedControlPlaneReconcileNormal(t *testing.T) {
 	g := NewWithT(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	cp := &infrav1.AzureManagedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "fake-azmp",
@@ -284,7 +293,7 @@ func TestAzureManagedControlPlaneReconcileNormal(t *testing.T) {
 		Client: client,
 	}
 
-	helper, err := patch.NewHelper(cp, client)
+	helper, err := v1beta1patch.NewHelper(cp, client)
 	g.Expect(err).NotTo(HaveOccurred())
 
 	scopes := &scope.ManagedControlPlaneScope{

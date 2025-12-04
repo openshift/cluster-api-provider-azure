@@ -4,10 +4,7 @@ metadata:
   labels:
     cloud-provider: ${CLOUD_PROVIDER_AZURE_LABEL:=azure}
     cni: calico-dual-stack
-    cni-windows: ${CLUSTER_NAME}-calico
-    containerd-logger: disabled
-    csi-proxy: disabled
-    metrics-server: disabled
+    metrics-server: enabled
   name: ${CLUSTER_NAME}
   namespace: default
 spec:
@@ -73,8 +70,7 @@ spec:
   kubeadmConfigSpec:
     clusterConfiguration:
       apiServer:
-        extraArgs:
-          feature-gates: ${K8S_FEATURE_GATES:-""}
+        extraArgs: {}
         timeoutForControlPlane: 20m
       controllerManager:
         extraArgs:
@@ -156,54 +152,56 @@ spec:
         # and finally uninstalls the packages.
         # For the release packages it tests all versions in the support skew.
         LINE_SEPARATOR="*************************************************"
-        echo "$$LINE_SEPARATOR"
+        echo "$${LINE_SEPARATOR}"
         CI_VERSION=${CI_VERSION}
+
+        # Note: We assume if kubectl has the right version, everything else has as well
+        if [[ $(kubectl version --client=true -o json | jq '.clientVersion.gitVersion' -r) = "$${CI_VERSION}" ]]; then
+          echo "Detected Kubernetes $${CI_VERSION} via kubectl version, nothing to do"
+          exit 0
+        fi
         if [[ "$${CI_VERSION}" != "" ]]; then
           CI_DIR=/tmp/k8s-ci
-          mkdir -p $$CI_DIR
+          mkdir -p "$${CI_DIR}"
           declare -a PACKAGES_TO_TEST=("kubectl" "kubelet" "kubeadm")
+          # Let's just also download the control plane images for worker nodes. It's easier then optimizing it.
           declare -a CONTAINERS_TO_TEST=("kube-apiserver" "kube-controller-manager" "kube-proxy" "kube-scheduler")
           CONTAINER_EXT="tar"
-          echo "* testing CI version $$CI_VERSION"
-          # Check for semver
-          if [[ "$${CI_VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            VERSION_WITHOUT_PREFIX="${CI_VERSION#v}"
-            DEBIAN_FRONTEND=noninteractive apt-get install -y apt-transport-https curl
-            curl -fsSL https://pkgs.k8s.io/core:/stable:/${KUBERNETES_VERSION}/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-            echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/${KUBERNETES_VERSION}/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list
-            apt-get update
-            # replace . with \.
-            VERSION_REGEX="${VERSION_WITHOUT_PREFIX//./\\.}"
-            PACKAGE_VERSION="$(apt-cache madison kubelet|grep $${VERSION_REGEX}- | head -n1 | cut -d '|' -f 2 | tr -d '[:space:]')"
-            for CI_PACKAGE in "$${PACKAGES_TO_TEST[@]}"; do
-              echo "* installing package: $$CI_PACKAGE $${PACKAGE_VERSION}"
-              DEBIAN_FRONTEND=noninteractive apt-get install -y $$CI_PACKAGE=$$PACKAGE_VERSION
-            done
-          else
-            CI_URL="https://storage.googleapis.com/k8s-release-dev/ci/$${CI_VERSION}/bin/linux/amd64"
-            for CI_PACKAGE in "$${PACKAGES_TO_TEST[@]}"; do
-              echo "* downloading binary: $$CI_URL/$$CI_PACKAGE"
-              wget --inet4-only "$$CI_URL/$$CI_PACKAGE" -nv -O "$$CI_DIR/$$CI_PACKAGE"
-              chmod +x "$$CI_DIR/$$CI_PACKAGE"
-              mv "$$CI_DIR/$$CI_PACKAGE" "/usr/bin/$$CI_PACKAGE"
-            done
-            IMAGE_REGISTRY_PREFIX=registry.k8s.io
-            for CI_CONTAINER in "$${CONTAINERS_TO_TEST[@]}"; do
-              echo "* downloading package: $$CI_URL/$$CI_CONTAINER.$$CONTAINER_EXT"
-              wget --inet4-only "$$CI_URL/$$CI_CONTAINER.$$CONTAINER_EXT" -nv -O "$$CI_DIR/$$CI_CONTAINER.$$CONTAINER_EXT"
-              $${SUDO} ctr -n k8s.io images import "$$CI_DIR/$$CI_CONTAINER.$$CONTAINER_EXT" || echo "* ignoring expected 'ctr images import' result"
-              $${SUDO} ctr -n k8s.io images tag $$IMAGE_REGISTRY_PREFIX/$$CI_CONTAINER-amd64:"$${CI_VERSION//+/_}" $$IMAGE_REGISTRY_PREFIX/$$CI_CONTAINER:"$${CI_VERSION//+/_}"
-              $${SUDO} ctr -n k8s.io images tag $$IMAGE_REGISTRY_PREFIX/$$CI_CONTAINER-amd64:"$${CI_VERSION//+/_}" gcr.io/k8s-staging-ci-images/$$CI_CONTAINER:"$${CI_VERSION//+/_}"
-            done
+          echo "* testing version $${CI_VERSION}"
+          CI_URL="https://dl.k8s.io/ci/$${CI_VERSION}/bin/linux/amd64"
+          # Set CI_URL to the released binaries for actually released versions.
+          if [[ "$${CI_VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$${CI_VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-(beta|rc).[0-9]+$ ]]; then
+            CI_URL="https://dl.k8s.io/release/$${CI_VERSION}/bin/linux/amd64"
           fi
+          for CI_PACKAGE in "$${PACKAGES_TO_TEST[@]}"; do
+            # Browser: https://console.cloud.google.com/storage/browser/k8s-release-dev?project=k8s-release-dev
+            # e.g.: https://storage.googleapis.com/k8s-release-dev/ci/v1.21.0-beta.1.378+cf3374e43491c5/bin/linux/amd64/kubectl
+            echo "* downloading binary: $${CI_URL}/$${CI_PACKAGE}"
+            wget --inet4-only "$${CI_URL}/$${CI_PACKAGE}" -O "$${CI_DIR}/$${CI_PACKAGE}"
+            chmod +x "$${CI_DIR}/$${CI_PACKAGE}"
+            mv "$${CI_DIR}/$${CI_PACKAGE}" "/usr/bin/$${CI_PACKAGE}"
+          done
+
           systemctl restart kubelet
+          IMAGE_REGISTRY_PREFIX=registry.k8s.io
+          # Kubernetes builds from 1.20 through 1.24 are tagged with k8s.gcr.io
+          if [[ "$${CI_VERSION}" =~ ^v1\.(1[0-9]|2[0-4])[\.[0-9]+ ]]; then
+            IMAGE_REGISTRY_PREFIX=k8s.gcr.io
+          fi
+          for CI_CONTAINER in "$${CONTAINERS_TO_TEST[@]}"; do
+            echo "* downloading package: $${CI_URL}/$${CI_CONTAINER}.$${CONTAINER_EXT}"
+            wget --inet4-only "$${CI_URL}/$${CI_CONTAINER}.$${CONTAINER_EXT}" -O "$${CI_DIR}/$${CI_CONTAINER}.$${CONTAINER_EXT}"
+            $${SUDO} ctr -n k8s.io images import "$${CI_DIR}/$${CI_CONTAINER}.$${CONTAINER_EXT}" || echo "* ignoring expected 'ctr images import' result"
+            $${SUDO} ctr -n k8s.io images tag "$${IMAGE_REGISTRY_PREFIX}/$${CI_CONTAINER}-amd64:$${CI_VERSION//+/_}" "$${IMAGE_REGISTRY_PREFIX}/$${CI_CONTAINER}:$${CI_VERSION//+/_}"
+            $${SUDO} ctr -n k8s.io images tag "$${IMAGE_REGISTRY_PREFIX}/$${CI_CONTAINER}-amd64:$${CI_VERSION//+/_}" "gcr.io/k8s-staging-ci-images/$${CI_CONTAINER}:$${CI_VERSION//+/_}"
+          done
         fi
         echo "* checking binary versions"
-        echo "ctr version: " $(ctr version)
-        echo "kubeadm version: " $(kubeadm version -o=short)
-        echo "kubectl version: " $(kubectl version --client=true)
-        echo "kubelet version: " $(kubelet --version)
-        echo "$$LINE_SEPARATOR"
+        echo "ctr version: " "$(ctr version)"
+        echo "kubeadm version: " "$(kubeadm version -o=short)"
+        echo "kubectl version: " "$(kubectl version --client=true)"
+        echo "kubelet version: " "$(kubelet --version)"
+        echo "$${LINE_SEPARATOR}"
       owner: root:root
       path: /tmp/kubeadm-bootstrap.sh
       permissions: "0744"
@@ -259,17 +257,16 @@ spec:
       enableIPForwarding: true
       identity: UserAssigned
       image:
-        marketplace:
-          offer: capi
-          publisher: cncf-upstream
-          sku: ubuntu-2204-gen1
+        computeGallery:
+          gallery: ClusterAPI-f72ceb4f-5159-4c26-a0fe-2ea738f0d019
+          name: capi-ubun2-2404
           version: latest
       osDisk:
         diskSizeGB: 128
         osType: Linux
       sshPublicKey: ${AZURE_SSH_PUBLIC_KEY_B64:=""}
       userAssignedIdentities:
-      - providerID: /subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${CI_RG}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/${USER_IDENTITY}
+      - providerID: azure:///subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${CI_RG}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/${USER_IDENTITY}
       vmSize: ${AZURE_CONTROL_PLANE_MACHINE_TYPE}
 ---
 apiVersion: cluster.x-k8s.io/v1beta1
@@ -311,17 +308,16 @@ spec:
       enableIPForwarding: true
       identity: UserAssigned
       image:
-        marketplace:
-          offer: capi
-          publisher: cncf-upstream
-          sku: ubuntu-2204-gen1
+        computeGallery:
+          gallery: ClusterAPI-f72ceb4f-5159-4c26-a0fe-2ea738f0d019
+          name: capi-ubun2-2404
           version: latest
       osDisk:
         diskSizeGB: 128
         osType: Linux
       sshPublicKey: ${AZURE_SSH_PUBLIC_KEY_B64:=""}
       userAssignedIdentities:
-      - providerID: /subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${CI_RG:=capz-ci}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/${USER_IDENTITY:=cloud-provider-user-identity}
+      - providerID: azure:///subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${CI_RG:=capz-ci}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/${USER_IDENTITY:=cloud-provider-user-identity}
       vmExtensions:
       - name: CustomScript
         protectedSettings:
@@ -390,54 +386,56 @@ spec:
           # and finally uninstalls the packages.
           # For the release packages it tests all versions in the support skew.
           LINE_SEPARATOR="*************************************************"
-          echo "$$LINE_SEPARATOR"
+          echo "$${LINE_SEPARATOR}"
           CI_VERSION=${CI_VERSION}
+
+          # Note: We assume if kubectl has the right version, everything else has as well
+          if [[ $(kubectl version --client=true -o json | jq '.clientVersion.gitVersion' -r) = "$${CI_VERSION}" ]]; then
+            echo "Detected Kubernetes $${CI_VERSION} via kubectl version, nothing to do"
+            exit 0
+          fi
           if [[ "$${CI_VERSION}" != "" ]]; then
             CI_DIR=/tmp/k8s-ci
-            mkdir -p $$CI_DIR
+            mkdir -p "$${CI_DIR}"
             declare -a PACKAGES_TO_TEST=("kubectl" "kubelet" "kubeadm")
+            # Let's just also download the control plane images for worker nodes. It's easier then optimizing it.
             declare -a CONTAINERS_TO_TEST=("kube-apiserver" "kube-controller-manager" "kube-proxy" "kube-scheduler")
             CONTAINER_EXT="tar"
-            echo "* testing CI version $$CI_VERSION"
-            # Check for semver
-            if [[ "$${CI_VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              VERSION_WITHOUT_PREFIX="${CI_VERSION#v}"
-              DEBIAN_FRONTEND=noninteractive apt-get install -y apt-transport-https curl
-              curl -fsSL https://pkgs.k8s.io/core:/stable:/${KUBERNETES_VERSION}/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-              echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/${KUBERNETES_VERSION}/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list
-              apt-get update
-              # replace . with \.
-              VERSION_REGEX="${VERSION_WITHOUT_PREFIX//./\\.}"
-              PACKAGE_VERSION="$(apt-cache madison kubelet|grep $${VERSION_REGEX}- | head -n1 | cut -d '|' -f 2 | tr -d '[:space:]')"
-              for CI_PACKAGE in "$${PACKAGES_TO_TEST[@]}"; do
-                echo "* installing package: $$CI_PACKAGE $${PACKAGE_VERSION}"
-                DEBIAN_FRONTEND=noninteractive apt-get install -y $$CI_PACKAGE=$$PACKAGE_VERSION
-              done
-            else
-              CI_URL="https://storage.googleapis.com/k8s-release-dev/ci/$${CI_VERSION}/bin/linux/amd64"
-              for CI_PACKAGE in "$${PACKAGES_TO_TEST[@]}"; do
-                echo "* downloading binary: $$CI_URL/$$CI_PACKAGE"
-                wget --inet4-only "$$CI_URL/$$CI_PACKAGE" -nv -O "$$CI_DIR/$$CI_PACKAGE"
-                chmod +x "$$CI_DIR/$$CI_PACKAGE"
-                mv "$$CI_DIR/$$CI_PACKAGE" "/usr/bin/$$CI_PACKAGE"
-              done
-              IMAGE_REGISTRY_PREFIX=registry.k8s.io
-              for CI_CONTAINER in "$${CONTAINERS_TO_TEST[@]}"; do
-                echo "* downloading package: $$CI_URL/$$CI_CONTAINER.$$CONTAINER_EXT"
-                wget --inet4-only "$$CI_URL/$$CI_CONTAINER.$$CONTAINER_EXT" -nv -O "$$CI_DIR/$$CI_CONTAINER.$$CONTAINER_EXT"
-                $${SUDO} ctr -n k8s.io images import "$$CI_DIR/$$CI_CONTAINER.$$CONTAINER_EXT" || echo "* ignoring expected 'ctr images import' result"
-                $${SUDO} ctr -n k8s.io images tag $$IMAGE_REGISTRY_PREFIX/$$CI_CONTAINER-amd64:"$${CI_VERSION//+/_}" $$IMAGE_REGISTRY_PREFIX/$$CI_CONTAINER:"$${CI_VERSION//+/_}"
-                $${SUDO} ctr -n k8s.io images tag $$IMAGE_REGISTRY_PREFIX/$$CI_CONTAINER-amd64:"$${CI_VERSION//+/_}" gcr.io/k8s-staging-ci-images/$$CI_CONTAINER:"$${CI_VERSION//+/_}"
-              done
+            echo "* testing version $${CI_VERSION}"
+            CI_URL="https://dl.k8s.io/ci/$${CI_VERSION}/bin/linux/amd64"
+            # Set CI_URL to the released binaries for actually released versions.
+            if [[ "$${CI_VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$${CI_VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-(beta|rc).[0-9]+$ ]]; then
+              CI_URL="https://dl.k8s.io/release/$${CI_VERSION}/bin/linux/amd64"
             fi
+            for CI_PACKAGE in "$${PACKAGES_TO_TEST[@]}"; do
+              # Browser: https://console.cloud.google.com/storage/browser/k8s-release-dev?project=k8s-release-dev
+              # e.g.: https://storage.googleapis.com/k8s-release-dev/ci/v1.21.0-beta.1.378+cf3374e43491c5/bin/linux/amd64/kubectl
+              echo "* downloading binary: $${CI_URL}/$${CI_PACKAGE}"
+              wget --inet4-only "$${CI_URL}/$${CI_PACKAGE}" -O "$${CI_DIR}/$${CI_PACKAGE}"
+              chmod +x "$${CI_DIR}/$${CI_PACKAGE}"
+              mv "$${CI_DIR}/$${CI_PACKAGE}" "/usr/bin/$${CI_PACKAGE}"
+            done
+
             systemctl restart kubelet
+            IMAGE_REGISTRY_PREFIX=registry.k8s.io
+            # Kubernetes builds from 1.20 through 1.24 are tagged with k8s.gcr.io
+            if [[ "$${CI_VERSION}" =~ ^v1\.(1[0-9]|2[0-4])[\.[0-9]+ ]]; then
+              IMAGE_REGISTRY_PREFIX=k8s.gcr.io
+            fi
+            for CI_CONTAINER in "$${CONTAINERS_TO_TEST[@]}"; do
+              echo "* downloading package: $${CI_URL}/$${CI_CONTAINER}.$${CONTAINER_EXT}"
+              wget --inet4-only "$${CI_URL}/$${CI_CONTAINER}.$${CONTAINER_EXT}" -O "$${CI_DIR}/$${CI_CONTAINER}.$${CONTAINER_EXT}"
+              $${SUDO} ctr -n k8s.io images import "$${CI_DIR}/$${CI_CONTAINER}.$${CONTAINER_EXT}" || echo "* ignoring expected 'ctr images import' result"
+              $${SUDO} ctr -n k8s.io images tag "$${IMAGE_REGISTRY_PREFIX}/$${CI_CONTAINER}-amd64:$${CI_VERSION//+/_}" "$${IMAGE_REGISTRY_PREFIX}/$${CI_CONTAINER}:$${CI_VERSION//+/_}"
+              $${SUDO} ctr -n k8s.io images tag "$${IMAGE_REGISTRY_PREFIX}/$${CI_CONTAINER}-amd64:$${CI_VERSION//+/_}" "gcr.io/k8s-staging-ci-images/$${CI_CONTAINER}:$${CI_VERSION//+/_}"
+            done
           fi
           echo "* checking binary versions"
-          echo "ctr version: " $(ctr version)
-          echo "kubeadm version: " $(kubeadm version -o=short)
-          echo "kubectl version: " $(kubectl version --client=true)
-          echo "kubelet version: " $(kubelet --version)
-          echo "$$LINE_SEPARATOR"
+          echo "ctr version: " "$(ctr version)"
+          echo "kubeadm version: " "$(kubeadm version -o=short)"
+          echo "kubectl version: " "$(kubectl version --client=true)"
+          echo "kubelet version: " "$(kubelet --version)"
+          echo "$${LINE_SEPARATOR}"
         owner: root:root
         path: /tmp/kubeadm-bootstrap.sh
         permissions: "0744"
@@ -500,34 +498,6 @@ spec:
   clientID: ${AZURE_CLIENT_ID_USER_ASSIGNED_IDENTITY}
   tenantID: ${AZURE_TENANT_ID}
   type: ${CLUSTER_IDENTITY_TYPE:=WorkloadIdentity}
----
-apiVersion: addons.cluster.x-k8s.io/v1beta1
-kind: ClusterResourceSet
-metadata:
-  name: csi-proxy
-  namespace: default
-spec:
-  clusterSelector:
-    matchLabels:
-      csi-proxy: enabled
-  resources:
-  - kind: ConfigMap
-    name: csi-proxy-addon
-  strategy: ApplyOnce
----
-apiVersion: addons.cluster.x-k8s.io/v1beta1
-kind: ClusterResourceSet
-metadata:
-  name: containerd-logger-${CLUSTER_NAME}
-  namespace: default
-spec:
-  clusterSelector:
-    matchLabels:
-      containerd-logger: enabled
-  resources:
-  - kind: ConfigMap
-    name: containerd-logger-${CLUSTER_NAME}
-  strategy: ApplyOnce
 ---
 apiVersion: addons.cluster.x-k8s.io/v1alpha1
 kind: HelmChartProxy
@@ -597,164 +567,6 @@ spec:
       imageName: "${CNM_IMAGE_NAME:-""}"
       imageRepository: "${IMAGE_REGISTRY:-""}"
       imageTag: "${IMAGE_TAG_CNM:-""}"
----
-apiVersion: v1
-data:
-  csi-proxy: |
-    apiVersion: apps/v1
-    kind: DaemonSet
-    metadata:
-      labels:
-        k8s-app: csi-proxy
-      name: csi-proxy
-      namespace: kube-system
-    spec:
-      selector:
-        matchLabels:
-          k8s-app: csi-proxy
-      template:
-        metadata:
-          labels:
-            k8s-app: csi-proxy
-        spec:
-          nodeSelector:
-            "kubernetes.io/os": windows
-          securityContext:
-            windowsOptions:
-              hostProcess: true
-              runAsUserName: "NT AUTHORITY\\SYSTEM"
-          hostNetwork: true
-          containers:
-            - name: csi-proxy
-              image: ghcr.io/kubernetes-sigs/sig-windows/csi-proxy:v1.0.2
-kind: ConfigMap
-metadata:
-  annotations:
-    note: generated
-  labels:
-    type: generated
-  name: csi-proxy-addon
-  namespace: default
----
-apiVersion: v1
-data:
-  containerd-windows-logger: |
-    apiVersion: apps/v1
-    kind: DaemonSet
-    metadata:
-      labels:
-        k8s-app: containerd-logger
-      name: containerd-logger
-      namespace: kube-system
-    spec:
-      selector:
-        matchLabels:
-          k8s-app: containerd-logger
-      template:
-        metadata:
-          labels:
-            k8s-app: containerd-logger
-        spec:
-          securityContext:
-            windowsOptions:
-              hostProcess: true
-              runAsUserName: "NT AUTHORITY\\system"
-          hostNetwork: true
-          containers:
-          - image: ghcr.io/kubernetes-sigs/sig-windows/eventflow-logger:v0.1.0
-            args: [ "config.json" ]
-            name: containerd-logger
-            imagePullPolicy: Always
-            volumeMounts:
-            - name: containerd-logger-config
-              mountPath: /config.json
-              subPath: config.json
-          nodeSelector:
-            kubernetes.io/os: windows
-          tolerations:
-          - key: CriticalAddonsOnly
-            operator: Exists
-          - operator: Exists
-          volumes:
-          - configMap:
-              name: containerd-logger-config
-            name: containerd-logger-config
-      updateStrategy:
-        type: RollingUpdate
-    ---
-    kind: ConfigMap
-    apiVersion: v1
-    metadata:
-      name: containerd-logger-config
-      namespace: kube-system
-    data:
-      config.json: |
-        {
-          "inputs": [
-            {
-              "type": "ETW",
-              "sessionNamePrefix": "containerd",
-              "cleanupOldSessions": true,
-              "reuseExistingSession": true,
-              "providers": [
-                {
-                  "providerName": "Microsoft.Virtualization.RunHCS",
-                  "providerGuid": "0B52781F-B24D-5685-DDF6-69830ED40EC3",
-                  "level": "Verbose"
-                },
-                {
-                  "providerName": "ContainerD",
-                  "providerGuid": "2acb92c0-eb9b-571a-69cf-8f3410f383ad",
-                  "level": "Verbose"
-                }
-              ]
-            }
-          ],
-          "filters": [
-            {
-                "type": "drop",
-                "include": "ProviderName == Microsoft.Virtualization.RunHCS && name == Stats && hasnoproperty error"
-            },
-            {
-                "type": "drop",
-                "include": "ProviderName == Microsoft.Virtualization.RunHCS && name == hcsshim::LayerID && hasnoproperty error"
-            },
-            {
-                "type": "drop",
-                "include": "ProviderName == Microsoft.Virtualization.RunHCS && name == hcsshim::NameToGuid && hasnoproperty error"
-            },
-            {
-                "type": "drop",
-                "include": "ProviderName == Microsoft.Virtualization.RunHCS && name == containerd.task.v2.Task.Stats && hasnoproperty error"
-            },
-            {
-                "type": "drop",
-                "include": "ProviderName == Microsoft.Virtualization.RunHCS && name == containerd.task.v2.Task.State && hasnoproperty error"
-            },
-            {
-                "type": "drop",
-                "include": "ProviderName == Microsoft.Virtualization.RunHCS && name == HcsGetProcessProperties && hasnoproperty error"
-            },
-            {
-                "type": "drop",
-                "include": "ProviderName == Microsoft.Virtualization.RunHCS && name == HcsGetComputeSystemProperties && hasnoproperty error"
-            }
-          ],
-          "outputs": [
-            {
-              "type": "StdOutput"
-            }
-          ],
-          "schemaVersion": "2016-08-11"
-        }
-kind: ConfigMap
-metadata:
-  annotations:
-    note: generated
-  labels:
-    type: generated
-  name: containerd-logger-${CLUSTER_NAME}
-  namespace: default
 ---
 apiVersion: addons.cluster.x-k8s.io/v1beta1
 kind: ClusterResourceSet
@@ -1019,11 +831,48 @@ spec:
           encapsulation: None
           natOutgoing: Enabled
           nodeSelector: all()
-      registry: mcr.microsoft.com/oss
+      typhaDeployment:
+        spec:
+          template:
+            spec:
+              # By default, typha tolerates all NoSchedule taints. This breaks
+              # scale-ins when it continuously gets scheduled onto an
+              # out-of-date Node that is being deleted. Tolerate only the
+              # NoSchedule taints that are expected.
+              tolerations:
+                - effect: NoExecute
+                  operator: Exists
+                - effect: NoSchedule
+                  key: node-role.kubernetes.io/control-plane
+                  operator: Exists
+                - effect: NoSchedule
+                  key: node.kubernetes.io/not-ready
+                  operator: Exists
+              affinity:
+                nodeAffinity:
+                  preferredDuringSchedulingIgnoredDuringExecution:
+                  - weight: 50
+                    preference:
+                      matchExpressions:
+                      - key: node-role.kubernetes.io/control-plane
+                        operator: Exists
+      registry: capzcicommunity.azurecr.io
     # Image and registry configuration for the tigera/operator pod.
     tigeraOperator:
       image: tigera/operator
-      registry: mcr.microsoft.com/oss
+      registry: capzcicommunity.azurecr.io
     calicoctl:
-      image: mcr.microsoft.com/oss/calico/ctl
+      image: capzcicommunity.azurecr.io/calico/ctl
+    # By default, tigera tolerates all NoSchedule taints. This breaks upgrades
+    # when it continuously gets scheduled onto an out-of-date Node that is being
+    # deleted. Tolerate only the NoSchedule taints that are expected.
+    tolerations:
+      - effect: NoExecute
+        operator: Exists
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+      - effect: NoSchedule
+        key: node.kubernetes.io/not-ready
+        operator: Exists
   version: ${CALICO_VERSION}

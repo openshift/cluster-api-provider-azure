@@ -46,7 +46,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	typedappsv1 "k8s.io/client-go/kubernetes/typed/apps/v1"
@@ -58,9 +57,7 @@ import (
 	"sigs.k8s.io/cluster-api/test/framework/kubernetesversions"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-azure/azure"
-	infrav1exp "sigs.k8s.io/cluster-api-provider-azure/exp/api/v1beta1"
 )
 
 const (
@@ -450,14 +447,6 @@ func getClusterName(prefix, specName string) string {
 	return clusterName
 }
 
-func isAzureMachineWindows(am *infrav1.AzureMachine) bool {
-	return am.Spec.OSDisk.OSType == azure.WindowsOS
-}
-
-func isAzureMachinePoolWindows(amp *infrav1exp.AzureMachinePool) bool {
-	return amp.Spec.Template.OSDisk.OSType == azure.WindowsOS
-}
-
 // getProxiedSSHClient creates a SSH client object that connects to a target node
 // proxied through a control plane node.
 func getProxiedSSHClient(controlPlaneEndpoint, hostname, port string, ioTimeout time.Duration) (*ssh.Client, error) {
@@ -498,7 +487,7 @@ func getProxiedSSHClient(controlPlaneEndpoint, hostname, port string, ioTimeout 
 
 // execOnHost runs the specified command directly on a node's host, using a SSH connection
 // proxied through a control plane host and copies the output to a file.
-func execOnHost(controlPlaneEndpoint, hostname, port string, ioTimeout time.Duration, f io.StringWriter, command string,
+func execOnHost(controlPlaneEndpoint, hostname, port string, ioTimeout time.Duration, f io.Writer, command string,
 	args ...string) error {
 	client, err := getProxiedSSHClient(controlPlaneEndpoint, hostname, port, ioTimeout)
 	if err != nil {
@@ -512,16 +501,14 @@ func execOnHost(controlPlaneEndpoint, hostname, port string, ioTimeout time.Dura
 	defer session.Close()
 
 	// Run the command and write the captured stdout to the file
-	var stdoutBuf bytes.Buffer
-	session.Stdout = &stdoutBuf
+	var stderrBuf bytes.Buffer
+	session.Stdout = f
+	session.Stderr = &stderrBuf
 	if len(args) > 0 {
 		command += " " + strings.Join(args, " ")
 	}
 	if err = session.Run(command); err != nil {
-		return errors.Wrapf(err, "running command \"%s\"", command)
-	}
-	if _, err = f.WriteString(stdoutBuf.String()); err != nil {
-		return errors.Wrap(err, "writing output to file")
+		return fmt.Errorf("running command %q: %w, stderr: %s", command, err, strings.TrimSpace(stderrBuf.String()))
 	}
 
 	return nil
@@ -641,8 +628,9 @@ func resolveCIVersion(label string) (string, error) {
 
 // latestCIVersion returns the latest CI version of a given label in the form of latest-1.xx.
 func latestCIVersion(label string) (string, error) {
+	ctx := context.TODO()
 	ciVersionURL := fmt.Sprintf("https://dl.k8s.io/ci/%s.txt", label)
-	req, err := http.NewRequestWithContext(context.TODO(), http.MethodGet, ciVersionURL, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ciVersionURL, http.NoBody)
 	if err != nil {
 		return "", err
 	}
@@ -701,16 +689,29 @@ func resolveKubetestRepoListPath(version string, path string) (string, error) {
 // resolveKubernetesVersions looks at Kubernetes versions set as variables in the e2e config and sets them to a valid k8s version
 // that has an existing capi offer image available. For example, if the version is "stable-1.22", the function will set it to the latest 1.22 version that has a published reference image.
 func resolveKubernetesVersions(config *clusterctl.E2EConfig) {
-	linuxVersions := getVersionsInCommunityGallery(context.TODO(), os.Getenv(AzureLocation), capiCommunityGallery, "capi-ubun2-2404")
-	windowsVersions := getVersionsInCommunityGallery(context.TODO(), os.Getenv(AzureLocation), capiCommunityGallery, "capi-win-2019-containerd")
-	flatcarK8sVersions := getFlatcarK8sVersions(context.TODO(), os.Getenv(AzureLocation), flatcarCAPICommunityGallery)
+	ctx := context.TODO()
+	linuxVersions := getVersionsInCommunityGallery(ctx, os.Getenv(AzureLocation), capiCommunityGallery, "capi-ubun2-2404")
+	flatcarK8sVersions := getFlatcarK8sVersions(ctx, os.Getenv(AzureLocation), flatcarCAPICommunityGallery)
 
-	// find the intersection of ubuntu and windows versions available, since we need an image for both.
 	var versions semver.Versions
-	for k, v := range linuxVersions {
-		if _, ok := windowsVersions[k]; ok {
+
+	// Check if Windows testing is explicitly disabled via TEST_WINDOWS environment variable
+	testWindows := os.Getenv("TEST_WINDOWS")
+	windowsRequired := testWindows == "true"
+
+	if windowsRequired {
+		windowsVersions := getVersionsInCommunityGallery(ctx, os.Getenv(AzureLocation), capiCommunityGallery, "capi-win-2019-containerd")
+		for k, v := range linuxVersions {
+			if _, ok := windowsVersions[k]; ok {
+				versions = append(versions, v)
+			}
+		}
+		Logf("Windows machines required, using intersection of Linux and Windows versions")
+	} else {
+		for _, v := range linuxVersions {
 			versions = append(versions, v)
 		}
+		Logf("No Windows machines required, using Linux versions only")
 	}
 
 	if config.HasVariable(capi_e2e.KubernetesVersion) {
@@ -724,7 +725,7 @@ func resolveKubernetesVersions(config *clusterctl.E2EConfig) {
 	}
 	if config.HasVariable(FlatcarKubernetesVersion) && config.HasVariable(FlatcarVersion) {
 		resolveFlatcarKubernetesVersion(config, flatcarK8sVersions, FlatcarKubernetesVersion)
-		flatcarVersions := getFlatcarVersions(context.TODO(), os.Getenv(AzureLocation), flatcarCAPICommunityGallery, config.MustGetVariable(FlatcarKubernetesVersion))
+		flatcarVersions := getFlatcarVersions(ctx, os.Getenv(AzureLocation), flatcarCAPICommunityGallery, config.MustGetVariable(FlatcarKubernetesVersion))
 		resolveFlatcarVersion(config, flatcarVersions, FlatcarVersion)
 	}
 }
@@ -891,20 +892,6 @@ func getPodLogs(ctx context.Context, clientset *kubernetes.Clientset, pod corev1
 		return fmt.Sprintf("error copying logs for pod %s: %v", pod.Name, err)
 	}
 	return b.String()
-}
-
-func CopyConfigMap(ctx context.Context, input clusterctl.ApplyCustomClusterTemplateAndWaitInput, cl client.Client, cmName, fromNamespace, toNamespace string) {
-	cm := &corev1.ConfigMap{}
-	Eventually(func(g Gomega) {
-		g.Expect(cl.Get(ctx, client.ObjectKey{Name: cmName, Namespace: fromNamespace}, cm)).To(Succeed())
-		cm.SetNamespace(toNamespace)
-		cm.SetResourceVersion("")
-		framework.EnsureNamespace(ctx, cl, toNamespace)
-		err := cl.Create(ctx, cm.DeepCopy())
-		if !apierrors.IsAlreadyExists(err) {
-			g.Expect(err).To(Succeed())
-		}
-	}, input.WaitForControlPlaneIntervals...).Should(Succeed())
 }
 
 func getSubscriptionID(g Gomega) string {

@@ -34,7 +34,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/ptr"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/test/framework"
 	"sigs.k8s.io/cluster-api/test/framework/clusterctl"
 	"sigs.k8s.io/cluster-api/util"
@@ -408,6 +408,7 @@ func SetupExistingVNet(ctx context.Context, vnetCidr string, cpSubnetCidrs, node
 
 // getClientIDforMSI fetches the client ID of a user assigned identity.
 func getClientIDforMSI(resourceID string) string {
+	ctx := context.TODO()
 	subscriptionID := getSubscriptionID(Default)
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	Expect(err).NotTo(HaveOccurred())
@@ -418,7 +419,7 @@ func getClientIDforMSI(resourceID string) string {
 	parsed, err := azureutil.ParseResourceID(resourceID)
 	Expect(err).NotTo(HaveOccurred())
 
-	resp, err := msiClient.Get(context.TODO(), parsed.ResourceGroupName, parsed.Name, nil)
+	resp, err := msiClient.Get(ctx, parsed.ResourceGroupName, parsed.Name, nil)
 	Expect(err).NotTo(HaveOccurred())
 
 	return *resp.Properties.ClientID

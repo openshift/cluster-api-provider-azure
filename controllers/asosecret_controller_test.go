@@ -17,7 +17,6 @@ limitations under the License.
 package controllers
 
 import (
-	"context"
 	"os"
 	"testing"
 
@@ -29,7 +28,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -284,7 +283,7 @@ func TestASOSecretReconcile(t *testing.T) {
 			clusterName: defaultAzureCluster.Name,
 			objects: []runtime.Object{
 				getASOCluster(func(c *clusterv1.Cluster) {
-					c.Spec.Paused = true
+					c.Spec.Paused = ptr.To(true)
 				}),
 				getASOAzureCluster(func(c *infrav1.AzureCluster) {
 					c.Spec.IdentityRef = &corev1.ObjectReference{
@@ -323,7 +322,7 @@ func TestASOSecretReconcile(t *testing.T) {
 				CredentialCache: azure.NewCredentialCache(),
 			}
 
-			_, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+			_, err := reconciler.Reconcile(t.Context(), ctrl.Request{
 				NamespacedName: types.NamespacedName{
 					Namespace: "default",
 					Name:      tc.clusterName,
@@ -331,7 +330,7 @@ func TestASOSecretReconcile(t *testing.T) {
 			})
 
 			existingASOSecret := &corev1.Secret{}
-			asoSecretErr := clientBuilder.Get(context.Background(), types.NamespacedName{
+			asoSecretErr := clientBuilder.Get(t.Context(), types.NamespacedName{
 				Namespace: defaultASOSecret.Namespace,
 				Name:      defaultASOSecret.Name,
 			}, existingASOSecret)
@@ -362,12 +361,14 @@ func getASOCluster(changes ...func(*clusterv1.Cluster)) *clusterv1.Cluster {
 			Namespace: "default",
 		},
 		Spec: clusterv1.ClusterSpec{
-			InfrastructureRef: &corev1.ObjectReference{
-				APIVersion: infrav1.GroupVersion.String(),
+			InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+				APIGroup: infrav1.GroupVersion.Group,
 			},
 		},
 		Status: clusterv1.ClusterStatus{
-			InfrastructureReady: true,
+			Initialization: clusterv1.ClusterInitializationStatus{
+				InfrastructureProvisioned: ptr.To(true),
+			},
 		},
 	}
 

@@ -17,7 +17,6 @@ limitations under the License.
 package scope
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
@@ -30,8 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	expv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
@@ -47,7 +45,7 @@ func TestNewManagedControlPlaneScope(t *testing.T) {
 	g := NewWithT(t)
 
 	scheme := runtime.NewScheme()
-	_ = expv1.AddToScheme(scheme)
+	_ = clusterv1.AddToScheme(scheme)
 	_ = infrav1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
 
@@ -88,7 +86,7 @@ func TestNewManagedControlPlaneScope(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
 
 	input.Client = fakeClient
-	_, err := NewManagedControlPlaneScope(context.TODO(), input)
+	_, err := NewManagedControlPlaneScope(t.Context(), input)
 	g.Expect(err).NotTo(HaveOccurred())
 }
 
@@ -482,7 +480,7 @@ func TestManagedControlPlaneScope_OSType(t *testing.T) {
 
 func TestManagedControlPlaneScope_IsVnetManagedCache(t *testing.T) {
 	scheme := runtime.NewScheme()
-	_ = expv1.AddToScheme(scheme)
+	_ = clusterv1.AddToScheme(scheme)
 	_ = infrav1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
 

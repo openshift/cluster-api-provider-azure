@@ -32,7 +32,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"k8s.io/utils/ptr"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	clusterctlv1 "sigs.k8s.io/cluster-api/cmd/clusterctl/api/v1alpha3"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -137,7 +138,7 @@ func TestAzureClusterReconcile(t *testing.T) {
 				Recorder: record.NewFakeRecorder(128),
 			}
 
-			_, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+			_, err := reconciler.Reconcile(t.Context(), ctrl.Request{
 				NamespacedName: types.NamespacedName{
 					Namespace: namespace,
 					Name:      "my-azure-cluster",
@@ -225,7 +226,7 @@ func TestAzureClusterReconcileNormal(t *testing.T) {
 			reconciler, clusterScope, err := getClusterReconcileInputs(tc)
 			g.Expect(err).NotTo(HaveOccurred())
 
-			result, err := reconciler.reconcileNormal(context.Background(), clusterScope)
+			result, err := reconciler.reconcileNormal(t.Context(), clusterScope)
 			g.Expect(result).To(Equal(tc.expectedResult))
 
 			if tc.ready {
@@ -244,7 +245,7 @@ func TestAzureClusterReconcileNormal(t *testing.T) {
 func TestAzureClusterReconcilePaused(t *testing.T) {
 	g := NewWithT(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	sb := runtime.NewSchemeBuilder(
 		clusterv1.AddToScheme,
@@ -285,7 +286,7 @@ func TestAzureClusterReconcilePaused(t *testing.T) {
 			Namespace: namespace,
 		},
 		Spec: clusterv1.ClusterSpec{
-			Paused: true,
+			Paused: ptr.To(true),
 		},
 	}
 	g.Expect(c.Create(ctx, cluster)).To(Succeed())
@@ -342,7 +343,7 @@ func TestAzureClusterReconcilePaused(t *testing.T) {
 	}
 	g.Expect(c.Create(ctx, vnet)).To(Succeed())
 
-	result, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+	result, err := reconciler.Reconcile(t.Context(), ctrl.Request{
 		NamespacedName: client.ObjectKey{
 			Namespace: instance.Namespace,
 			Name:      instance.Name,
@@ -418,7 +419,7 @@ func TestAzureClusterReconcileDelete(t *testing.T) {
 			reconciler, clusterScope, err := getClusterReconcileInputs(tc)
 			g.Expect(err).NotTo(HaveOccurred())
 
-			result, err := reconciler.reconcileDelete(context.Background(), clusterScope)
+			result, err := reconciler.reconcileDelete(t.Context(), clusterScope)
 			g.Expect(result).To(Equal(tc.expectedResult))
 
 			if tc.expectedErr != "" {

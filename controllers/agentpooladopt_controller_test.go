@@ -17,7 +17,6 @@ limitations under the License.
 package controllers
 
 import (
-	"context"
 	"testing"
 
 	asocontainerservicev1 "github.com/Azure/azure-service-operator/v2/api/containerservice/v1api20231001"
@@ -26,8 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	expv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -37,7 +35,7 @@ import (
 func TestAgentPoolAdoptController(t *testing.T) {
 	g := NewWithT(t)
 	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "fake-agent-pool", Namespace: "fake-ns"}}
-	ctx := context.Background()
+	ctx := t.Context()
 	scheme, err := newScheme()
 	g.Expect(err).ToNot(HaveOccurred())
 
@@ -89,7 +87,7 @@ func TestAgentPoolAdoptController(t *testing.T) {
 	}
 	_, err = aprec.Reconcile(ctx, req)
 	g.Expect(err).ToNot(HaveOccurred())
-	mp := &expv1.MachinePool{}
+	mp := &clusterv1.MachinePool{}
 	err = aprec.Get(ctx, types.NamespacedName{Name: agentPool.Name, Namespace: "fake-ns"}, mp)
 	g.Expect(err).ToNot(HaveOccurred())
 	asoMP := &infrav1.AzureASOManagedMachinePool{}

@@ -29,14 +29,12 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	utilfeature "k8s.io/component-base/featuregate/testing"
 	"k8s.io/utils/ptr"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	expv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	capifeature "sigs.k8s.io/cluster-api/feature"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -57,7 +55,7 @@ type mockClient struct {
 }
 
 func (m mockClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-	obj.(*expv1.MachinePool).Spec.Template.Spec.Version = &m.Version
+	obj.(*clusterv1.MachinePool).Spec.Template.Spec.Version = m.Version
 	return nil
 }
 
@@ -65,9 +63,9 @@ func (m mockClient) List(ctx context.Context, list client.ObjectList, opts ...cl
 	if m.ReturnError {
 		return errors.New("MachinePool.cluster.x-k8s.io \"mock-machinepool-mp-0\" not found")
 	}
-	mp := &expv1.MachinePool{}
-	mp.Spec.Template.Spec.Version = &m.Version
-	list.(*expv1.MachinePoolList).Items = []expv1.MachinePool{*mp}
+	mp := &clusterv1.MachinePool{}
+	mp.Spec.Template.Spec.Version = m.Version
+	list.(*clusterv1.MachinePoolList).Items = []clusterv1.MachinePool{*mp}
 
 	return nil
 }
@@ -258,7 +256,7 @@ func TestAzureMachinePool_ValidateCreate(t *testing.T) {
 			ampw := &azureMachinePoolWebhook{
 				Client: client,
 			}
-			_, err := ampw.ValidateCreate(context.Background(), tc.amp)
+			_, err := ampw.ValidateCreate(t.Context(), tc.amp)
 			if tc.wantErr {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -282,7 +280,7 @@ func (m mockDefaultClient) Get(ctx context.Context, key client.ObjectKey, obj cl
 	case *infrav1.AzureCluster:
 		obj.Spec.SubscriptionID = m.SubscriptionID
 	case *clusterv1.Cluster:
-		obj.Spec.InfrastructureRef = &corev1.ObjectReference{
+		obj.Spec.InfrastructureRef = clusterv1.ContractVersionedObjectReference{
 			Kind: infrav1.AzureClusterKind,
 			Name: "test-cluster",
 		}
@@ -293,12 +291,12 @@ func (m mockDefaultClient) Get(ctx context.Context, key client.ObjectKey, obj cl
 }
 
 func (m mockDefaultClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
-	list.(*expv1.MachinePoolList).Items = []expv1.MachinePool{
+	list.(*clusterv1.MachinePoolList).Items = []clusterv1.MachinePool{
 		{
-			Spec: expv1.MachinePoolSpec{
+			Spec: clusterv1.MachinePoolSpec{
 				Template: clusterv1.MachineTemplateSpec{
 					Spec: clusterv1.MachineSpec{
-						InfrastructureRef: corev1.ObjectReference{
+						InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 							Name: m.Name,
 						},
 					},
@@ -394,7 +392,7 @@ func TestAzureMachinePool_ValidateUpdate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			ampw := &azureMachinePoolWebhook{}
-			_, err := ampw.ValidateUpdate(context.Background(), tc.oldAMP, tc.amp)
+			_, err := ampw.ValidateUpdate(t.Context(), tc.oldAMP, tc.amp)
 			if tc.wantErr {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -463,24 +461,24 @@ func TestAzureMachinePool_Default(t *testing.T) {
 		Client: mockClient,
 	}
 
-	err := ampw.Default(context.Background(), roleAssignmentExistTest.amp)
+	err := ampw.Default(t.Context(), roleAssignmentExistTest.amp)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(roleAssignmentExistTest.amp.Spec.SystemAssignedIdentityRole.Name).To(Equal(existingRoleAssignmentName))
 
-	err = ampw.Default(context.Background(), publicKeyExistTest.amp)
+	err = ampw.Default(t.Context(), publicKeyExistTest.amp)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(publicKeyExistTest.amp.Spec.Template.SSHPublicKey).To(Equal(existingPublicKey))
 
-	err = ampw.Default(context.Background(), publicKeyNotExistTest.amp)
+	err = ampw.Default(t.Context(), publicKeyNotExistTest.amp)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(publicKeyNotExistTest.amp.Spec.Template.SSHPublicKey).NotTo(BeEmpty())
 
-	err = ampw.Default(context.Background(), systemAssignedIdentityRoleExistTest.amp)
+	err = ampw.Default(t.Context(), systemAssignedIdentityRoleExistTest.amp)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(systemAssignedIdentityRoleExistTest.amp.Spec.SystemAssignedIdentityRole.DefinitionID).To(Equal("testroledefinitionid"))
 	g.Expect(systemAssignedIdentityRoleExistTest.amp.Spec.SystemAssignedIdentityRole.Scope).To(Equal("testscope"))
 
-	err = ampw.Default(context.Background(), emptyTest.amp)
+	err = ampw.Default(t.Context(), emptyTest.amp)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(emptyTest.amp.Spec.SystemAssignedIdentityRole.Name).To(Not(BeEmpty()))
 	_, err = guuid.Parse(emptyTest.amp.Spec.SystemAssignedIdentityRole.Name)
@@ -719,7 +717,7 @@ func TestAzureMachinePool_ValidateCreateFailure(t *testing.T) {
 				utilfeature.SetFeatureGateDuringTest(t, feature.Gates, capifeature.MachinePool, *tc.featureGateEnabled)
 			}
 			ampw := &azureMachinePoolWebhook{}
-			_, err := ampw.ValidateCreate(context.Background(), tc.amp)
+			_, err := ampw.ValidateCreate(t.Context(), tc.amp)
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {

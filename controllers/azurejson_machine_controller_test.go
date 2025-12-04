@@ -17,7 +17,6 @@ limitations under the License.
 package controllers
 
 import (
-	"context"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -27,8 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	expv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -96,10 +94,10 @@ func TestAzureJSONMachineReconciler(t *testing.T) {
 			Name: "my-cluster",
 		},
 		Spec: clusterv1.ClusterSpec{
-			InfrastructureRef: &corev1.ObjectReference{
-				APIVersion: "infrastructure.cluster.x-k8s.io/v1beta1",
-				Kind:       infrav1.AzureClusterKind,
-				Name:       "my-azure-cluster",
+			InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+				APIGroup: infrav1.GroupVersion.Group,
+				Kind:     infrav1.AzureClusterKind,
+				Name:     "my-azure-cluster",
 			},
 		},
 	}
@@ -193,7 +191,7 @@ func TestAzureJSONMachineReconciler(t *testing.T) {
 						Name: "my-cluster",
 					},
 					Spec: clusterv1.ClusterSpec{
-						InfrastructureRef: nil,
+						InfrastructureRef: clusterv1.ContractVersionedObjectReference{},
 					},
 				},
 				azureCluster,
@@ -210,10 +208,10 @@ func TestAzureJSONMachineReconciler(t *testing.T) {
 						Name: "my-cluster",
 					},
 					Spec: clusterv1.ClusterSpec{
-						InfrastructureRef: &corev1.ObjectReference{
-							APIVersion: "infrastructure.cluster.x-k8s.io/v1beta1",
-							Kind:       "FooCluster",
-							Name:       "my-foo-cluster",
+						InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+							APIGroup: infrav1.GroupVersion.Group,
+							Kind:     "FooCluster",
+							Name:     "my-foo-cluster",
 						},
 					},
 				},
@@ -236,7 +234,7 @@ func TestAzureJSONMachineReconciler(t *testing.T) {
 				CredentialCache: azure.NewCredentialCache(),
 			}
 
-			_, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+			_, err := reconciler.Reconcile(t.Context(), ctrl.Request{
 				NamespacedName: types.NamespacedName{
 					Namespace: "",
 					Name:      "my-machine",
@@ -262,7 +260,6 @@ func newScheme() (*runtime.Scheme, error) {
 		infrav1.AddToScheme,
 		clusterv1.AddToScheme,
 		infrav1exp.AddToScheme,
-		expv1.AddToScheme,
 		corev1.AddToScheme,
 	}
 	for _, fn := range schemeFn {

@@ -113,11 +113,13 @@ setup() {
     export CONTROL_PLANE_MACHINE_COUNT="${CONTROL_PLANE_MACHINE_COUNT:-1}"
     export CCM_COUNT="${CCM_COUNT:-1}"
     export WORKER_MACHINE_COUNT="${WORKER_MACHINE_COUNT:-2}"
+    export MONITORING_MACHINE_COUNT="${MONITORING_MACHINE_COUNT:-0}"
     export EXP_CLUSTER_RESOURCE_SET="true"
 
     # TODO figure out a better way to account for expected Windows node count
-    if [[ -n "${TEST_WINDOWS:-}" ]]; then
+    if [[ "${TEST_WINDOWS:-}" == "true" ]]; then
         export WINDOWS_WORKER_MACHINE_COUNT="${WINDOWS_WORKER_MACHINE_COUNT:-2}"
+        export WINDOWS_SERVER_VERSION="${WINDOWS_SERVER_VERSION:-windows-2022}"
     fi
 }
 
@@ -138,6 +140,10 @@ select_cluster_template() {
             export CLUSTER_TEMPLATE="${CLUSTER_TEMPLATE/custom-builds/custom-builds-machine-pool}"
         fi
     fi
+
+    if [[ "${TEST_WINDOWS:-}" == "true" ]]; then
+        export CLUSTER_TEMPLATE="${CLUSTER_TEMPLATE/.yaml/-windows.yaml}"
+    fi
 }
 
 create_cluster() {
@@ -155,35 +161,12 @@ create_cluster() {
     export KUBE_SSH_USER
 }
 
-# copy_kubeadm_config_map copies the kubeadm configmap into the calico-system namespace.
-# any retryable operation in this function must return a non-zero exit code on failure so that we can
-# retry it using a `until copy_kubeadm_config_map; do sleep 5; done` pattern;
-# and any statement must be idempotent so that subsequent retry attempts can make forward progress.
-copy_kubeadm_config_map() {
-    # Copy the kubeadm configmap to the calico-system namespace.
-    # This is a workaround needed for the calico-node-windows daemonset
-    # to be able to run in the calico-system namespace.
-    # First, validate that the kubeadm-config configmap has been created.
-    "${KUBECTL}" get configmap kubeadm-config --namespace=kube-system -o yaml || return 1
-    "${KUBECTL}" create namespace calico-system --dry-run=client -o yaml | kubectl apply -f - || return 1
-    if ! "${KUBECTL}" get configmap kubeadm-config --namespace=calico-system; then
-        "${KUBECTL}" get configmap kubeadm-config --namespace=kube-system -o yaml | sed 's/namespace: kube-system/namespace: calico-system/' | "${KUBECTL}" apply -f - || return 1
-    fi
-}
-
-wait_for_copy_kubeadm_config_map() {
-    echo "Copying kubeadm ConfigMap into calico-system namespace"
-    until copy_kubeadm_config_map; do
-        sleep 5
-    done
-}
-
 # wait_for_nodes returns when all nodes in the workload cluster are Ready.
 wait_for_nodes() {
-    echo "Waiting for ${CONTROL_PLANE_MACHINE_COUNT} control plane machine(s), ${WORKER_MACHINE_COUNT} worker machine(s), and ${WINDOWS_WORKER_MACHINE_COUNT:-0} windows machine(s) to become Ready"
+  echo "Waiting for ${CONTROL_PLANE_MACHINE_COUNT} control plane machine(s), ${WORKER_MACHINE_COUNT} worker machine(s), ${WINDOWS_WORKER_MACHINE_COUNT:-0} windows machine(s), and ${MONITORING_MACHINE_COUNT} monitoring machine(s) to become Ready"
 
     # Ensure that all nodes are registered with the API server before checking for readiness
-    local total_nodes="$((CONTROL_PLANE_MACHINE_COUNT + WORKER_MACHINE_COUNT + WINDOWS_WORKER_MACHINE_COUNT))"
+    local total_nodes="$((CONTROL_PLANE_MACHINE_COUNT + WORKER_MACHINE_COUNT + WINDOWS_WORKER_MACHINE_COUNT + MONITORING_MACHINE_COUNT))"
     while [[ $("${KUBECTL}" get nodes -ojson | jq '.items | length') -ne "${total_nodes}" ]]; do
         sleep 10
     done
@@ -215,8 +198,6 @@ wait_for_pods() {
 }
 
 install_addons() {
-    export -f copy_kubeadm_config_map wait_for_copy_kubeadm_config_map
-    timeout --foreground 600 bash -c wait_for_copy_kubeadm_config_map
     # In order to determine the successful outcome of CNI and cloud-provider-azure,
     # we need to wait a little bit for nodes and pods terminal state,
     # so we block successful return upon the cluster being fully operational.
@@ -270,7 +251,7 @@ if [[ ! "${CLUSTER_TEMPLATE}" =~ "aks" ]]; then
   install_addons
 fi
 
-"${KUBECTL}" --kubeconfig "${REPO_ROOT}/${KIND_CLUSTER_NAME}.kubeconfig" wait -A --for=condition=Ready --timeout=10m -l "cluster.x-k8s.io/cluster-name=${CLUSTER_NAME}" machinedeployments,machinepools
+"${KUBECTL}" --kubeconfig "${REPO_ROOT}/${KIND_CLUSTER_NAME}.kubeconfig" wait -A --for=condition=Ready --timeout=10m -l "cluster.x-k8s.io/cluster-name=${CLUSTER_NAME}" machinepools.v1beta1.cluster.x-k8s.io,machinedeployments.v1beta1.cluster.x-k8s.io
 
 echo "Cluster ${CLUSTER_NAME} created and fully operational"
 

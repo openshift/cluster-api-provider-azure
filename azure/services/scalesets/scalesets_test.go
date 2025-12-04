@@ -17,7 +17,6 @@ limitations under the License.
 package scalesets
 
 import (
-	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -29,7 +28,7 @@ import (
 	"go.uber.org/mock/gomock"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-azure/azure"
@@ -348,7 +347,7 @@ func TestReconcileVMSS(t *testing.T) {
 				resourceSKUCache: resourceskus.NewStaticCache(getFakeSkus(), "test-location"),
 			}
 
-			err := s.Reconcile(context.TODO())
+			err := s.Reconcile(t.Context())
 			if tc.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(strings.ReplaceAll(err.Error(), "\n", "")).To(MatchRegexp(tc.expectedError), err.Error())
@@ -428,7 +427,7 @@ func TestDeleteVMSS(t *testing.T) {
 				Client:     mockClient,
 			}
 
-			err := s.Delete(context.TODO())
+			err := s.Delete(t.Context())
 			if tc.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.expectedError))

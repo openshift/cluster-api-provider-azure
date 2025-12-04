@@ -17,7 +17,6 @@ limitations under the License.
 package controllers
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -29,8 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	expv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -72,7 +70,7 @@ func TestAzureMachinePoolMachineReconciler_Reconcile(t *testing.T) {
 				g.Expect(err).NotTo(HaveOccurred())
 
 				ampm := &infrav1exp.AzureMachinePoolMachine{}
-				err = c.Get(context.Background(), types.NamespacedName{
+				err = c.Get(t.Context(), types.NamespacedName{
 					Name:      "ampm1",
 					Namespace: "default",
 				}, ampm)
@@ -103,7 +101,7 @@ func TestAzureMachinePoolMachineReconciler_Reconcile(t *testing.T) {
 				g.Expect(err).NotTo(HaveOccurred())
 
 				machine := &clusterv1.Machine{}
-				err = c.Get(context.Background(), types.NamespacedName{
+				err = c.Get(t.Context(), types.NamespacedName{
 					Name:      "ma1",
 					Namespace: "default",
 				}, machine)
@@ -121,7 +119,7 @@ func TestAzureMachinePoolMachineReconciler_Reconcile(t *testing.T) {
 				g.Expect(err).NotTo(HaveOccurred())
 
 				ampm := &infrav1exp.AzureMachinePoolMachine{}
-				err = c.Get(context.Background(), types.NamespacedName{
+				err = c.Get(t.Context(), types.NamespacedName{
 					Name:      "ampm1",
 					Namespace: "default",
 				}, ampm)
@@ -141,7 +139,6 @@ func TestAzureMachinePoolMachineReconciler_Reconcile(t *testing.T) {
 					s := runtime.NewScheme()
 					for _, addTo := range []func(s *runtime.Scheme) error{
 						clusterv1.AddToScheme,
-						expv1.AddToScheme,
 						infrav1.AddToScheme,
 						infrav1exp.AddToScheme,
 						corev1.AddToScheme,
@@ -161,7 +158,7 @@ func TestAzureMachinePoolMachineReconciler_Reconcile(t *testing.T) {
 			controller.reconcilerFactory = func(_ *scope.MachinePoolMachineScope) (azure.Reconciler, error) {
 				return reconciler, nil
 			}
-			res, err := controller.Reconcile(context.TODO(), ctrl.Request{
+			res, err := controller.Reconcile(t.Context(), ctrl.Request{
 				NamespacedName: types.NamespacedName{
 					Name:      "ampm1",
 					Namespace: "default",
@@ -202,18 +199,19 @@ func getReadyMachinePoolMachineClusterObjects(ampmIsDeleting bool, ampmProvision
 			Namespace: "default",
 		},
 		Spec: clusterv1.ClusterSpec{
-			InfrastructureRef: &corev1.ObjectReference{
-				Name:      azCluster.Name,
-				Namespace: "default",
-				Kind:      "AzureCluster",
+			InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+				Name: azCluster.Name,
+				Kind: "AzureCluster",
 			},
 		},
 		Status: clusterv1.ClusterStatus{
-			InfrastructureReady: true,
+			Initialization: clusterv1.ClusterInitializationStatus{
+				InfrastructureProvisioned: ptr.To(true),
+			},
 		},
 	}
 
-	mp := &expv1.MachinePool{
+	mp := &clusterv1.MachinePool{
 		TypeMeta: metav1.TypeMeta{
 			Kind: "MachinePool",
 		},
@@ -237,7 +235,7 @@ func getReadyMachinePoolMachineClusterObjects(ampmIsDeleting bool, ampmProvision
 				{
 					Name:       mp.Name,
 					Kind:       "MachinePool",
-					APIVersion: expv1.GroupVersion.String(),
+					APIVersion: clusterv1.GroupVersion.String(),
 				},
 			},
 		},
@@ -251,7 +249,7 @@ func getReadyMachinePoolMachineClusterObjects(ampmIsDeleting bool, ampmProvision
 				{
 					Name:       mp.Name,
 					Kind:       "MachinePool",
-					APIVersion: expv1.GroupVersion.String(),
+					APIVersion: clusterv1.GroupVersion.String(),
 				},
 			},
 			Labels: map[string]string{
@@ -352,18 +350,19 @@ func getDeletingMachinePoolObjects() []client.Object {
 			Namespace: "default",
 		},
 		Spec: clusterv1.ClusterSpec{
-			InfrastructureRef: &corev1.ObjectReference{
-				Name:      azCluster.Name,
-				Namespace: "default",
-				Kind:      "AzureCluster",
+			InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+				Name: azCluster.Name,
+				Kind: "AzureCluster",
 			},
 		},
 		Status: clusterv1.ClusterStatus{
-			InfrastructureReady: true,
+			Initialization: clusterv1.ClusterInitializationStatus{
+				InfrastructureProvisioned: ptr.To(true),
+			},
 		},
 	}
 
-	mp := &expv1.MachinePool{
+	mp := &clusterv1.MachinePool{
 		TypeMeta: metav1.TypeMeta{
 			Kind: "MachinePool",
 		},
@@ -395,7 +394,7 @@ func getDeletingMachinePoolObjects() []client.Object {
 				{
 					Name:       mp.Name,
 					Kind:       "MachinePool",
-					APIVersion: expv1.GroupVersion.String(),
+					APIVersion: clusterv1.GroupVersion.String(),
 				},
 			},
 		},

@@ -17,15 +17,14 @@ limitations under the License.
 package controllers
 
 import (
-	"context"
 	"testing"
 
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -37,7 +36,7 @@ import (
 
 func TestAzureManagedClusterController(t *testing.T) {
 	g := NewWithT(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	scheme := runtime.NewScheme()
 	g.Expect(infrav1.AddToScheme(scheme)).To(Succeed())
 	g.Expect(clusterv1.AddToScheme(scheme)).To(Succeed())
@@ -48,7 +47,7 @@ func TestAzureManagedClusterController(t *testing.T) {
 			Namespace: "fake-namespace",
 		},
 		Spec: clusterv1.ClusterSpec{
-			ControlPlaneRef: &corev1.ObjectReference{
+			ControlPlaneRef: clusterv1.ContractVersionedObjectReference{
 				Name: "fake-control-plane",
 			},
 		},
@@ -59,7 +58,7 @@ func TestAzureManagedClusterController(t *testing.T) {
 			Namespace: "fake-namespace",
 		},
 		Spec: infrav1.AzureManagedControlPlaneSpec{
-			ControlPlaneEndpoint: clusterv1.APIEndpoint{
+			ControlPlaneEndpoint: clusterv1beta1.APIEndpoint{
 				Host: "fake-host",
 				Port: int32(8080),
 			},

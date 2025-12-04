@@ -17,7 +17,6 @@ limitations under the License.
 package v1beta1
 
 import (
-	"context"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -25,7 +24,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	utilfeature "k8s.io/component-base/featuregate/testing"
 	"k8s.io/utils/ptr"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	capifeature "sigs.k8s.io/cluster-api/feature"
 
 	"sigs.k8s.io/cluster-api-provider-azure/feature"
@@ -61,7 +61,7 @@ func TestDefaultingWebhook(t *testing.T) {
 		},
 	}
 	mcpw := &azureManagedControlPlaneWebhook{}
-	err := mcpw.Default(context.Background(), amcp)
+	err := mcpw.Default(t.Context(), amcp)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(amcp.Spec.ResourceGroupName).To(Equal("fooCluster"))
 	g.Expect(amcp.Spec.Version).To(Equal("v1.17.5"))
@@ -104,7 +104,7 @@ func TestDefaultingWebhook(t *testing.T) {
 	}
 	amcp.Spec.EnablePreviewFeatures = ptr.To(true)
 
-	err = mcpw.Default(context.Background(), amcp)
+	err = mcpw.Default(t.Context(), amcp)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(*amcp.Spec.NetworkPlugin).To(Equal(netPlug))
 	g.Expect(*amcp.Spec.NetworkPolicy).To(Equal(netPol))
@@ -160,7 +160,7 @@ func TestDefaultingWebhook(t *testing.T) {
 			SSHPublicKey: ptr.To(""),
 		},
 	}
-	err = mcpw.Default(context.Background(), amcp)
+	err = mcpw.Default(t.Context(), amcp)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(amcp.Spec.VirtualNetwork.CIDRBlock).To(Equal(defaultAKSVnetCIDRForOverlay))
 	g.Expect(amcp.Spec.VirtualNetwork.Subnet.CIDRBlock).To(Equal(defaultAKSNodeSubnetCIDRForOverlay))
@@ -1387,7 +1387,7 @@ func TestValidatingWebhook(t *testing.T) {
 			mcpw := &azureManagedControlPlaneWebhook{
 				Client: client,
 			}
-			_, err := mcpw.ValidateCreate(context.Background(), &tt.amcp)
+			_, err := mcpw.ValidateCreate(t.Context(), &tt.amcp)
 			if tt.expectErr {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -1561,7 +1561,7 @@ func TestAzureManagedControlPlane_ValidateCreate(t *testing.T) {
 			name: "set Spec.ControlPlaneEndpoint.Host during create (clusterctl move scenario)",
 			amcp: &AzureManagedControlPlane{
 				Spec: AzureManagedControlPlaneSpec{
-					ControlPlaneEndpoint: clusterv1.APIEndpoint{
+					ControlPlaneEndpoint: clusterv1beta1.APIEndpoint{
 						Host: "my-host",
 					},
 					SSHPublicKey: ptr.To(generateSSHPublicKey(true)),
@@ -1583,7 +1583,7 @@ func TestAzureManagedControlPlane_ValidateCreate(t *testing.T) {
 			name: "can set Spec.ControlPlaneEndpoint.Port during create (clusterctl move scenario)",
 			amcp: &AzureManagedControlPlane{
 				Spec: AzureManagedControlPlaneSpec{
-					ControlPlaneEndpoint: clusterv1.APIEndpoint{
+					ControlPlaneEndpoint: clusterv1beta1.APIEndpoint{
 						Port: 444,
 					},
 					SSHPublicKey: ptr.To(generateSSHPublicKey(true)),
@@ -1637,7 +1637,7 @@ func TestAzureManagedControlPlane_ValidateCreate(t *testing.T) {
 			mcpw := &azureManagedControlPlaneWebhook{
 				Client: client,
 			}
-			_, err := mcpw.ValidateCreate(context.Background(), tc.amcp)
+			_, err := mcpw.ValidateCreate(t.Context(), tc.amcp)
 			if tc.wantErr {
 				g.Expect(err).To(HaveOccurred())
 				if tc.errorLen > 0 {
@@ -1674,7 +1674,7 @@ func TestAzureManagedControlPlane_ValidateCreateFailure(t *testing.T) {
 			mcpw := &azureManagedControlPlaneWebhook{
 				Client: client,
 			}
-			_, err := mcpw.ValidateCreate(context.Background(), tc.amcp)
+			_, err := mcpw.ValidateCreate(t.Context(), tc.amcp)
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -3184,7 +3184,7 @@ func TestAzureManagedControlPlane_ValidateUpdate(t *testing.T) {
 			mcpw := &azureManagedControlPlaneWebhook{
 				Client: client,
 			}
-			_, err := mcpw.ValidateUpdate(context.Background(), tc.oldAMCP, tc.amcp)
+			_, err := mcpw.ValidateUpdate(t.Context(), tc.oldAMCP, tc.amcp)
 			if tc.wantErr {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -3365,7 +3365,7 @@ func TestAzureManagedClusterSecurityProfileValidateCreate(t *testing.T) {
 			mcpw := &azureManagedControlPlaneWebhook{
 				Client: client,
 			}
-			_, err := mcpw.ValidateCreate(context.Background(), tc.amcp)
+			_, err := mcpw.ValidateCreate(t.Context(), tc.amcp)
 			if tc.wantErr != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(Equal(tc.wantErr))
@@ -3866,7 +3866,7 @@ func TestAzureClusterSecurityProfileValidateUpdate(t *testing.T) {
 			mcpw := &azureManagedControlPlaneWebhook{
 				Client: client,
 			}
-			_, err := mcpw.ValidateUpdate(context.Background(), tc.oldAMCP, tc.amcp)
+			_, err := mcpw.ValidateUpdate(t.Context(), tc.oldAMCP, tc.amcp)
 			if tc.wantErr != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(Equal(tc.wantErr))
@@ -4154,7 +4154,7 @@ func TestValidateAMCPVirtualNetwork(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			mcpw := &azureManagedControlPlaneWebhook{}
-			err := mcpw.Default(context.Background(), tc.amcp)
+			err := mcpw.Default(t.Context(), tc.amcp)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			errs := validateAMCPVirtualNetwork(tc.amcp.Spec.VirtualNetwork, field.NewPath("spec", "virtualNetwork"))

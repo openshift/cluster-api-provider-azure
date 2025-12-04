@@ -17,7 +17,6 @@ limitations under the License.
 package machinepool
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -25,7 +24,7 @@ import (
 	"github.com/onsi/gomega/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	infrav1exp "sigs.k8s.io/cluster-api-provider-azure/exp/api/v1beta1"
@@ -401,7 +400,7 @@ func TestMachinePoolRollingUpdateStrategy_SelectMachinesToDelete(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			got, err := tt.strategy.SelectMachinesToDelete(context.Background(), tt.desiredReplicas, tt.input)
+			got, err := tt.strategy.SelectMachinesToDelete(t.Context(), tt.desiredReplicas, tt.input)
 			if tt.errStr == "" {
 				g.Expect(err).To(Succeed())
 				g.Expect(got).To(tt.want)

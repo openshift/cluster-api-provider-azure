@@ -23,11 +23,10 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	. "github.com/onsi/gomega"
 	"github.com/pkg/errors"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -253,7 +252,7 @@ func TestAzureMachine_ValidateCreate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			mw := &azureMachineWebhook{}
-			_, err := mw.ValidateCreate(context.Background(), tc.machine)
+			_, err := mw.ValidateCreate(t.Context(), tc.machine)
 			if tc.wantErr {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -928,7 +927,7 @@ func TestAzureMachine_ValidateUpdate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			mw := &azureMachineWebhook{}
-			_, err := mw.ValidateUpdate(context.Background(), tc.oldMachine, tc.newMachine)
+			_, err := mw.ValidateUpdate(t.Context(), tc.oldMachine, tc.newMachine)
 			if tc.wantErr {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -948,7 +947,7 @@ func (m mockDefaultClient) Get(ctx context.Context, key client.ObjectKey, obj cl
 	case *AzureCluster:
 		obj.Spec.SubscriptionID = m.SubscriptionID
 	case *clusterv1.Cluster:
-		obj.Spec.InfrastructureRef = &corev1.ObjectReference{
+		obj.Spec.InfrastructureRef = clusterv1.ContractVersionedObjectReference{
 			Kind: AzureClusterKind,
 			Name: "test-cluster",
 		}
@@ -980,17 +979,17 @@ func TestAzureMachine_Default(t *testing.T) {
 		Client: mockClient,
 	}
 
-	err := mw.Default(context.Background(), publicKeyExistTest.machine)
+	err := mw.Default(t.Context(), publicKeyExistTest.machine)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(publicKeyExistTest.machine.Spec.SSHPublicKey).To(Equal(existingPublicKey))
 
-	err = mw.Default(context.Background(), publicKeyNotExistTest.machine)
+	err = mw.Default(t.Context(), publicKeyNotExistTest.machine)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(publicKeyNotExistTest.machine.Spec.SSHPublicKey).To(Not(BeEmpty()))
 
 	for _, possibleCachingType := range armcompute.PossibleCachingTypesValues() {
 		cacheTypeSpecifiedTest := test{machine: &AzureMachine{ObjectMeta: testObjectMeta, Spec: AzureMachineSpec{OSDisk: OSDisk{CachingType: string(possibleCachingType)}}}}
-		err = mw.Default(context.Background(), cacheTypeSpecifiedTest.machine)
+		err = mw.Default(t.Context(), cacheTypeSpecifiedTest.machine)
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(cacheTypeSpecifiedTest.machine.Spec.OSDisk.CachingType).To(Equal(string(possibleCachingType)))
 	}

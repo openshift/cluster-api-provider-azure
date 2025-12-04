@@ -36,7 +36,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"k8s.io/utils/ptr"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	clusterctlv1 "sigs.k8s.io/cluster-api/cmd/clusterctl/api/v1alpha3"
 	"sigs.k8s.io/cluster-api/util/secret"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -47,7 +48,7 @@ import (
 )
 
 func TestAzureASOManagedControlPlaneReconcile(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	s := runtime.NewScheme()
 	sb := runtime.NewSchemeBuilder(
@@ -111,9 +112,9 @@ func TestAzureASOManagedControlPlaneReconcile(t *testing.T) {
 				Namespace: "ns",
 			},
 			Spec: clusterv1.ClusterSpec{
-				InfrastructureRef: &corev1.ObjectReference{
-					APIVersion: "infrastructure.cluster.x-k8s.io/v1somethingelse",
-					Kind:       infrav1.AzureASOManagedClusterKind,
+				InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+					APIGroup: "infrastructure.cluster.x-k8s.io",
+					Kind:     infrav1.AzureASOManagedClusterKind,
 				},
 			},
 		}
@@ -154,9 +155,9 @@ func TestAzureASOManagedControlPlaneReconcile(t *testing.T) {
 				Namespace: "ns",
 			},
 			Spec: clusterv1.ClusterSpec{
-				InfrastructureRef: &corev1.ObjectReference{
-					APIVersion: infrav1.GroupVersion.Identifier(),
-					Kind:       infrav1.AzureASOManagedClusterKind,
+				InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+					APIGroup: infrav1.GroupVersion.Group,
+					Kind:     infrav1.AzureASOManagedClusterKind,
 				},
 			},
 		}
@@ -231,9 +232,9 @@ func TestAzureASOManagedControlPlaneReconcile(t *testing.T) {
 				Namespace: "ns",
 			},
 			Spec: clusterv1.ClusterSpec{
-				InfrastructureRef: &corev1.ObjectReference{
-					APIVersion: infrav1.GroupVersion.Identifier(),
-					Kind:       infrav1.AzureASOManagedClusterKind,
+				InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+					APIGroup: infrav1.GroupVersion.Group,
+					Kind:     infrav1.AzureASOManagedClusterKind,
 				},
 			},
 		}
@@ -343,9 +344,9 @@ func TestAzureASOManagedControlPlaneReconcile(t *testing.T) {
 				Namespace: "ns",
 			},
 			Spec: clusterv1.ClusterSpec{
-				InfrastructureRef: &corev1.ObjectReference{
-					APIVersion: infrav1.GroupVersion.Identifier(),
-					Kind:       infrav1.AzureASOManagedClusterKind,
+				InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+					APIGroup: infrav1.GroupVersion.Group,
+					Kind:     infrav1.AzureASOManagedClusterKind,
 				},
 			},
 		}
@@ -435,7 +436,10 @@ func TestAzureASOManagedControlPlaneReconcile(t *testing.T) {
 			Client: &FakeClient{
 				Client: c,
 				patchFunc: func(_ context.Context, obj client.Object, _ client.Patch, _ ...client.PatchOption) error {
-					kubeconfigSecret := obj.(*corev1.Secret)
+					kubeconfigSecret, ok := obj.(*corev1.Secret)
+					if !ok {
+						return nil
+					}
 					g.Expect(kubeconfigSecret.Data[secret.KubeconfigDataName]).NotTo(BeEmpty())
 					kubeConfigPatched = true
 
@@ -462,7 +466,7 @@ func TestAzureASOManagedControlPlaneReconcile(t *testing.T) {
 		}
 		result, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(asoManagedControlPlane)})
 		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(result.Requeue).To(BeFalse())
+		g.Expect(result.Requeue).To(BeFalse()) //nolint:staticcheck
 		g.Expect(result.RequeueAfter).NotTo(BeZero())
 
 		g.Expect(c.Get(ctx, client.ObjectKeyFromObject(asoManagedControlPlane), asoManagedControlPlane)).To(Succeed())
@@ -479,9 +483,9 @@ func TestAzureASOManagedControlPlaneReconcile(t *testing.T) {
 				Namespace: "ns",
 			},
 			Spec: clusterv1.ClusterSpec{
-				InfrastructureRef: &corev1.ObjectReference{
-					APIVersion: infrav1.GroupVersion.Identifier(),
-					Kind:       infrav1.AzureASOManagedClusterKind,
+				InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+					APIGroup: infrav1.GroupVersion.Group,
+					Kind:     infrav1.AzureASOManagedClusterKind,
 				},
 			},
 		}
@@ -571,7 +575,10 @@ func TestAzureASOManagedControlPlaneReconcile(t *testing.T) {
 			Client: &FakeClient{
 				Client: c,
 				patchFunc: func(_ context.Context, obj client.Object, _ client.Patch, _ ...client.PatchOption) error {
-					kubeconfigSecret := obj.(*corev1.Secret)
+					kubeconfigSecret, ok := obj.(*corev1.Secret)
+					if !ok {
+						return nil
+					}
 					g.Expect(kubeconfigSecret.Data[secret.KubeconfigDataName]).NotTo(BeEmpty())
 					kubeConfigPatched = true
 
@@ -614,7 +621,7 @@ func TestAzureASOManagedControlPlaneReconcile(t *testing.T) {
 				Namespace: "ns",
 			},
 			Spec: clusterv1.ClusterSpec{
-				Paused: true,
+				Paused: ptr.To(true),
 			},
 		}
 		asoManagedControlPlane := &infrav1.AzureASOManagedControlPlane{
@@ -693,12 +700,12 @@ func TestGetControlPlaneEndpoint(t *testing.T) {
 	tests := []struct {
 		name           string
 		managedCluster *asocontainerservicev1.ManagedCluster
-		expected       clusterv1.APIEndpoint
+		expected       clusterv1beta1.APIEndpoint
 	}{
 		{
 			name:           "empty",
 			managedCluster: &asocontainerservicev1.ManagedCluster{},
-			expected:       clusterv1.APIEndpoint{},
+			expected:       clusterv1beta1.APIEndpoint{},
 		},
 		{
 			name: "public fqdn",
@@ -707,7 +714,7 @@ func TestGetControlPlaneEndpoint(t *testing.T) {
 					Fqdn: ptr.To("fqdn"),
 				},
 			},
-			expected: clusterv1.APIEndpoint{
+			expected: clusterv1beta1.APIEndpoint{
 				Host: "fqdn",
 				Port: 443,
 			},
@@ -719,7 +726,7 @@ func TestGetControlPlaneEndpoint(t *testing.T) {
 					PrivateFQDN: ptr.To("fqdn"),
 				},
 			},
-			expected: clusterv1.APIEndpoint{
+			expected: clusterv1beta1.APIEndpoint{
 				Host: "fqdn",
 				Port: 443,
 			},
@@ -732,7 +739,7 @@ func TestGetControlPlaneEndpoint(t *testing.T) {
 					Fqdn:        ptr.To("public"),
 				},
 			},
-			expected: clusterv1.APIEndpoint{
+			expected: clusterv1beta1.APIEndpoint{
 				Host: "private",
 				Port: 443,
 			},

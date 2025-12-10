@@ -2,7 +2,6 @@
   path: /spec/template/spec/files/-
   value:
     content: |
-
       #!/bin/bash
 
       set -o nounset

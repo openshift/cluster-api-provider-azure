@@ -11,13 +11,23 @@ data:
         include.release.openshift.io/single-node-developer: "true"
         release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
         service.beta.openshift.io/inject-cabundle: "true"
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         cluster.x-k8s.io/v1beta1: v1beta1
         clusterctl.cluster.x-k8s.io: ""
       name: azuremachines.infrastructure.cluster.x-k8s.io
     spec:
+      conversion:
+        strategy: Webhook
+        webhook:
+          clientConfig:
+            service:
+              name: capz-webhook-service
+              namespace: openshift-cluster-api
+              path: /convert
+          conversionReviewVersions:
+          - v1
+          - v1beta1
       group: infrastructure.cluster.x-k8s.io
       names:
         categories:
@@ -919,13 +929,23 @@ data:
         include.release.openshift.io/single-node-developer: "true"
         release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
         service.beta.openshift.io/inject-cabundle: "true"
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         cluster.x-k8s.io/v1beta1: v1beta1
         clusterctl.cluster.x-k8s.io: ""
       name: azureclusters.infrastructure.cluster.x-k8s.io
     spec:
+      conversion:
+        strategy: Webhook
+        webhook:
+          clientConfig:
+            service:
+              name: capz-webhook-service
+              namespace: openshift-cluster-api
+              path: /convert
+          conversionReviewVersions:
+          - v1
+          - v1beta1
       group: infrastructure.cluster.x-k8s.io
       names:
         categories:
@@ -2438,13 +2458,23 @@ data:
         include.release.openshift.io/single-node-developer: "true"
         release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
         service.beta.openshift.io/inject-cabundle: "true"
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         cluster.x-k8s.io/v1beta1: v1beta1
         clusterctl.cluster.x-k8s.io: ""
       name: azureclustertemplates.infrastructure.cluster.x-k8s.io
     spec:
+      conversion:
+        strategy: Webhook
+        webhook:
+          clientConfig:
+            service:
+              name: capz-webhook-service
+              namespace: openshift-cluster-api
+              path: /convert
+          conversionReviewVersions:
+          - v1
+          - v1beta1
       group: infrastructure.cluster.x-k8s.io
       names:
         categories:
@@ -3425,13 +3455,23 @@ data:
         include.release.openshift.io/single-node-developer: "true"
         release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
         service.beta.openshift.io/inject-cabundle: "true"
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         cluster.x-k8s.io/v1beta1: v1beta1
         clusterctl.cluster.x-k8s.io: ""
       name: azuremachinetemplates.infrastructure.cluster.x-k8s.io
     spec:
+      conversion:
+        strategy: Webhook
+        webhook:
+          clientConfig:
+            service:
+              name: capz-webhook-service
+              namespace: openshift-cluster-api
+              path: /convert
+          conversionReviewVersions:
+          - v1
+          - v1beta1
       group: infrastructure.cluster.x-k8s.io
       names:
         categories:
@@ -4197,13 +4237,23 @@ data:
         include.release.openshift.io/single-node-developer: "true"
         release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
         service.beta.openshift.io/inject-cabundle: "true"
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         cluster.x-k8s.io/v1beta1: v1beta1
         clusterctl.cluster.x-k8s.io: ""
       name: azureclusteridentities.infrastructure.cluster.x-k8s.io
     spec:
+      conversion:
+        strategy: Webhook
+        webhook:
+          clientConfig:
+            service:
+              name: capz-webhook-service
+              namespace: openshift-cluster-api
+              path: /convert
+          conversionReviewVersions:
+          - v1
+          - v1beta1
       group: infrastructure.cluster.x-k8s.io
       names:
         categories:
@@ -4462,13 +4512,23 @@ data:
         include.release.openshift.io/single-node-developer: "true"
         release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
         service.beta.openshift.io/inject-cabundle: "true"
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         cluster.x-k8s.io/v1beta1: v1beta1
         clusterctl.cluster.x-k8s.io: ""
       name: azuremachinepools.infrastructure.cluster.x-k8s.io
     spec:
+      conversion:
+        strategy: Webhook
+        webhook:
+          clientConfig:
+            service:
+              name: capz-webhook-service
+              namespace: openshift-cluster-api
+              path: /convert
+          conversionReviewVersions:
+          - v1
+          - v1beta1
       group: infrastructure.cluster.x-k8s.io
       names:
         categories:
@@ -5648,7 +5708,6 @@ data:
         include.release.openshift.io/self-managed-high-availability: "true"
         include.release.openshift.io/single-node-developer: "true"
         release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         cluster.x-k8s.io/v1beta1: v1beta1
@@ -6411,7 +6470,6 @@ data:
         include.release.openshift.io/self-managed-high-availability: "true"
         include.release.openshift.io/single-node-developer: "true"
         release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         cluster.x-k8s.io/v1beta1: v1beta1
@@ -6520,7 +6578,6 @@ data:
         include.release.openshift.io/self-managed-high-availability: "true"
         include.release.openshift.io/single-node-developer: "true"
         release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         cluster.x-k8s.io/v1beta1: v1beta1
@@ -7577,13 +7634,23 @@ data:
         include.release.openshift.io/single-node-developer: "true"
         release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
         service.beta.openshift.io/inject-cabundle: "true"
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         cluster.x-k8s.io/v1beta1: v1beta1
         clusterctl.cluster.x-k8s.io: ""
       name: azuremachinepoolmachines.infrastructure.cluster.x-k8s.io
     spec:
+      conversion:
+        strategy: Webhook
+        webhook:
+          clientConfig:
+            service:
+              name: capz-webhook-service
+              namespace: openshift-cluster-api
+              path: /convert
+          conversionReviewVersions:
+          - v1
+          - v1beta1
       group: infrastructure.cluster.x-k8s.io
       names:
         categories:
@@ -7859,7 +7926,6 @@ data:
         include.release.openshift.io/self-managed-high-availability: "true"
         include.release.openshift.io/single-node-developer: "true"
         release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         cluster.x-k8s.io/v1beta1: v1beta1
@@ -7942,7 +8008,6 @@ data:
         include.release.openshift.io/self-managed-high-availability: "true"
         include.release.openshift.io/single-node-developer: "true"
         release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         cluster.x-k8s.io/v1beta1: v1beta1
@@ -8859,7 +8924,6 @@ data:
         include.release.openshift.io/self-managed-high-availability: "true"
         include.release.openshift.io/single-node-developer: "true"
         release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         cluster.x-k8s.io/v1beta1: v1beta1
@@ -9496,7 +9560,6 @@ data:
         include.release.openshift.io/self-managed-high-availability: "true"
         include.release.openshift.io/single-node-developer: "true"
         release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         cluster.x-k8s.io/v1beta1: v1beta1
@@ -9723,7 +9786,6 @@ data:
         include.release.openshift.io/self-managed-high-availability: "true"
         include.release.openshift.io/single-node-developer: "true"
         release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         cluster.x-k8s.io/v1beta1: v1beta1
@@ -9858,7 +9920,6 @@ data:
         include.release.openshift.io/self-managed-high-availability: "true"
         include.release.openshift.io/single-node-developer: "true"
         release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         cluster.x-k8s.io/v1beta1: v1beta1
@@ -10111,7 +10172,6 @@ data:
         include.release.openshift.io/self-managed-high-availability: "true"
         include.release.openshift.io/single-node-developer: "true"
         release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         cluster.x-k8s.io/v1beta1: v1beta1
@@ -10256,7 +10316,6 @@ data:
         include.release.openshift.io/self-managed-high-availability: "true"
         include.release.openshift.io/single-node-developer: "true"
         release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         cluster.x-k8s.io/v1beta1: v1beta1
@@ -10473,7 +10532,6 @@ data:
         include.release.openshift.io/self-managed-high-availability: "true"
         include.release.openshift.io/single-node-developer: "true"
         release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         cluster.x-k8s.io/v1beta1: v1beta1
@@ -10914,7 +10972,6 @@ data:
         include.release.openshift.io/self-managed-high-availability: "true"
         include.release.openshift.io/single-node-developer: "true"
         release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         clusterctl.cluster.x-k8s.io: ""
@@ -10983,7 +11040,6 @@ data:
         include.release.openshift.io/self-managed-high-availability: "true"
         include.release.openshift.io/single-node-developer: "true"
         release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         clusterctl.cluster.x-k8s.io: ""
@@ -11001,7 +11057,6 @@ data:
     apiVersion: apps/v1
     kind: Deployment
     metadata:
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         clusterctl.cluster.x-k8s.io: ""
@@ -11020,7 +11075,6 @@ data:
           annotations:
             kubectl.kubernetes.io/default-container: manager
             target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
-          creationTimestamp: null
           labels:
             azure.workload.identity/use: "true"
             cluster.x-k8s.io/provider: infrastructure-azure
@@ -11131,12 +11185,55 @@ data:
     metadata:
       annotations:
         service.beta.openshift.io/inject-cabundle: "true"
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         clusterctl.cluster.x-k8s.io: ""
       name: capz-mutating-webhook-configuration
     webhooks:
+    - admissionReviewVersions:
+      - v1
+      - v1beta1
+      clientConfig:
+        service:
+          name: capz-webhook-service
+          namespace: openshift-cluster-api
+          path: /mutate-infrastructure-cluster-x-k8s-io-v1beta1-azurecluster
+      failurePolicy: Fail
+      matchPolicy: Equivalent
+      name: default.azurecluster.infrastructure.cluster.x-k8s.io
+      rules:
+      - apiGroups:
+        - infrastructure.cluster.x-k8s.io
+        apiVersions:
+        - v1beta1
+        operations:
+        - CREATE
+        - UPDATE
+        resources:
+        - azureclusters
+      sideEffects: None
+    - admissionReviewVersions:
+      - v1
+      - v1beta1
+      clientConfig:
+        service:
+          name: capz-webhook-service
+          namespace: openshift-cluster-api
+          path: /mutate-infrastructure-cluster-x-k8s-io-v1beta1-azureclustertemplate
+      failurePolicy: Fail
+      matchPolicy: Equivalent
+      name: default.azureclustertemplate.infrastructure.cluster.x-k8s.io
+      rules:
+      - apiGroups:
+        - infrastructure.cluster.x-k8s.io
+        apiVersions:
+        - v1beta1
+        operations:
+        - CREATE
+        - UPDATE
+        resources:
+        - azureclustertemplates
+      sideEffects: None
     - admissionReviewVersions:
       - v1
       - v1beta1
@@ -11293,12 +11390,31 @@ data:
     metadata:
       annotations:
         service.beta.openshift.io/inject-cabundle: "true"
-      creationTimestamp: null
       labels:
         cluster.x-k8s.io/provider: infrastructure-azure
         clusterctl.cluster.x-k8s.io: ""
       name: capz-validating-webhook-configuration
     webhooks:
+    - admissionReviewVersions:
+      - v1
+      - v1beta1
+      clientConfig:
+        service:
+          name: capz-webhook-service
+          namespace: openshift-cluster-api
+          path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-azureasomanagedcluster
+      failurePolicy: Fail
+      name: validation.azureasomanagedcluster.infrastructure.cluster.x-k8s.io
+      rules:
+      - apiGroups:
+        - infrastructure.cluster.x-k8s.io
+        apiVersions:
+        - v1beta1
+        operations:
+        - CREATE
+        resources:
+        - azureasomanagedclusters
+      sideEffects: None
     - admissionReviewVersions:
       - v1
       - v1beta1
@@ -11346,6 +11462,72 @@ data:
         service:
           name: capz-webhook-service
           namespace: openshift-cluster-api
+          path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-azurecluster
+      failurePolicy: Fail
+      matchPolicy: Equivalent
+      name: validation.azurecluster.infrastructure.cluster.x-k8s.io
+      rules:
+      - apiGroups:
+        - infrastructure.cluster.x-k8s.io
+        apiVersions:
+        - v1beta1
+        operations:
+        - CREATE
+        - UPDATE
+        resources:
+        - azureclusters
+      sideEffects: None
+    - admissionReviewVersions:
+      - v1
+      - v1beta1
+      clientConfig:
+        service:
+          name: capz-webhook-service
+          namespace: openshift-cluster-api
+          path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-azureclusteridentity
+      failurePolicy: Fail
+      matchPolicy: Equivalent
+      name: validation.azureclusteridentity.infrastructure.cluster.x-k8s.io
+      rules:
+      - apiGroups:
+        - infrastructure.cluster.x-k8s.io
+        apiVersions:
+        - v1beta1
+        operations:
+        - CREATE
+        - UPDATE
+        resources:
+        - azureclusteridentities
+      sideEffects: None
+    - admissionReviewVersions:
+      - v1
+      - v1beta1
+      clientConfig:
+        service:
+          name: capz-webhook-service
+          namespace: openshift-cluster-api
+          path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-azureclustertemplate
+      failurePolicy: Fail
+      matchPolicy: Equivalent
+      name: validation.azureclustertemplate.infrastructure.cluster.x-k8s.io
+      rules:
+      - apiGroups:
+        - infrastructure.cluster.x-k8s.io
+        apiVersions:
+        - v1beta1
+        operations:
+        - CREATE
+        - UPDATE
+        resources:
+        - azureclustertemplates
+      sideEffects: None
+    - admissionReviewVersions:
+      - v1
+      - v1beta1
+      clientConfig:
+        service:
+          name: capz-webhook-service
+          namespace: openshift-cluster-api
           path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-azuremachine
       failurePolicy: Fail
       matchPolicy: Equivalent
@@ -11382,6 +11564,47 @@ data:
         - UPDATE
         resources:
         - azuremachinetemplates
+      sideEffects: None
+    - admissionReviewVersions:
+      - v1
+      - v1beta1
+      clientConfig:
+        service:
+          name: capz-webhook-service
+          namespace: openshift-cluster-api
+          path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-azuremanagedcluster
+      failurePolicy: Fail
+      name: validation.azuremanagedclusters.infrastructure.cluster.x-k8s.io
+      rules:
+      - apiGroups:
+        - infrastructure.cluster.x-k8s.io
+        apiVersions:
+        - v1beta1
+        operations:
+        - CREATE
+        - UPDATE
+        resources:
+        - azuremanagedclusters
+      sideEffects: None
+    - admissionReviewVersions:
+      - v1
+      - v1beta1
+      clientConfig:
+        service:
+          name: capz-webhook-service
+          namespace: openshift-cluster-api
+          path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-azuremanagedclustertemplate
+      failurePolicy: Fail
+      name: validation.azuremanagedclustertemplates.infrastructure.cluster.x-k8s.io
+      rules:
+      - apiGroups:
+        - infrastructure.cluster.x-k8s.io
+        apiVersions:
+        - v1beta1
+        operations:
+        - UPDATE
+        resources:
+        - azuremanagedclustertemplates
       sideEffects: None
     - admissionReviewVersions:
       - v1
@@ -11534,7 +11757,7 @@ data:
       selector:
         cluster.x-k8s.io/provider: infrastructure-azure
     ---
-    apiVersion: admissionregistration.k8s.io/v1beta1
+    apiVersion: admissionregistration.k8s.io/v1
     kind: ValidatingAdmissionPolicy
     metadata:
       name: openshift-cluster-api-protect-azurecluster
@@ -11558,7 +11781,7 @@ data:
         message: InfraCluster resources with metadata.name corresponding to the cluster
           infrastructureName cannot be deleted.
     ---
-    apiVersion: admissionregistration.k8s.io/v1beta1
+    apiVersion: admissionregistration.k8s.io/v1
     kind: ValidatingAdmissionPolicyBinding
     metadata:
       name: openshift-cluster-api-protect-azurecluster
@@ -11664,7 +11887,6 @@ metadata:
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
     release.openshift.io/feature-set: CustomNoUpgrade,TechPreviewNoUpgrade
-  creationTimestamp: null
   labels:
     provider.cluster.x-k8s.io/name: azure
     provider.cluster.x-k8s.io/type: infrastructure

@@ -21,6 +21,6 @@ update-manifests-gen:
 	cd tools && go get github.com/openshift/cluster-capi-operator/manifests-gen && go mod tidy && go mod vendor
 
 .PHONY: ocp-manifests
-ocp-manifests: $(RELEASE_DIR) ## Builds openshift specific manifests
+ocp-manifests: | $(RELEASE_DIR) ## Builds openshift specific manifests
 	# Generate provider manifests.
 	cd tools && $(MANIFESTS_GEN) --provider-name "azure" --provider-type "InfrastructureProvider" --provider-version "${PROVIDER_VERSION}" --base-path "../../" --manifests-path "../manifests" --kustomize-dir="openshift"

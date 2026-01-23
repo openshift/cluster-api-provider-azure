@@ -11,6 +11,7 @@ bin
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+coverage.*
 
 # Ansible
 *.retry
@@ -23,14 +24,12 @@ bin
 .env
 envfile
 
-# For konflux
-!vendor/github.com/subosito/gotenv/.env
-
 # kubeconfigs
 kind.kubeconfig
 minikube.kubeconfig
 kubeconfig
 !kubeconfig/
+*.kubeconfig
 
 # ssh keys
 .ssh*

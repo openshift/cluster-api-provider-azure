@@ -4,7 +4,7 @@ In `clusterctl` the infrastructure provider authors can provide different type o
 or flavors; use the --flavor flag to specify which flavor to use; e.g
 
 ```shell
-clusterctl generate cluster my-cluster --kubernetes-version v1.32.2 \
+clusterctl generate cluster my-cluster --kubernetes-version v1.33.6 \
     --flavor private > my-cluster.yaml
 ```
 
@@ -66,10 +66,10 @@ worker-templates:
     AZURE_LOCATION: eastus
     AZURE_RESOURCE_GROUP: test-resource-group-name
     CONTROL_PLANE_MACHINE_COUNT: "1"
-    KUBERNETES_VERSION: v1.32.2
-    AZURE_CONTROL_PLANE_MACHINE_TYPE: Standard_B2s
+    KUBERNETES_VERSION: v1.33.6
+    AZURE_CONTROL_PLANE_MACHINE_TYPE: Standard_B2s_v2
     WORKER_MACHINE_COUNT: "2"
-    AZURE_NODE_MACHINE_TYPE: Standard_B2s
+    AZURE_NODE_MACHINE_TYPE: Standard_B2s_v2
 ```
 
 Here is a practical example: creating a GPU-enabled cluster requires N-series nodes. You can set an
@@ -86,8 +86,8 @@ worker-templates:
     nvidia-gpu:
       AZURE_NODE_MACHINE_TYPE: Standard_NC6s_v3
   metadata:
-    AZURE_CONTROL_PLANE_MACHINE_TYPE: Standard_B2s
+    AZURE_CONTROL_PLANE_MACHINE_TYPE: Standard_B2s_v2
     AZURE_LOCATION: southcentralus
-    KUBERNETES_VERSION: v1.32.2
+    KUBERNETES_VERSION: v1.33.6
     WORKER_MACHINE_COUNT: "1"
 ```

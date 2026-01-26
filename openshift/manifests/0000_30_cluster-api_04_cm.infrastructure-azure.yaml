@@ -4217,9 +4217,51 @@ data:
                 required:
                 - template
                 type: object
+              status:
+                description: AzureMachineTemplateStatus defines the observed state of
+                  AzureMachineTemplate.
+                properties:
+                  capacity:
+                    additionalProperties:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    description: |-
+                      Capacity defines the resource capacity for this machine.
+                      This value is used for autoscaling from zero operations as defined in:
+                      https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20210310-opt-in-autoscaling-from-zero.md
+                    type: object
+                  nodeInfo:
+                    description: |-
+                      NodeInfo contains information about the node's architecture and operating system.
+                      This value is used for autoscaling from zero operations as defined in:
+                      https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20210310-opt-in-autoscaling-from-zero.md
+                    properties:
+                      architecture:
+                        description: |-
+                          Architecture is the CPU architecture of the node.
+                          Its underlying type is a string and its value can be any of amd64, arm64.
+                        enum:
+                        - amd64
+                        - arm64
+                        type: string
+                      operatingSystem:
+                        description: |-
+                          OperatingSystem is the operating system of the node.
+                          Its underlying type is a string and its value can be any of linux, windows.
+                        enum:
+                        - linux
+                        - windows
+                        type: string
+                    type: object
+                type: object
             type: object
         served: true
         storage: true
+        subresources:
+          status: {}
     status:
       acceptedNames:
         kind: ""
@@ -10872,10 +10914,19 @@ data:
       - infrastructure.cluster.x-k8s.io
       resources:
       - azuremachinetemplates
+      verbs:
+      - get
+      - list
+      - watch
+    - apiGroups:
+      - infrastructure.cluster.x-k8s.io
+      resources:
       - azuremachinetemplates/status
       verbs:
       - get
       - list
+      - patch
+      - update
       - watch
     - apiGroups:
       - kubernetesconfiguration.azure.com
@@ -11880,6 +11931,9 @@ data:
       - major: 1
         minor: 21
         contract: v1beta1
+      - major: 1
+        minor: 22
+        contract: v1beta1
 kind: ConfigMap
 metadata:
   annotations:
@@ -11890,6 +11944,6 @@ metadata:
   labels:
     provider.cluster.x-k8s.io/name: azure
     provider.cluster.x-k8s.io/type: infrastructure
-    provider.cluster.x-k8s.io/version: v1.21.99-custom.0
+    provider.cluster.x-k8s.io/version: v1.22.0
   name: azure
   namespace: openshift-cluster-api

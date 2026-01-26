@@ -229,13 +229,13 @@ spec:
     required: false
     schema:
       openAPIV3Schema:
-        default: Standard_B2s
+        default: Standard_B2s_v2
         type: string
   - name: workerMachineType
     required: false
     schema:
       openAPIV3Schema:
-        default: Standard_B2s
+        default: Standard_B2s_v2
         type: string
   - name: sshPublicKey
     required: true
@@ -256,6 +256,7 @@ spec:
         default: ClusterAPI-f72ceb4f-5159-4c26-a0fe-2ea738f0d019
         type: string
   - name: resourceGroup
+    required: false
     schema:
       openAPIV3Schema:
         description: The Azure Resource Group where the Cluster will be created.

@@ -12,7 +12,7 @@ FROM registry.ci.openshift.org/ocp/4.22:base-rhel9
 LABEL description="Cluster API Provider Azure Controller Manager"
 
 COPY --from=builder /build/manager /bin/manager
-COPY --from=builder /build/openshift/manifests /manifests
+COPY openshift/capi-operator-manifests /capi-operator-manifests
 
 ENTRYPOINT [ "/bin/manager" ]
 

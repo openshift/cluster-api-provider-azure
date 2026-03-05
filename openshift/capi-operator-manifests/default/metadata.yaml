@@ -1,7 +1,0 @@
-attributes:
-  type: infrastructure
-  version: v1.22.0
-installOrder: 20
-name: cluster-api-provider-azure
-ocpPlatform: Azure
-selfImageRef: registry.ci.openshift.org/openshift:azure-cluster-api-controllers

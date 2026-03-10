@@ -727,7 +727,14 @@ func ClusterctlUpgradeSpec(ctx context.Context, inputGetter func() ClusterctlUpg
 			// continuous reconciles when everything should be stable.
 			if i == len(input.Upgrades)-1 {
 				Byf("[%d] Checking that resourceVersions are stable", i)
-				framework.ValidateResourceVersionStable(ctx, managementClusterProxy, workloadCluster.Namespace, clusterctlcluster.FilterClusterObjectsWithNameFilter(workloadCluster.Name))
+				resourceVersionInput := framework.ValidateResourceVersionStableInput{
+					ClusterProxy:             managementClusterProxy,
+					Namespace:                workloadCluster.Namespace,
+					OwnerGraphFilterFunction: clusterctlcluster.FilterClusterObjectsWithNameFilter(workloadCluster.Name),
+					WaitToBecomeStable:       input.E2EConfig.GetIntervals(specName, "wait-resource-versions-become-stable"),
+					WaitToRemainStable:       input.E2EConfig.GetIntervals(specName, "wait-resource-versions-remain-stable"),
+				}
+				framework.ValidateResourceVersionStable(ctx, resourceVersionInput)
 
 				// NOTE: Checks on conditions works on v1beta2 only, so running this checks only in the last step which is
 				// always current version.
@@ -855,6 +862,8 @@ func downloadToTmpFile(ctx context.Context, url string) string {
 	resp, err := http.DefaultClient.Do(req)
 	Expect(err).ToNot(HaveOccurred(), "failed to get clusterctl")
 	defer resp.Body.Close()
+
+	Expect(resp.StatusCode).To(Equal(http.StatusOK), "unexpected status code when downloading clusterctl")
 
 	// Write the body to file
 	_, err = io.Copy(tmpFile, resp.Body)

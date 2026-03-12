@@ -36,6 +36,7 @@ import (
 	clusterv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	clusterctlv1 "sigs.k8s.io/cluster-api/cmd/clusterctl/api/v1alpha3"
+	utilexp "sigs.k8s.io/cluster-api/exp/util"
 	capifeature "sigs.k8s.io/cluster-api/feature"
 	"sigs.k8s.io/cluster-api/util"
 	v1beta1conditions "sigs.k8s.io/cluster-api/util/deprecated/v1beta1/conditions"
@@ -536,7 +537,7 @@ func reconcileAzureSecret(ctx context.Context, kubeclient client.Client, owner m
 func GetOwnerMachinePool(ctx context.Context, c client.Client, obj metav1.ObjectMeta) (*clusterv1.MachinePool, error) {
 	ctx, _, done := tele.StartSpanWithLogger(ctx, "controllers.GetOwnerMachinePool")
 	defer done()
-	return util.GetOwnerMachinePool(ctx, c, obj)
+	return utilexp.GetOwnerMachinePool(ctx, c, obj)
 }
 
 // GetOwnerAzureMachinePool returns the AzureMachinePool object owning the current resource.
@@ -566,7 +567,7 @@ func GetMachinePoolByName(ctx context.Context, c client.Client, namespace, name 
 	ctx, _, done := tele.StartSpanWithLogger(ctx, "controllers.GetMachinePoolByName")
 	defer done()
 
-	return util.GetMachinePoolByName(ctx, c, namespace, name)
+	return utilexp.GetMachinePoolByName(ctx, c, namespace, name)
 }
 
 // GetAzureMachinePoolByName finds and return an AzureMachinePool object using the specified params.

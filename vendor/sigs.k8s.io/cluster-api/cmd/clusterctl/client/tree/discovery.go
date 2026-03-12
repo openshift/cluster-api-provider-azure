@@ -19,11 +19,9 @@ package tree
 import (
 	"context"
 
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	addonsv1 "sigs.k8s.io/cluster-api/api/addons/v1beta2"
@@ -36,7 +34,7 @@ import (
 // DiscoverOptions define options for the discovery process.
 type DiscoverOptions struct {
 	// ShowOtherConditions is a list of comma separated kind or kind/name for which we should add the ShowObjectConditionsAnnotation
-	// to signal to the presentation layer to show conditions for the objects.
+	// to signal to the presentation layer to show all the conditions for the objects.
 	ShowOtherConditions string
 
 	// ShowMachineSets instructs the discovery process to include machine sets in the ObjectTree.
@@ -112,9 +110,7 @@ func Discovery(ctx context.Context, c client.Client, namespace, name string, opt
 
 		addAnnotation(controlPlane, ObjectContractAnnotation, "ControlPlane")
 		addAnnotation(controlPlane, ObjectContractVersionAnnotation, contractVersion)
-		if err := addControlPlane(ctx, c, cluster, controlPlane, tree, options); err != nil {
-			return nil, err
-		}
+		addControlPlane(cluster, controlPlane, tree, options)
 	}
 
 	// Adds control plane machines.
@@ -124,7 +120,7 @@ func Discovery(ctx context.Context, c client.Client, namespace, name string, opt
 	}
 	machineMap := map[string]bool{}
 	addMachineFunc := func(parent client.Object, m *clusterv1.Machine) {
-		_, visible := tree.Add(parent, m, GroupVersionKind(clusterv1.GroupVersion.WithKind("Machine")))
+		_, visible := tree.Add(parent, m)
 		machineMap[m.Name] = true
 
 		if visible {
@@ -208,51 +204,30 @@ func addClusterResourceSetsToObjectTree(ctx context.Context, c client.Client, cl
 	}
 }
 
-func addControlPlane(ctx context.Context, c client.Client, cluster *clusterv1.Cluster, controlPlane *unstructured.Unstructured, tree *ObjectTree, options DiscoverOptions) error {
+func addControlPlane(cluster *clusterv1.Cluster, controlPlane *unstructured.Unstructured, tree *ObjectTree, options DiscoverOptions) {
 	tree.Add(cluster, controlPlane, ObjectMetaName("ControlPlane"), GroupingObject(true))
 
 	if options.ShowTemplates {
 		// Add control plane infrastructure ref using spec fields guaranteed in contract
-		contractVersion, err := contract.GetContractVersionForVersion(ctx, c, controlPlane.GroupVersionKind().GroupKind(), controlPlane.GroupVersionKind().Version)
-		if err != nil {
-			return errors.Wrapf(err, "failed to get contract version for the ControlPlane object")
-		}
+		infrastructureRef, found, err := unstructured.NestedMap(controlPlane.UnstructuredContent(), "spec", "machineTemplate", "infrastructureRef")
+		if err == nil && found {
+			infrastructureObjectRef := &corev1.ObjectReference{
+				Kind:       infrastructureRef["kind"].(string),
+				Namespace:  infrastructureRef["namespace"].(string),
+				Name:       infrastructureRef["name"].(string),
+				APIVersion: infrastructureRef["apiVersion"].(string),
+			}
 
-		var infrastructureObjectRef *corev1.ObjectReference
-		if contractVersion == "v1beta1" {
-			currentRef, err := contract.ControlPlane().MachineTemplate().InfrastructureV1Beta1Ref().Get(controlPlane)
-			if err != nil {
-				return nil //nolint:nilerr // intentionally ignoring the error here because infraRef in CP is optional
+			machineTemplateRefObject := ObjectReferenceObject(infrastructureObjectRef)
+			var templateParent client.Object
+			if options.AddTemplateVirtualNode {
+				templateParent = addTemplateVirtualNode(tree, controlPlane, cluster.Namespace)
+			} else {
+				templateParent = controlPlane
 			}
-			infrastructureObjectRef = currentRef
-		} else {
-			currentRef, err := contract.ControlPlane().MachineTemplate().InfrastructureRef().Get(controlPlane)
-			if err != nil {
-				return nil //nolint:nilerr // intentionally ignoring the error here because infraRef in CP is optional
-			}
-			apiVersion, err := contract.GetAPIVersion(ctx, c, currentRef.GroupKind())
-			if err != nil {
-				return err
-			}
-			infrastructureObjectRef = &corev1.ObjectReference{
-				APIVersion: apiVersion,
-				Kind:       currentRef.Kind,
-				Namespace:  controlPlane.GetNamespace(),
-				Name:       currentRef.Name,
-			}
+			tree.Add(templateParent, machineTemplateRefObject, ObjectMetaName("MachineInfrastructureTemplate"))
 		}
-
-		machineTemplateRefObject := ObjectReferenceObject(infrastructureObjectRef)
-		var templateParent client.Object
-		if options.AddTemplateVirtualNode {
-			templateParent = addTemplateVirtualNode(tree, controlPlane, cluster.Namespace)
-		} else {
-			templateParent = controlPlane
-		}
-		tree.Add(templateParent, machineTemplateRefObject, ObjectMetaName("MachineInfrastructureTemplate"))
 	}
-
-	return nil
 }
 
 func addMachineDeploymentToObjectTree(ctx context.Context, c client.Client, cluster *clusterv1.Cluster, workers *NodeObject, machinesList *clusterv1.MachineList, tree *ObjectTree, options DiscoverOptions, addMachineFunc func(parent client.Object, m *clusterv1.Machine)) error {
@@ -273,7 +248,6 @@ func addMachineDeploymentToObjectTree(ctx context.Context, c client.Client, clus
 		if !options.ShowMachineSets {
 			addOpts = append(addOpts, GroupingObject(true))
 		}
-		addOpts = append(addOpts, GroupVersionKind(clusterv1.GroupVersion.WithKind("MachineDeployment")))
 		tree.Add(workers, md, addOpts...)
 
 		if options.ShowTemplates {
@@ -312,17 +286,17 @@ func addMachineDeploymentToObjectTree(ctx context.Context, c client.Client, clus
 			tree.Add(templateParent, machineTemplateRefObject, ObjectMetaName("MachineInfrastructureTemplate"))
 		}
 
-		machineSets := selectMachinesSetsControlledBy(machineSetList, md, clusterv1.GroupVersion.WithKind("MachineDeployment").GroupKind())
+		machineSets := selectMachinesSetsControlledBy(machineSetList, md)
 		for i := range machineSets {
 			ms := machineSets[i]
 
 			var parent client.Object = md
 			if options.ShowMachineSets {
-				tree.Add(md, ms, GroupingObject(true), GroupVersionKind(clusterv1.GroupVersion.WithKind("MachineSet")))
+				tree.Add(md, ms, GroupingObject(true))
 				parent = ms
 			}
 
-			machines := selectMachinesControlledBy(machinesList, ms, clusterv1.GroupVersion.WithKind("MachineSet").GroupKind())
+			machines := selectMachinesControlledBy(machinesList, ms)
 			for _, w := range machines {
 				addMachineFunc(parent, w)
 			}
@@ -335,7 +309,7 @@ func addMachineDeploymentToObjectTree(ctx context.Context, c client.Client, clus
 func addMachinePoolsToObjectTree(ctx context.Context, c client.Client, workers *NodeObject, machinePoolList *clusterv1.MachinePoolList, machinesList *clusterv1.MachineList, tree *ObjectTree, addMachineFunc func(parent client.Object, m *clusterv1.Machine)) {
 	for i := range machinePoolList.Items {
 		mp := &machinePoolList.Items[i]
-		_, visible := tree.Add(workers, mp, GroupingObject(true), GroupVersionKind(clusterv1.GroupVersion.WithKind("MachinePool")))
+		_, visible := tree.Add(workers, mp, GroupingObject(true))
 
 		if visible {
 			if machinePoolBootstrap, err := external.GetObjectFromContractVersionedRef(ctx, c, mp.Spec.Template.Spec.Bootstrap.ConfigRef, mp.Namespace); err == nil {
@@ -347,7 +321,7 @@ func addMachinePoolsToObjectTree(ctx context.Context, c client.Client, workers *
 			}
 		}
 
-		machines := selectMachinesControlledBy(machinesList, mp, clusterv1.GroupVersion.WithKind("MachinePool").GroupKind())
+		machines := selectMachinesControlledBy(machinesList, mp)
 		for _, m := range machines {
 			addMachineFunc(mp, m)
 		}
@@ -443,22 +417,22 @@ func selectControlPlaneMachines(machineList *clusterv1.MachineList) []*clusterv1
 	return machines
 }
 
-func selectMachinesSetsControlledBy(machineSetList *clusterv1.MachineSetList, controller client.Object, controllerGK schema.GroupKind) []*clusterv1.MachineSet {
+func selectMachinesSetsControlledBy(machineSetList *clusterv1.MachineSetList, controller client.Object) []*clusterv1.MachineSet {
 	machineSets := []*clusterv1.MachineSet{}
 	for i := range machineSetList.Items {
 		m := &machineSetList.Items[i]
-		if util.IsControlledBy(m, controller, controllerGK) {
+		if util.IsControlledBy(m, controller) {
 			machineSets = append(machineSets, m)
 		}
 	}
 	return machineSets
 }
 
-func selectMachinesControlledBy(machineList *clusterv1.MachineList, controller client.Object, controllerGK schema.GroupKind) []*clusterv1.Machine {
+func selectMachinesControlledBy(machineList *clusterv1.MachineList, controller client.Object) []*clusterv1.Machine {
 	machines := []*clusterv1.Machine{}
 	for i := range machineList.Items {
 		m := &machineList.Items[i]
-		if util.IsControlledBy(m, controller, controllerGK) {
+		if util.IsControlledBy(m, controller) {
 			machines = append(machines, m)
 		}
 	}

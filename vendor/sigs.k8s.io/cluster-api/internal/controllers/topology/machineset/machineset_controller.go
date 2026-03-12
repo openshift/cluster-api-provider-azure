@@ -19,14 +19,12 @@ package machineset
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/pkg/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/util/retry"
+	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -36,12 +34,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
-	capicontrollerutil "sigs.k8s.io/cluster-api/internal/util/controller"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/annotations"
 	"sigs.k8s.io/cluster-api/util/finalizers"
 	"sigs.k8s.io/cluster-api/util/labels"
 	clog "sigs.k8s.io/cluster-api/util/log"
+	"sigs.k8s.io/cluster-api/util/patch"
 	"sigs.k8s.io/cluster-api/util/predicates"
 )
 
@@ -73,11 +71,13 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, opt
 		return err
 	}
 
-	err = capicontrollerutil.NewControllerManagedBy(mgr, predicateLog).
+	err = ctrl.NewControllerManagedBy(mgr).
 		For(&clusterv1.MachineSet{},
 			builder.WithPredicates(
-				predicates.ResourceIsTopologyOwned(mgr.GetScheme(), predicateLog),
-				predicates.ResourceNotPaused(mgr.GetScheme(), predicateLog)),
+				predicates.All(mgr.GetScheme(), predicateLog,
+					predicates.ResourceIsTopologyOwned(mgr.GetScheme(), predicateLog),
+					predicates.ResourceNotPaused(mgr.GetScheme(), predicateLog)),
+			),
 		).
 		Named("topology/machineset").
 		WithOptions(options).
@@ -85,8 +85,13 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, opt
 		Watches(
 			&clusterv1.Cluster{},
 			handler.EnqueueRequestsFromMapFunc(clusterToMachineSets),
-			predicates.ClusterUnpaused(mgr.GetScheme(), predicateLog),
-			predicates.ClusterHasTopology(mgr.GetScheme(), predicateLog),
+			builder.WithPredicates(
+				predicates.All(mgr.GetScheme(), predicateLog,
+					predicates.ResourceIsChanged(mgr.GetScheme(), predicateLog),
+					predicates.ClusterUnpaused(mgr.GetScheme(), predicateLog),
+					predicates.ClusterHasTopology(mgr.GetScheme(), predicateLog),
+				),
+			),
 		).
 		Complete(r)
 	if err != nil {
@@ -154,6 +159,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, nil
 	}
 
+	// Create a patch helper to add or remove the finalizer from the MachineSet.
+	patchHelper, err := patch.NewHelper(ms, r.Client)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	defer func() {
+		if err := patchHelper.Patch(ctx, ms); err != nil {
+			reterr = kerrors.NewAggregate([]error{reterr, err})
+		}
+	}()
+
 	// Handle deletion reconciliation loop.
 	if !ms.DeletionTimestamp.IsZero() {
 		return ctrl.Result{}, r.reconcileDelete(ctx, ms)
@@ -205,26 +221,10 @@ func (r *Reconciler) reconcileDelete(ctx context.Context, ms *clusterv1.MachineS
 		return errors.Wrapf(err, "failed to delete %s %s for MachineSet %s", ref.Kind, klog.KRef(ms.Namespace, ref.Name), klog.KObj(ms))
 	}
 
-	// Note: It can happen that both MachineSet controllers are going through reconcileDelete at the same time.
-	// If the MachineSet does not have any Machines anymore at this point, the topology/machineset controller will
-	// likely complete reconcileDelete after the regular MachineSet controller. In that case it might happen
-	// that removing the finalizer here would try to re-add the finalizer of the other controller and then the
-	// request to the apiserver fails with: "Forbidden: no new finalizers can be added if the object is being deleted"
-	msKey := client.ObjectKeyFromObject(ms)
-	return retry.RetryOnConflict(wait.Backoff{
-		Steps:    3,
-		Duration: 50 * time.Millisecond,
-		Factor:   1.0,
-		Jitter:   0.1,
-	}, func() error {
-		if err := r.Client.Get(ctx, msKey, ms); err != nil {
-			return client.IgnoreNotFound(err)
-		}
+	// Remove the finalizer so the MachineSet can be garbage collected by Kubernetes.
+	controllerutil.RemoveFinalizer(ms, clusterv1.MachineSetTopologyFinalizer)
 
-		orig := ms.DeepCopy()
-		controllerutil.RemoveFinalizer(ms, clusterv1.MachineSetTopologyFinalizer)
-		return client.IgnoreNotFound(r.Client.Patch(ctx, ms, client.MergeFrom(orig)))
-	})
+	return nil
 }
 
 // getMachineDeploymentName calculates the MachineDeployment name based on owner references.

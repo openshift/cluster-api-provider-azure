@@ -18,8 +18,8 @@ package secret
 
 import (
 	"context"
-	"crypto"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -69,7 +69,6 @@ type Certificates []*Certificate
 // NewCertificatesForInitialControlPlane returns a list of certificates configured for a control plane node.
 func NewCertificatesForInitialControlPlane(config *bootstrapv1.ClusterConfiguration) Certificates {
 	var validityPeriodDays int32
-	var keyEncryptionAlgorithm bootstrapv1.EncryptionAlgorithmType
 	certificatesDir := DefaultCertificatesDir
 	if config != nil {
 		if config.CertificatesDir != "" {
@@ -78,41 +77,34 @@ func NewCertificatesForInitialControlPlane(config *bootstrapv1.ClusterConfigurat
 		if config.CACertificateValidityPeriodDays != 0 {
 			validityPeriodDays = config.CACertificateValidityPeriodDays
 		}
-		if config.EncryptionAlgorithm != "" {
-			keyEncryptionAlgorithm = config.EncryptionAlgorithm
-		}
 	}
 
 	certificates := Certificates{
 		&Certificate{
-			Purpose:                ClusterCA,
-			CertFile:               path.Join(certificatesDir, "ca.crt"),
-			KeyFile:                path.Join(certificatesDir, "ca.key"),
-			ValidityPeriodDays:     validityPeriodDays,
-			KeyEncryptionAlgorithm: keyEncryptionAlgorithm,
+			Purpose:            ClusterCA,
+			CertFile:           path.Join(certificatesDir, "ca.crt"),
+			KeyFile:            path.Join(certificatesDir, "ca.key"),
+			ValidityPeriodDays: validityPeriodDays,
 		},
 		&Certificate{
-			Purpose:                ServiceAccount,
-			CertFile:               path.Join(certificatesDir, "sa.pub"),
-			KeyFile:                path.Join(certificatesDir, "sa.key"),
-			ValidityPeriodDays:     validityPeriodDays,
-			KeyEncryptionAlgorithm: keyEncryptionAlgorithm,
+			Purpose:            ServiceAccount,
+			CertFile:           path.Join(certificatesDir, "sa.pub"),
+			KeyFile:            path.Join(certificatesDir, "sa.key"),
+			ValidityPeriodDays: validityPeriodDays,
 		},
 		&Certificate{
-			Purpose:                FrontProxyCA,
-			CertFile:               path.Join(certificatesDir, "front-proxy-ca.crt"),
-			KeyFile:                path.Join(certificatesDir, "front-proxy-ca.key"),
-			ValidityPeriodDays:     validityPeriodDays,
-			KeyEncryptionAlgorithm: keyEncryptionAlgorithm,
+			Purpose:            FrontProxyCA,
+			CertFile:           path.Join(certificatesDir, "front-proxy-ca.crt"),
+			KeyFile:            path.Join(certificatesDir, "front-proxy-ca.key"),
+			ValidityPeriodDays: validityPeriodDays,
 		},
 	}
 
 	etcdCert := &Certificate{
-		Purpose:                EtcdCA,
-		CertFile:               path.Join(certificatesDir, "etcd", "ca.crt"),
-		KeyFile:                path.Join(certificatesDir, "etcd", "ca.key"),
-		ValidityPeriodDays:     validityPeriodDays,
-		KeyEncryptionAlgorithm: keyEncryptionAlgorithm,
+		Purpose:            EtcdCA,
+		CertFile:           path.Join(certificatesDir, "etcd", "ca.crt"),
+		KeyFile:            path.Join(certificatesDir, "etcd", "ca.key"),
+		ValidityPeriodDays: validityPeriodDays,
 	}
 
 	// TODO make sure all the fields are actually defined and return an error if not
@@ -122,13 +114,13 @@ func NewCertificatesForInitialControlPlane(config *bootstrapv1.ClusterConfigurat
 			CertFile: config.Etcd.External.CAFile,
 			External: true,
 		}
-		apiServerEtcdClientCert := &Certificate{
+		apiserverEtcdClientCert := &Certificate{
 			Purpose:  APIServerEtcdClient,
 			CertFile: config.Etcd.External.CertFile,
 			KeyFile:  config.Etcd.External.KeyFile,
 			External: true,
 		}
-		certificates = append(certificates, apiServerEtcdClientCert)
+		certificates = append(certificates, apiserverEtcdClientCert)
 	}
 
 	certificates = append(certificates, etcdCert)
@@ -339,14 +331,13 @@ func (c Certificates) LookupOrGenerateCached(ctx context.Context, secretCachingC
 
 // Certificate represents a single certificate CA.
 type Certificate struct {
-	Generated              bool
-	External               bool
-	Purpose                Purpose
-	KeyPair                *certs.KeyPair
-	CertFile, KeyFile      string
-	Secret                 *corev1.Secret
-	ValidityPeriodDays     int32
-	KeyEncryptionAlgorithm bootstrapv1.EncryptionAlgorithmType
+	Generated          bool
+	External           bool
+	Purpose            Purpose
+	KeyPair            *certs.KeyPair
+	CertFile, KeyFile  string
+	Secret             *corev1.Secret
+	ValidityPeriodDays int32
 }
 
 // Hashes hashes all the certificates stored in a CA certificate.
@@ -429,7 +420,7 @@ func (c *Certificate) Generate() error {
 		generator = generateServiceAccountKeys
 	}
 
-	kp, err := generator(c.ValidityPeriodDays, c.KeyEncryptionAlgorithm)
+	kp, err := generator(c.ValidityPeriodDays)
 	if err != nil {
 		return err
 	}
@@ -482,44 +473,35 @@ func secretToKeyPair(s *corev1.Secret) (*certs.KeyPair, error) {
 	}, nil
 }
 
-func generateCACert(validityPeriodDays int32, keyAlgorithmType bootstrapv1.EncryptionAlgorithmType) (*certs.KeyPair, error) {
-	x509Cert, privateKey, err := newCertificateAuthority(validityPeriodDays, keyAlgorithmType)
-	if err != nil {
-		return nil, err
-	}
-	encodedKey, err := certs.EncodePrivateKeyPEMFromSigner(privateKey)
+func generateCACert(validityPeriodDays int32) (*certs.KeyPair, error) {
+	x509Cert, privKey, err := newCertificateAuthority(validityPeriodDays)
 	if err != nil {
 		return nil, err
 	}
 	return &certs.KeyPair{
 		Cert: certs.EncodeCertPEM(x509Cert),
-		Key:  encodedKey,
+		Key:  certs.EncodePrivateKeyPEM(privKey),
 	}, nil
 }
 
-func generateServiceAccountKeys(_ int32, keyEncryptionAlgorithm bootstrapv1.EncryptionAlgorithmType) (*certs.KeyPair, error) {
-	saCreds, err := certs.NewSigner(keyEncryptionAlgorithm)
+func generateServiceAccountKeys(_ int32) (*certs.KeyPair, error) {
+	saCreds, err := certs.NewPrivateKey()
 	if err != nil {
 		return nil, err
 	}
-	saPub, err := certs.EncodePublicKeyPEMFromSigner(saCreds.Public())
+	saPub, err := certs.EncodePublicKeyPEM(&saCreds.PublicKey)
 	if err != nil {
 		return nil, err
 	}
-	saKey, err := certs.EncodePrivateKeyPEMFromSigner(saCreds)
-	if err != nil {
-		return nil, err
-	}
-
 	return &certs.KeyPair{
 		Cert: saPub,
-		Key:  saKey,
+		Key:  certs.EncodePrivateKeyPEM(saCreds),
 	}, nil
 }
 
 // newCertificateAuthority creates new certificate and private key for the certificate authority.
-func newCertificateAuthority(validityPeriodDays int32, keyAlgorithmType bootstrapv1.EncryptionAlgorithmType) (*x509.Certificate, crypto.Signer, error) {
-	key, err := certs.NewSigner(keyAlgorithmType)
+func newCertificateAuthority(validityPeriodDays int32) (*x509.Certificate, *rsa.PrivateKey, error) {
+	key, err := certs.NewPrivateKey()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -533,7 +515,7 @@ func newCertificateAuthority(validityPeriodDays int32, keyAlgorithmType bootstra
 }
 
 // newSelfSignedCACert creates a CA certificate.
-func newSelfSignedCACert(key crypto.Signer, validityPeriodDays int32) (*x509.Certificate, error) {
+func newSelfSignedCACert(key *rsa.PrivateKey, validityPeriodDays int32) (*x509.Certificate, error) {
 	cfg := certs.Config{
 		CommonName: "kubernetes",
 	}

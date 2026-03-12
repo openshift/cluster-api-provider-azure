@@ -81,7 +81,7 @@ var (
 // the time that it is invoked.
 //
 // There is also the possibility to rename the fields of native structs by setting the `cel` tag
-// for fields you want to override. In order to enable this feature, pass in the `ParseStructTags(true)`
+// for fields you want to override. In order to enable this feature, pass in the `EnableStructTag`
 // option. Here is an example to see it in action:
 //
 // ```go
@@ -609,8 +609,7 @@ func newNativeTypes(fieldNameHandler NativeTypesFieldNameHandler, rawType reflec
 	var iterateStructMembers func(reflect.Type)
 	iterateStructMembers = func(t reflect.Type) {
 		if k := t.Kind(); k == reflect.Pointer || k == reflect.Slice || k == reflect.Array || k == reflect.Map {
-			iterateStructMembers(t.Elem())
-			return
+			t = t.Elem()
 		}
 		if t.Kind() != reflect.Struct {
 			return

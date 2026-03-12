@@ -34,7 +34,7 @@ import (
 // ObjectTreeOptions defines the options for an ObjectTree.
 type ObjectTreeOptions struct {
 	// ShowOtherConditions is a list of comma separated kind or kind/name for which we should add   the ShowObjectConditionsAnnotation
-	// to signal to the presentation layer to show the conditions for the objects and also which filter to apply.
+	// to signal to the presentation layer to show all the conditions for the objects.
 	ShowOtherConditions string
 
 	// ShowMachineSets instructs the discovery process to include machine sets in the ObjectTree.
@@ -74,9 +74,11 @@ type ObjectTree struct {
 
 // NewObjectTree creates a new object tree with the given root and options.
 func NewObjectTree(root client.Object, options ObjectTreeOptions) *ObjectTree {
-	// If it is requested to show conditions for the root, add
+	// If it is requested to show all the conditions for the root, add
 	// the ShowObjectConditionsAnnotation to signal this to the presentation layer.
-	addAnnotation(root, ShowObjectConditionsAnnotation, string(showConditions(root, options.ShowOtherConditions)))
+	if isObjDebug(root, options.ShowOtherConditions) {
+		addAnnotation(root, ShowObjectConditionsAnnotation, "True")
+	}
 
 	return &ObjectTree{
 		root:       root,
@@ -95,10 +97,6 @@ func (od ObjectTree) Add(parent, obj client.Object, opts ...AddObjectOption) (ad
 	addOpts := &addObjectOptions{}
 	addOpts.ApplyOptions(opts)
 
-	if addOpts.GroupVersionKind != nil {
-		obj.GetObjectKind().SetGroupVersionKind(*addOpts.GroupVersionKind)
-	}
-
 	// Get a small set of conditions that will be used to determine e.g. when grouping or when an object is just an echo of
 	// its parent.
 	var objReadyV1Beta1, parentReadyV1Beta1 *clusterv1.Condition
@@ -114,9 +112,11 @@ func (od ObjectTree) Add(parent, obj client.Object, opts ...AddObjectOption) (ad
 		parentReady = GetReadyCondition(parent)
 	}
 
-	// If it is requested to show conditions for the object, add
+	// If it is requested to show all the conditions for the object, add
 	// the ShowObjectConditionsAnnotation to signal this to the presentation layer.
-	addAnnotation(obj, ShowObjectConditionsAnnotation, string(showConditions(obj, od.options.ShowOtherConditions)))
+	if isObjDebug(obj, od.options.ShowOtherConditions) {
+		addAnnotation(obj, ShowObjectConditionsAnnotation, "True")
+	}
 
 	// If echo should be dropped from the ObjectTree, return if the object's ready condition is true, and it is the same it has of parent's object ready condition (it is an echo).
 	// Note: the Echo option applies only for infrastructure machine or bootstrap config objects, and for those objects only Ready condition makes sense.
@@ -493,36 +493,28 @@ func updateV1Beta1GroupNode(groupObj client.Object, groupReady *clusterv1.Condit
 	}
 }
 
-func showConditions(obj client.Object, showOtherConditions string) ConditionFilterType {
-	if showOtherConditions == "" {
-		return ShownNoConditions
+func isObjDebug(obj client.Object, debugFilter string) bool {
+	if debugFilter == "" {
+		return false
 	}
-	for _, filter := range strings.Split(showOtherConditions, ",") {
+	for _, filter := range strings.Split(strings.ToLower(debugFilter), ",") {
+		filter = strings.TrimSpace(filter)
 		if filter == "" {
 			continue
 		}
-		if strings.EqualFold("all", strings.TrimSuffix(filter, ShowNonZeroConditionsSuffix)) {
-			if strings.HasSuffix(filter, ShowNonZeroConditionsSuffix) {
-				return ShowNonZeroConditions
-			}
-			return ShowAllConditions
+		if strings.EqualFold(filter, "all") {
+			return true
 		}
 		kn := strings.Split(filter, "/")
 		if len(kn) == 2 {
-			if strings.EqualFold(obj.GetObjectKind().GroupVersionKind().Kind, kn[0]) && strings.EqualFold(obj.GetName(), strings.TrimSuffix(kn[1], ShowNonZeroConditionsSuffix)) {
-				if strings.HasSuffix(kn[1], ShowNonZeroConditionsSuffix) {
-					return ShowNonZeroConditions
-				}
-				return ShowAllConditions
+			if strings.ToLower(obj.GetObjectKind().GroupVersionKind().Kind) == kn[0] && obj.GetName() == kn[1] {
+				return true
 			}
 			continue
 		}
-		if strings.EqualFold(obj.GetObjectKind().GroupVersionKind().Kind, strings.TrimSuffix(kn[0], ShowNonZeroConditionsSuffix)) {
-			if strings.HasSuffix(kn[0], ShowNonZeroConditionsSuffix) {
-				return ShowNonZeroConditions
-			}
-			return ShowAllConditions
+		if strings.ToLower(obj.GetObjectKind().GroupVersionKind().Kind) == kn[0] {
+			return true
 		}
 	}
-	return ShownNoConditions
+	return false
 }

@@ -65,11 +65,7 @@ func SetFeatureGateDuringTest(tb TB, gate featuregate.FeatureGate, f featuregate
 	}
 
 	if err := gate.(featuregate.MutableFeatureGate).Set(fmt.Sprintf("%s=%v", f, value)); err != nil {
-		if s := suggestChangeEmulationVersion(tb, gate, f, value); s != "" {
-			tb.Errorf("error setting %s=%v: %v. %s", f, value, err, s)
-		} else {
-			tb.Errorf("error setting %s=%v: %v", f, value, err)
-		}
+		tb.Errorf("error setting %s=%v: %v", f, value, err)
 	}
 
 	tb.Cleanup(func() {
@@ -90,28 +86,6 @@ func SetFeatureGateDuringTest(tb TB, gate featuregate.FeatureGate, f featuregate
 			}
 		}
 	})
-}
-
-func suggestChangeEmulationVersion(tb TB, gate featuregate.FeatureGate, f featuregate.Feature, value bool) string {
-	mutableVersionedFeatureGate, ok := gate.(featuregate.MutableVersionedFeatureGate)
-	if !ok {
-		return ""
-	}
-
-	emuVer := mutableVersionedFeatureGate.EmulationVersion()
-	versionedSpecs, ok := mutableVersionedFeatureGate.GetAllVersioned()[f]
-	if !ok {
-		return ""
-	}
-	if len(versionedSpecs) > 1 {
-		// check if the feature is locked
-		lastLifecycle := versionedSpecs[len(versionedSpecs)-1]
-		if lastLifecycle.LockToDefault && !lastLifecycle.Version.GreaterThan(emuVer) && lastLifecycle.Default != value {
-			// if the feature is locked, set the emulation version to the previous version when the feature is not locked.
-			return fmt.Sprintf("Feature %s is locked at version %s. Try adding SetFeatureGateEmulationVersionDuringTest(t, gate, version.MustParse(\"1.%d\")) at the beginning of your test.", f, emuVer.String(), lastLifecycle.Version.SubtractMinor(1).Minor())
-		}
-	}
-	return ""
 }
 
 // SetFeatureGateEmulationVersionDuringTest sets the specified gate to the specified emulation version for duration of the test.

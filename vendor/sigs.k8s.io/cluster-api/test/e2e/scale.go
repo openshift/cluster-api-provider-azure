@@ -47,7 +47,6 @@ import (
 	controlplanev1 "sigs.k8s.io/cluster-api/api/controlplane/kubeadm/v1beta2"
 	clusterv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
-	runtimev1 "sigs.k8s.io/cluster-api/api/runtime/v1beta2"
 	"sigs.k8s.io/cluster-api/test/e2e/internal/log"
 	"sigs.k8s.io/cluster-api/test/framework"
 	"sigs.k8s.io/cluster-api/test/framework/clusterctl"
@@ -149,7 +148,7 @@ type ScaleSpecInput struct {
 	// Note: This should only be set if a Runtime Extension is used.
 	ExtensionServiceNamespace string
 
-	// ExtensionServiceName is the name where the service for the Runtime Extension is located.
+	// ExtensionServiceNamespace is the name where the service for the Runtime Extension is located.
 	// Note: This should only be set if a Runtime Extension is used.
 	ExtensionServiceName string
 
@@ -293,7 +292,7 @@ func ScaleSpec(ctx context.Context, inputGetter func() ScaleSpecInput) {
 			if !deployClusterInSeparateNamespaces {
 				namespaces = append(namespaces, namespace.Name)
 			}
-			extensionConfig := extensionConfig(input.ExtensionConfigName, input.ExtensionServiceNamespace, input.ExtensionServiceName, true, defaultAllHandlersToBlocking, namespaces...)
+			extensionConfig := extensionConfig(input.ExtensionConfigName, input.ExtensionServiceNamespace, input.ExtensionServiceName, defaultAllHandlersToBlocking, namespaces...)
 			if deployClusterInSeparateNamespaces {
 				extensionConfig.Spec.NamespaceSelector = &metav1.LabelSelector{
 					// Note: we are limiting the test extension to be used by the namespace where the test is run.
@@ -428,16 +427,14 @@ func ScaleSpec(ctx context.Context, inputGetter func() ScaleSpecInput) {
 			By("Upgrade the workload clusters concurrently")
 			// Get the upgrade function for upgrading the workload clusters.
 			upgrader := getClusterUpgradeAndWaitFn(framework.UpgradeClusterTopologyAndWaitForUpgradeInput{
-				ClusterProxy:                         input.BootstrapClusterProxy,
-				KubernetesUpgradeVersion:             input.E2EConfig.MustGetVariable(KubernetesVersionUpgradeTo),
-				EtcdImageTag:                         input.E2EConfig.GetVariableOrEmpty(EtcdVersionUpgradeTo),
-				DNSImageTag:                          input.E2EConfig.GetVariableOrEmpty(CoreDNSVersionUpgradeTo),
-				WaitForControlPlaneToBeUpgraded:      input.E2EConfig.GetIntervals(specName, "wait-control-plane-upgrade"),
-				WaitForMachineDeploymentToBeUpgraded: input.E2EConfig.GetIntervals(specName, "wait-machine-deployment-upgrade"),
-				WaitForMachinePoolToBeUpgraded:       input.E2EConfig.GetIntervals(specName, "wait-machine-pool-upgrade"),
-				WaitForKubeProxyUpgrade:              input.E2EConfig.GetIntervals(specName, "wait-machine-upgrade"),
-				WaitForDNSUpgrade:                    input.E2EConfig.GetIntervals(specName, "wait-machine-upgrade"),
-				WaitForEtcdUpgrade:                   input.E2EConfig.GetIntervals(specName, "wait-machine-upgrade"),
+				ClusterProxy:                input.BootstrapClusterProxy,
+				KubernetesUpgradeVersion:    input.E2EConfig.MustGetVariable(KubernetesVersionUpgradeTo),
+				EtcdImageTag:                input.E2EConfig.GetVariableOrEmpty(EtcdVersionUpgradeTo),
+				DNSImageTag:                 input.E2EConfig.GetVariableOrEmpty(CoreDNSVersionUpgradeTo),
+				WaitForMachinesToBeUpgraded: input.E2EConfig.GetIntervals(specName, "wait-machine-upgrade"),
+				WaitForKubeProxyUpgrade:     input.E2EConfig.GetIntervals(specName, "wait-machine-upgrade"),
+				WaitForDNSUpgrade:           input.E2EConfig.GetIntervals(specName, "wait-machine-upgrade"),
+				WaitForEtcdUpgrade:          input.E2EConfig.GetIntervals(specName, "wait-machine-upgrade"),
 			})
 
 			clusterNamesToUpgrade := []string{}
@@ -520,7 +517,7 @@ func ScaleSpec(ctx context.Context, inputGetter func() ScaleSpecInput) {
 		if !input.SkipCleanup {
 			if input.ExtensionServiceNamespace != "" && input.ExtensionServiceName != "" {
 				Eventually(func() error {
-					return input.BootstrapClusterProxy.GetClient().Delete(ctx, &runtimev1.ExtensionConfig{ObjectMeta: metav1.ObjectMeta{Name: input.ExtensionConfigName}})
+					return input.BootstrapClusterProxy.GetClient().Delete(ctx, extensionConfig(input.ExtensionConfigName, input.ExtensionServiceNamespace, input.ExtensionServiceName, true))
 				}, 10*time.Second, 1*time.Second).Should(Succeed(), "Deleting ExtensionConfig failed")
 			}
 		}
@@ -840,17 +837,15 @@ func getClusterUpgradeAndWaitFn(input framework.UpgradeClusterTopologyAndWaitFor
 		// will be called multiple times and this closure will keep modifying the same `input` multiple
 		// times. It is safer to pass the values explicitly into `UpgradeClusterTopologyAndWaitForUpgradeInput`.
 		framework.UpgradeClusterTopologyAndWaitForUpgrade(ctx, framework.UpgradeClusterTopologyAndWaitForUpgradeInput{
-			ClusterProxy:                         input.ClusterProxy,
-			Cluster:                              resources.cluster,
-			ControlPlane:                         resources.controlPlane,
-			MachineDeployments:                   resources.machineDeployments,
-			KubernetesUpgradeVersion:             input.KubernetesUpgradeVersion,
-			WaitForControlPlaneToBeUpgraded:      input.WaitForControlPlaneToBeUpgraded,
-			WaitForMachineDeploymentToBeUpgraded: input.WaitForMachineDeploymentToBeUpgraded,
-			WaitForMachinePoolToBeUpgraded:       input.WaitForMachinePoolToBeUpgraded,
-			WaitForKubeProxyUpgrade:              input.WaitForKubeProxyUpgrade,
-			WaitForDNSUpgrade:                    input.WaitForDNSUpgrade,
-			WaitForEtcdUpgrade:                   input.WaitForEtcdUpgrade,
+			ClusterProxy:                input.ClusterProxy,
+			Cluster:                     resources.cluster,
+			ControlPlane:                resources.controlPlane,
+			MachineDeployments:          resources.machineDeployments,
+			KubernetesUpgradeVersion:    input.KubernetesUpgradeVersion,
+			WaitForMachinesToBeUpgraded: input.WaitForMachinesToBeUpgraded,
+			WaitForKubeProxyUpgrade:     input.WaitForKubeProxyUpgrade,
+			WaitForDNSUpgrade:           input.WaitForDNSUpgrade,
+			WaitForEtcdUpgrade:          input.WaitForEtcdUpgrade,
 			// TODO: (killianmuldoon) Checking the kube-proxy, etcd and DNS version doesn't work as we can't access the control plane endpoint for the workload cluster
 			// from the host. Need to figure out a way to route the calls to the workload Cluster correctly.
 			EtcdImageTag:       "",

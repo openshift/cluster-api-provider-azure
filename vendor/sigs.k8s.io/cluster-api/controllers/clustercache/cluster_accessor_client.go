@@ -42,11 +42,10 @@ import (
 )
 
 type createConnectionResult struct {
-	RESTConfig     *rest.Config
-	RESTClient     *rest.RESTClient
-	CachedClient   client.Client
-	UncachedClient client.Client
-	Cache          *stoppableCache
+	RESTConfig   *rest.Config
+	RESTClient   *rest.RESTClient
+	CachedClient client.Client
+	Cache        *stoppableCache
 }
 
 func (ca *clusterAccessor) createConnection(ctx context.Context) (*createConnectionResult, error) {
@@ -98,12 +97,6 @@ func (ca *clusterAccessor) createConnection(ctx context.Context) (*createConnect
 		if err != nil {
 			return nil, errors.Wrapf(err, "error creating HTTP client and mapper (using in-cluster config)")
 		}
-
-		log.V(6).Info(fmt.Sprintf("Creating uncached client with updated REST config with host %q", restConfig.Host))
-		uncachedClient, err = createUncachedClient(ca.config.Scheme, restConfig, httpClient, mapper)
-		if err != nil {
-			return nil, errors.Wrapf(err, "error creating uncached client (using in-cluster config)")
-		}
 	}
 
 	log.V(6).Info("Creating cached client and cache")
@@ -113,11 +106,10 @@ func (ca *clusterAccessor) createConnection(ctx context.Context) (*createConnect
 	}
 
 	return &createConnectionResult{
-		RESTConfig:     restConfig,
-		RESTClient:     restClient,
-		CachedClient:   cachedClient,
-		UncachedClient: uncachedClient,
-		Cache:          cache,
+		RESTConfig:   restConfig,
+		RESTClient:   restClient,
+		CachedClient: cachedClient,
+		Cache:        cache,
 	}, nil
 }
 
@@ -216,7 +208,7 @@ func createUncachedClient(scheme *runtime.Scheme, config *rest.Config, httpClien
 		return nil, errors.Wrapf(err, "error creating uncached client")
 	}
 
-	return newClientWithTimeout(uncachedClient, config.Timeout), nil
+	return uncachedClient, nil
 }
 
 // createCachedClient creates a cached client for the given cluster, based on the rest.Config.

@@ -2,9 +2,9 @@ module tools
 
 go 1.24.0
 
-toolchain go1.24.8
+toolchain go1.24.3
 
-require github.com/openshift/cluster-capi-operator/manifests-gen v0.0.0-20260304134942-0acc63ee9c60
+require github.com/openshift/cluster-capi-operator/manifests-gen v0.0.0-20260309171208-48b44cd08f85
 
 require (
 	github.com/blang/semver/v4 v4.0.0 // indirect
@@ -38,7 +38,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/openshift/api v0.0.0-20260228183123-9b2ee997d297 // indirect
-	github.com/openshift/cluster-capi-operator v0.0.0-20260304134942-0acc63ee9c60 // indirect
+	github.com/openshift/cluster-capi-operator v0.0.0-20260309171208-48b44cd08f85 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/vbatts/tar-split v0.12.2 // indirect
 	github.com/x448/float16 v0.8.4 // indirect

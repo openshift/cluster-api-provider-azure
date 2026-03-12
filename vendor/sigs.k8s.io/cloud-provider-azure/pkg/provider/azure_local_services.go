@@ -424,7 +424,7 @@ func compareNodeIPs(previousIPs, currentIPs []string) []string {
 
 // getLocalServiceBackendPoolName gets the name of the backend pool of a local service.
 func getLocalServiceBackendPoolName(serviceName string, ipv6 bool) string {
-	serviceName = strings.ToLower(strings.ReplaceAll(serviceName, "/", "-"))
+	serviceName = strings.ToLower(strings.Replace(serviceName, "/", "-", -1))
 	if ipv6 {
 		return fmt.Sprintf("%s-%s", serviceName, consts.IPVersionIPv6StringLower)
 	}

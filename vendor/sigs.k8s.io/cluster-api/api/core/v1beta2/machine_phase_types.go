@@ -45,10 +45,6 @@ const (
 	// become a Kubernetes Node in a Ready state.
 	MachinePhaseRunning = MachinePhase("Running")
 
-	// MachinePhaseUpdating is the Machine state when the Machine
-	// is updating.
-	MachinePhaseUpdating = MachinePhase("Updating")
-
 	// MachinePhaseDeleting is the Machine state when a delete
 	// request has been sent to the API Server,
 	// but its infrastructure has not yet been fully deleted.

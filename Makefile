@@ -33,7 +33,7 @@ export GOPROXY
 export GO111MODULE=on
 
 # Kubebuilder.
-export KUBEBUILDER_ENVTEST_KUBERNETES_VERSION ?= 1.29.0
+export KUBEBUILDER_ENVTEST_KUBERNETES_VERSION ?= 1.29.5
 export KUBEBUILDER_CONTROLPLANE_START_TIMEOUT ?= 60s
 export KUBEBUILDER_CONTROLPLANE_STOP_TIMEOUT ?= 60s
 
@@ -130,12 +130,7 @@ CODESPELL_BIN := codespell
 CODESPELL_DIST_DIR := codespell_dist
 CODESPELL := $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/$(CODESPELL_BIN)
 
-SETUP_ENVTEST_VER := v0.0.0-20231012212722-e25aeebc7846
-SETUP_ENVTEST_BIN := setup-envtest
-SETUP_ENVTEST := $(abspath $(TOOLS_BIN_DIR)/$(SETUP_ENVTEST_BIN)-$(SETUP_ENVTEST_VER))
-SETUP_ENVTEST_PKG := sigs.k8s.io/controller-runtime/tools/setup-envtest
-
-KUBEBUILDER_ASSETS ?= $(shell $(SETUP_ENVTEST) use --use-env -p path $(KUBEBUILDER_ENVTEST_KUBERNETES_VERSION))
+ENVTEST_ASSETS_DIR ?= /tmp/controller-tools/envtest
 
 # Define Docker related variables. Releases should modify and double check these vars.
 ifeq (,$(shell command -v gcloud))
@@ -684,9 +679,20 @@ test: generate lint go-test-race ## Run "generate", "lint" and "go-test-race" ru
 go-test-race: TEST_ARGS+= -race
 go-test-race: go-test ## Run go tests with the race detector enabled.
 
+.PHONY: envtest
+envtest: ## Download envtest binaries if not present
+	@[ -f $(ENVTEST_ASSETS_DIR)/kube-apiserver ] || { \
+	set -e ;\
+	ARCH=$$(go env GOARCH) ;\
+	OS=$$(go env GOOS) ;\
+	echo "Downloading envtest binaries for k8s $(KUBEBUILDER_ENVTEST_KUBERNETES_VERSION) ($${OS}/$${ARCH})..." ;\
+	curl -fSL "https://github.com/kubernetes-sigs/controller-tools/releases/download/envtest-v$(KUBEBUILDER_ENVTEST_KUBERNETES_VERSION)/envtest-v$(KUBEBUILDER_ENVTEST_KUBERNETES_VERSION)-$${OS}-$${ARCH}.tar.gz" -o /tmp/envtest.tar.gz ;\
+	tar -xzf /tmp/envtest.tar.gz -C /tmp/ ;\
+	}
+
 .PHONY: go-test
-go-test: $(SETUP_ENVTEST) ## Run go tests.
-	KUBEBUILDER_ASSETS="$(KUBEBUILDER_ASSETS)" go test ./... $(TEST_ARGS)
+go-test: envtest ## Run go tests.
+	KUBEBUILDER_ASSETS="$(ENVTEST_ASSETS_DIR)" go test ./... $(TEST_ARGS)
 
 .PHONY: test-cover
 test-cover: TEST_ARGS+= -coverprofile coverage.out
@@ -797,7 +803,6 @@ kubectl: $(KUBECTL) ## Build a local copy of kubectl.
 helm: $(HELM) ## Build a local copy of helm.
 yq: $(YQ) ## Build a local copy of yq.
 kind: $(KIND) ## Build a local copy of kind.
-setup-envtest: $(SETUP_ENVTEST) ## Build a local copy of setup-envtest.
 codespell : $(CODESPELL) ## Build a local copy of codespell.
 
 $(CONVERSION_VERIFIER): go.mod
@@ -872,12 +877,6 @@ $(YQ_BIN): $(YQ) ## Building yq from the tools folder.
 
 .PHONY: $(KIND_BIN)
 $(KIND_BIN): $(KIND)
-
-.PHONY: $(SETUP_ENVTEST_BIN)
-$(SETUP_ENVTEST_BIN): $(SETUP_ENVTEST) ## Build a local copy of setup-envtest.
-
-$(SETUP_ENVTEST): # Build setup-envtest from tools folder.
-	GOBIN=$(TOOLS_BIN_DIR) $(GO_INSTALL) $(SETUP_ENVTEST_PKG) $(SETUP_ENVTEST_BIN) $(SETUP_ENVTEST_VER)
 
 $(CODESPELL): ## Build codespell from tools folder.
 	@which $(CODESPELL) >/dev/null || ( \

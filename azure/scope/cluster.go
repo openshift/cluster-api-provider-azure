@@ -54,6 +54,7 @@ import (
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/virtualnetworks"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/vnetpeerings"
 	"sigs.k8s.io/cluster-api-provider-azure/feature"
+	apiinternal "sigs.k8s.io/cluster-api-provider-azure/internal/api/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-azure/util/futures"
 	"sigs.k8s.io/cluster-api-provider-azure/util/tele"
 )
@@ -324,7 +325,7 @@ func (s *ClusterScope) LBSpecs() []azure.ResourceSpecGetter {
 				{
 					Name: s.APIServerLB().Name + "-internal-ip",
 					FrontendIPClass: infrav1.FrontendIPClass{
-						PrivateIPAddress: infrav1.DefaultInternalLBIPAddress,
+						PrivateIPAddress: apiinternal.DefaultInternalLBIPAddress,
 					},
 				},
 			}
@@ -910,6 +911,7 @@ func (s *ClusterScope) GenerateFQDN(ipName string) string {
 }
 
 // GenerateLegacyFQDN generates an IP name and a fully qualified domain name, based on a hash, cluster name and cluster location.
+//
 // Deprecated: use GenerateFQDN instead.
 func (s *ClusterScope) GenerateLegacyFQDN() (ip string, domain string) {
 	h := fnv.New32a()

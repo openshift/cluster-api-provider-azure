@@ -411,6 +411,7 @@ spec:
                   sharedGallery:
                     description: |-
                       SharedGallery specifies an image to use from an Azure Shared Image Gallery
+
                       Deprecated: use ComputeGallery instead.
                     properties:
                       gallery:
@@ -3830,6 +3831,7 @@ spec:
                           sharedGallery:
                             description: |-
                               SharedGallery specifies an image to use from an Azure Shared Image Gallery
+
                               Deprecated: use ComputeGallery instead.
                             properties:
                               gallery:
@@ -4294,14 +4296,12 @@ spec:
                   An empty allowedNamespaces object indicates that AzureClusters can use this identity from any namespace.
                   If this object is nil, no namespaces will be allowed (default behaviour, if this field is not provided)
                   A namespace should be either in the NamespaceList or match with Selector to use the identity.
-                nullable: true
                 properties:
                   list:
-                    description: A nil or empty list indicates that AzureCluster cannot
+                    description: An empty list indicates that AzureCluster cannot
                       use the identity from any namespace.
                     items:
                       type: string
-                    nullable: true
                     type: array
                   selector:
                     description: |-
@@ -4982,6 +4982,7 @@ spec:
                       sharedGallery:
                         description: |-
                           SharedGallery specifies an image to use from an Azure Shared Image Gallery
+
                           Deprecated: use ComputeGallery instead.
                         properties:
                           gallery:
@@ -5511,6 +5512,7 @@ spec:
                   sharedGallery:
                     description: |-
                       SharedGallery specifies an image to use from an Azure Shared Image Gallery
+
                       Deprecated: use ComputeGallery instead.
                     properties:
                       gallery:
@@ -10977,6 +10979,27 @@ webhooks:
     service:
       name: capz-webhook-service
       namespace: openshift-cluster-api
+      path: /mutate-infrastructure-cluster-x-k8s-io-v1beta1-azuremachinepool
+  failurePolicy: Fail
+  name: default.azuremachinepool.infrastructure.cluster.x-k8s.io
+  rules:
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    apiVersions:
+    - v1beta1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - azuremachinepools
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: capz-webhook-service
+      namespace: openshift-cluster-api
       path: /mutate-infrastructure-cluster-x-k8s-io-v1beta1-azurecluster
   failurePolicy: Fail
   matchPolicy: Equivalent
@@ -11143,6 +11166,16 @@ webhooks:
     resources:
     - azuremanagedmachinepooltemplates
   sideEffects: None
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
+  labels:
+    cluster.x-k8s.io/provider: infrastructure-azure
+  name: capz-validating-webhook-configuration
+webhooks:
 - admissionReviewVersions:
   - v1
   - v1beta1
@@ -11150,9 +11183,30 @@ webhooks:
     service:
       name: capz-webhook-service
       namespace: openshift-cluster-api
-      path: /mutate-infrastructure-cluster-x-k8s-io-v1beta1-azuremachinepool
+      path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-azuremachinepoolmachine
   failurePolicy: Fail
-  name: default.azuremachinepool.infrastructure.cluster.x-k8s.io
+  name: azuremachinepoolmachine.kb.io
+  rules:
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    apiVersions:
+    - v1beta1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - azuremachinepoolmachines
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: capz-webhook-service
+      namespace: openshift-cluster-api
+      path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-azuremachinepool
+  failurePolicy: Fail
+  name: validation.azuremachinepool.infrastructure.cluster.x-k8s.io
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
@@ -11164,16 +11218,6 @@ webhooks:
     resources:
     - azuremachinepools
   sideEffects: None
----
-apiVersion: admissionregistration.k8s.io/v1
-kind: ValidatingWebhookConfiguration
-metadata:
-  annotations:
-    service.beta.openshift.io/inject-cabundle: "true"
-  labels:
-    cluster.x-k8s.io/provider: infrastructure-azure
-  name: capz-validating-webhook-configuration
-webhooks:
 - admissionReviewVersions:
   - v1
   - v1beta1
@@ -11471,48 +11515,6 @@ webhooks:
     - DELETE
     resources:
     - azuremanagedmachinepooltemplates
-  sideEffects: None
-- admissionReviewVersions:
-  - v1
-  - v1beta1
-  clientConfig:
-    service:
-      name: capz-webhook-service
-      namespace: openshift-cluster-api
-      path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-azuremachinepoolmachine
-  failurePolicy: Fail
-  name: azuremachinepoolmachine.kb.io
-  rules:
-  - apiGroups:
-    - infrastructure.cluster.x-k8s.io
-    apiVersions:
-    - v1beta1
-    operations:
-    - CREATE
-    - UPDATE
-    resources:
-    - azuremachinepoolmachines
-  sideEffects: None
-- admissionReviewVersions:
-  - v1
-  - v1beta1
-  clientConfig:
-    service:
-      name: capz-webhook-service
-      namespace: openshift-cluster-api
-      path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-azuremachinepool
-  failurePolicy: Fail
-  name: validation.azuremachinepool.infrastructure.cluster.x-k8s.io
-  rules:
-  - apiGroups:
-    - infrastructure.cluster.x-k8s.io
-    apiVersions:
-    - v1beta1
-    operations:
-    - CREATE
-    - UPDATE
-    resources:
-    - azuremachinepools
   sideEffects: None
 ---
 apiVersion: v1

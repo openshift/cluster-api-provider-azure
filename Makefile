@@ -85,6 +85,9 @@ ENVSUBST := $(TOOLS_BIN_DIR)/$(ENVSUBST_BIN)-$(ENVSUBST_VER)
 GOLANGCI_LINT_VER := $(shell cat .github/workflows/pr-golangci-lint.yaml | grep [[:space:]]version: | sed 's/.*version: //')
 GOLANGCI_LINT_BIN := golangci-lint
 GOLANGCI_LINT := $(TOOLS_BIN_DIR)/$(GOLANGCI_LINT_BIN)-$(GOLANGCI_LINT_VER)
+# Custom golangci-lint binary with kube-api-linter module
+GOLANGCI_LINT_KAL_BIN := golangci-lint-kube-api-linter
+GOLANGCI_LINT_KAL := $(TOOLS_BIN_DIR)/$(GOLANGCI_LINT_KAL_BIN)
 
 GOVULNCHECK_BIN := govulncheck
 GOVULNCHECK_VER := v1.1.4
@@ -358,10 +361,10 @@ create-management-cluster: $(KUSTOMIZE) $(ENVSUBST) $(KUBECTL) $(KIND) ## Create
 	./hack/create-custom-cloud-provider-config.sh
 
 	# Deploy CAPI
-	timeout --foreground 300 bash -c "until curl --retry $(CURL_RETRIES) -sSL https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.12.3/cluster-api-components.yaml | $(ENVSUBST) | $(KUBECTL) apply -f - --server-side=true; do sleep 5; done"
+	timeout --foreground 300 bash -c "until curl --retry $(CURL_RETRIES) -sSL https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.12.4/cluster-api-components.yaml | $(ENVSUBST) | $(KUBECTL) apply -f - --server-side=true; do sleep 5; done"
 
 	# Deploy CAAPH
-	timeout --foreground 300 bash -c "until curl --retry $(CURL_RETRIES) -sSL https://github.com/kubernetes-sigs/cluster-api-addon-provider-helm/releases/download/v0.5.2/addon-components.yaml | $(ENVSUBST) | $(KUBECTL) apply -f - --server-side=true; do sleep 5; done"
+	timeout --foreground 300 bash -c "until curl --retry $(CURL_RETRIES) -sSL https://github.com/kubernetes-sigs/cluster-api-addon-provider-helm/releases/download/v0.6.1/addon-components.yaml | $(ENVSUBST) | $(KUBECTL) apply -f - --server-side=true; do sleep 5; done"
 
 	# Deploy CAPZ
 	if [ "$(MGMT_CLUSTER_TYPE)" != "aks" ]; then \
@@ -538,6 +541,7 @@ generate-manifests: $(CONTROLLER_GEN) ## Generate manifests e.g. CRD, RBAC etc.
 	$(CONTROLLER_GEN) \
 		paths=./api/... \
 		paths=./$(EXP_DIR)/api/... \
+		paths=./internal/webhooks/... \
 		crd:crdVersions=v1 \
 		rbac:roleName=base-manager-role \
 		output:crd:dir=$(CRD_ROOT) \
@@ -628,15 +632,15 @@ help: ## Display this help.
 ##@ Linting:
 
 .PHONY: lint
-lint: $(GOLANGCI_LINT) lint-azure-latest ## Lint the codebase.
-	$(GOLANGCI_LINT) run -v $(GOLANGCI_LINT_EXTRA_ARGS)
+lint: $(GOLANGCI_LINT_KAL) lint-azure-latest ## Lint the codebase.
+	$(GOLANGCI_LINT_KAL) run -v $(GOLANGCI_LINT_EXTRA_ARGS)
 
 .PHONY: lint-fast
-lint-fast: $(GOLANGCI_LINT) ## Lint the codebase with fast linters only.
+lint-fast: $(GOLANGCI_LINT_KAL) ## Lint the codebase with fast linters only.
 	GOLANGCI_LINT_EXTRA_ARGS+=--fast-only $(MAKE) lint
 
 .PHONY: lint-fix
-lint-fix: $(GOLANGCI_LINT) ## Lint the codebase and run auto-fixers if supported by the linter.
+lint-fix: $(GOLANGCI_LINT_KAL) ## Lint the codebase and run auto-fixers if supported by the linter.
 	GOLANGCI_LINT_EXTRA_ARGS+=--fix $(MAKE) lint
 
 .PHONY: lint-full
@@ -645,6 +649,14 @@ lint-full: $(GOLANGCI_LINT) lint ## Lint the codebase.
 .PHONY: lint-azure-latest ## Check for usage of the "latest" floating Azure API version.
 lint-azure-latest:
 	./hack/lint-azure-latest.sh
+
+.PHONY: lint-api
+lint-api: $(GOLANGCI_LINT_KAL) ## Run kube-api-linter on API types.
+	$(GOLANGCI_LINT_KAL) run ./api/... ./exp/api/... --enable-only kubeapilinter
+
+.PHONY: lint-api-fix
+lint-api-fix: $(GOLANGCI_LINT_KAL) ## Run kube-api-linter with auto-fix.
+	$(GOLANGCI_LINT_KAL) run ./api/... ./exp/api/... --enable-only kubeapilinter --fix
 
 ## --------------------------------------
 ## Release
@@ -886,6 +898,9 @@ $(GOVULNCHECK): # Build govulncheck.
 
 $(GOLANGCI_LINT): ## Build golangci-lint from tools folder.
 	GOBIN=$(TOOLS_BIN_DIR) $(GO_INSTALL) github.com/golangci/golangci-lint/v2/cmd/golangci-lint $(GOLANGCI_LINT_BIN) $(GOLANGCI_LINT_VER)
+
+$(GOLANGCI_LINT_KAL): $(GOLANGCI_LINT) .custom-gcl.yml ## Build custom golangci-lint with kube-api-linter module.
+	$(GOLANGCI_LINT) custom
 
 $(KUSTOMIZE): ## Build kustomize from tools folder.
 	GOBIN=$(TOOLS_BIN_DIR) $(GO_INSTALL) sigs.k8s.io/kustomize/kustomize/v5 $(KUSTOMIZE_BIN) $(KUSTOMIZE_VER)

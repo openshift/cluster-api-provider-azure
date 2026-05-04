@@ -10871,6 +10871,8 @@ spec:
         - --insecure-diagnostics=${CAPZ_INSECURE_DIAGNOSTICS:=false}
         - --feature-gates=MachinePool=${EXP_MACHINE_POOL:=false},AKSResourceHealth=${EXP_AKS_RESOURCE_HEALTH:=false},EdgeZone=${EXP_EDGEZONE:=false},ASOAPI=false
         - --v=0
+        - --tls-min-version=${TLS_MIN_VERSION}
+        - --tls-cipher-suites=${TLS_CIPHER_SUITES}
         env:
         - name: AZURE_SUBSCRIPTION_ID
           valueFrom:

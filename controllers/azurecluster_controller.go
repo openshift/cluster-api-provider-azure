@@ -242,7 +242,7 @@ func (acr *AzureClusterReconciler) reconcileNormal(ctx context.Context, clusterS
 
 		wrappedErr := errors.Wrap(err, "failed to reconcile cluster services")
 		acr.Recorder.Eventf(azureCluster, corev1.EventTypeWarning, "ClusterReconcilerNormalFailed", wrappedErr.Error())
-		conditions.MarkFalse(azureCluster, infrav1.NetworkInfrastructureReadyCondition, infrav1.FailedReason, clusterv1.ConditionSeverityError, wrappedErr.Error())
+		conditions.MarkFalse(azureCluster, infrav1.NetworkInfrastructureReadyCondition, infrav1.FailedReason, clusterv1.ConditionSeverityError, "%s", wrappedErr.Error())
 		return reconcile.Result{}, wrappedErr
 	}
 
@@ -319,7 +319,7 @@ func (acr *AzureClusterReconciler) reconcileDelete(ctx context.Context, clusterS
 
 		wrappedErr := errors.Wrapf(err, "error deleting AzureCluster %s/%s", azureCluster.Namespace, azureCluster.Name)
 		acr.Recorder.Eventf(azureCluster, corev1.EventTypeWarning, "ClusterReconcilerDeleteFailed", wrappedErr.Error())
-		conditions.MarkFalse(azureCluster, infrav1.NetworkInfrastructureReadyCondition, clusterv1.DeletionFailedReason, clusterv1.ConditionSeverityWarning, err.Error())
+		conditions.MarkFalse(azureCluster, infrav1.NetworkInfrastructureReadyCondition, clusterv1.DeletionFailedReason, clusterv1.ConditionSeverityWarning, "%s", err.Error())
 		return reconcile.Result{}, wrappedErr
 	}
 

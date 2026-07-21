@@ -10895,7 +10895,7 @@ spec:
             fieldRef:
               fieldPath: metadata.uid
         image: registry.ci.openshift.org/openshift:azure-cluster-api-controllers
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         livenessProbe:
           httpGet:
             path: /healthz

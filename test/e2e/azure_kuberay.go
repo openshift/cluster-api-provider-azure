@@ -41,8 +41,10 @@ const (
 	kubeRayOperatorHelmChartName   = "kuberay-operator"
 	kubeRayOperatorHelmReleaseName = "kuberay-operator"
 	kubeRayOperatorNamespace       = "default"
-	kubeRayVersion                 = "1.3.0"
-	rayImage                       = "rayproject/ray:2.41.0"
+	kubeRayVersion                 = "1.6.1"
+	rayVersion                     = "2.55.1"
+	rayImage                       = "rayproject/ray:" + rayVersion
+	objectStoreMemory              = "200000000" // ~200MB, prevents Ray from consuming all of /dev/shm
 )
 
 var rayClusterGVR = schema.GroupVersionResource{
@@ -285,79 +287,7 @@ func newRayClusterUnstructured(name, namespace string) *unstructured.Unstructure
 				"name":      name,
 				"namespace": namespace,
 			},
-			"spec": map[string]interface{}{
-				"rayVersion": "2.41.0",
-				"headGroupSpec": map[string]interface{}{
-					"rayStartParams": map[string]interface{}{
-						"dashboard-host": "0.0.0.0",
-					},
-					"template": map[string]interface{}{
-						"spec": map[string]interface{}{
-							"containers": []interface{}{
-								map[string]interface{}{
-									"name":  "ray-head",
-									"image": rayImage,
-									"ports": []interface{}{
-										map[string]interface{}{
-											"containerPort": int64(6379),
-											"name":          "gcs-server",
-										},
-										map[string]interface{}{
-											"containerPort": int64(8265),
-											"name":          "dashboard",
-										},
-										map[string]interface{}{
-											"containerPort": int64(10001),
-											"name":          "client",
-										},
-									},
-									"resources": map[string]interface{}{
-										"requests": map[string]interface{}{
-											"cpu":    "300m",
-											"memory": "1Gi",
-										},
-										"limits": map[string]interface{}{
-											"cpu":    "500m",
-											"memory": "2Gi",
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-				"workerGroupSpecs": []interface{}{
-					map[string]interface{}{
-						"replicas":    int64(1),
-						"minReplicas": int64(1),
-						"maxReplicas": int64(1),
-						"groupName":   "small-group",
-						"rayStartParams": map[string]interface{}{
-							"num-cpus": "1",
-						},
-						"template": map[string]interface{}{
-							"spec": map[string]interface{}{
-								"containers": []interface{}{
-									map[string]interface{}{
-										"name":  "ray-worker",
-										"image": rayImage,
-										"resources": map[string]interface{}{
-											"requests": map[string]interface{}{
-												"cpu":    "300m",
-												"memory": "1Gi",
-											},
-											"limits": map[string]interface{}{
-												"cpu":    "500m",
-												"memory": "1Gi",
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
+			"spec": rayClusterSpec(),
 		},
 	}
 }
@@ -398,73 +328,80 @@ func newRayJobUnstructured(name, namespace string) *unstructured.Unstructured {
 						},
 					},
 				},
-				"rayClusterSpec": map[string]interface{}{
-					"rayVersion": "2.41.0",
-					"headGroupSpec": map[string]interface{}{
-						"rayStartParams": map[string]interface{}{
-							"dashboard-host": "0.0.0.0",
-						},
-						"template": map[string]interface{}{
-							"spec": map[string]interface{}{
-								"containers": []interface{}{
-									map[string]interface{}{
-										"name":  "ray-head",
-										"image": rayImage,
-										"ports": []interface{}{
-											map[string]interface{}{
-												"containerPort": int64(6379),
-												"name":          "gcs-server",
-											},
-											map[string]interface{}{
-												"containerPort": int64(8265),
-												"name":          "dashboard",
-											},
-											map[string]interface{}{
-												"containerPort": int64(10001),
-												"name":          "client",
-											},
-										},
-										"resources": map[string]interface{}{
-											"requests": map[string]interface{}{
-												"cpu":    "300m",
-												"memory": "1Gi",
-											},
-											"limits": map[string]interface{}{
-												"cpu":    "500m",
-												"memory": "2Gi",
-											},
-										},
-									},
+				"rayClusterSpec": rayClusterSpec(),
+			},
+		},
+	}
+}
+
+// rayClusterSpec returns the shared RayCluster spec used by both RayCluster and RayJob resources.
+func rayClusterSpec() map[string]interface{} {
+	return map[string]interface{}{
+		"rayVersion": rayVersion,
+		"headGroupSpec": map[string]interface{}{
+			"rayStartParams": map[string]interface{}{
+				"dashboard-host":      "0.0.0.0",
+				"object-store-memory": objectStoreMemory,
+			},
+			"template": map[string]interface{}{
+				"spec": map[string]interface{}{
+					"containers": []interface{}{
+						map[string]interface{}{
+							"name":  "ray-head",
+							"image": rayImage,
+							"ports": []interface{}{
+								map[string]interface{}{
+									"containerPort": int64(6379),
+									"name":          "gcs-server",
+								},
+								map[string]interface{}{
+									"containerPort": int64(8265),
+									"name":          "dashboard",
+								},
+								map[string]interface{}{
+									"containerPort": int64(10001),
+									"name":          "client",
+								},
+							},
+							"resources": map[string]interface{}{
+								"requests": map[string]interface{}{
+									"cpu":    "500m",
+									"memory": "1Gi",
+								},
+								"limits": map[string]interface{}{
+									"cpu":    "1",
+									"memory": "4Gi",
 								},
 							},
 						},
 					},
-					"workerGroupSpecs": []interface{}{
-						map[string]interface{}{
-							"replicas":    int64(1),
-							"minReplicas": int64(1),
-							"maxReplicas": int64(1),
-							"groupName":   "small-group",
-							"rayStartParams": map[string]interface{}{
-								"num-cpus": "1",
-							},
-							"template": map[string]interface{}{
-								"spec": map[string]interface{}{
-									"containers": []interface{}{
-										map[string]interface{}{
-											"name":  "ray-worker",
-											"image": rayImage,
-											"resources": map[string]interface{}{
-												"requests": map[string]interface{}{
-													"cpu":    "300m",
-													"memory": "1Gi",
-												},
-												"limits": map[string]interface{}{
-													"cpu":    "500m",
-													"memory": "1Gi",
-												},
-											},
-										},
+				},
+			},
+		},
+		"workerGroupSpecs": []interface{}{
+			map[string]interface{}{
+				"replicas":    int64(1),
+				"minReplicas": int64(1),
+				"maxReplicas": int64(1),
+				"groupName":   "small-group",
+				"rayStartParams": map[string]interface{}{
+					"num-cpus":            "1",
+					"object-store-memory": objectStoreMemory,
+				},
+				"template": map[string]interface{}{
+					"spec": map[string]interface{}{
+						"containers": []interface{}{
+							map[string]interface{}{
+								"name":  "ray-worker",
+								"image": rayImage,
+								"resources": map[string]interface{}{
+									"requests": map[string]interface{}{
+										"cpu":    "300m",
+										"memory": "1Gi",
+									},
+									"limits": map[string]interface{}{
+										"cpu":    "500m",
+										"memory": "1Gi",
 									},
 								},
 							},

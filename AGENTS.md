@@ -117,6 +117,8 @@ make kind-reset
 
 **tilt-settings.yaml** is required with Azure credentials (see docs/book/src/developers/development.md for details).
 
+`make tilt-up` runs `check-az-cli`; if `az` is missing, it warns and tells you to install the Azure CLI and retry `make tilt-up` (needed for Tilt flows that call `az`, e.g. VNet peering with AKS as management cluster). Use `VERBOSE=1 make check-az-cli` to print the detected binary path.
+
 ### E2E Testing
 
 ```bash
@@ -201,7 +203,7 @@ make generate-go  # Regenerates mocks in azure/services/*/mock_*/
 - `main.go`: Entry point, registers controllers and webhooks
 - `Makefile`: All build/test/dev targets
 - `Tiltfile`: Local development with Tilt
-- `go.mod`: Go dependencies (uses Go 1.24+)
+- `go.mod`: Go dependencies (uses Go 1.25+)
 - `config/`: Kustomize configurations for CRDs, RBAC, webhooks, manager
 - `templates/`: Cluster template flavors for different scenarios
 - `test/e2e/`: E2E test suites and data files

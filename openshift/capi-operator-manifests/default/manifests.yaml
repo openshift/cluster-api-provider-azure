@@ -2,7 +2,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
     service.beta.openshift.io/inject-cabundle: "true"
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
@@ -266,6 +266,8 @@ spec:
                 description: |-
                   DisableVMBootstrapExtension specifies whether the VM bootstrap extension should be disabled on the virtual machine.
                   Use this setting if you want to disable only the bootstrapping extension and not all extensions.
+                  If unset, CAPZ treats this as true during reconciliation, meaning the bootstrap extension is not installed on new VMs.
+                  Set to false to opt back in to the bootstrap extension.
                 type: boolean
               dnsServers:
                 description: DNSServers adds a list of DNS Server IP addresses to
@@ -910,7 +912,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
     service.beta.openshift.io/inject-cabundle: "true"
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
@@ -1608,6 +1610,18 @@ spec:
                     description: APIServerLB is the configuration for the control-plane
                       load balancer.
                     properties:
+                      availabilityZones:
+                        description: |-
+                          AvailabilityZones is a list of availability zones for the load balancer.
+                          When specified for an internal load balancer, the frontend IP configuration
+                          will be zone-redundant across the specified zones.
+                          For public load balancers, this should be set on the associated public IP addresses instead.
+                        items:
+                          pattern: ^[1-3]$
+                          type: string
+                        maxItems: 3
+                        type: array
+                        x-kubernetes-list-type: set
                       backendPool:
                         description: BackendPool describes the backend pool of the
                           load balancer.
@@ -1691,6 +1705,18 @@ spec:
                       ControlPlaneOutboundLB is the configuration for the control-plane outbound load balancer.
                       This is different from APIServerLB, and is used only in private clusters (optionally) for enabling outbound traffic.
                     properties:
+                      availabilityZones:
+                        description: |-
+                          AvailabilityZones is a list of availability zones for the load balancer.
+                          When specified for an internal load balancer, the frontend IP configuration
+                          will be zone-redundant across the specified zones.
+                          For public load balancers, this should be set on the associated public IP addresses instead.
+                        items:
+                          pattern: ^[1-3]$
+                          type: string
+                        maxItems: 3
+                        type: array
+                        x-kubernetes-list-type: set
                       backendPool:
                         description: BackendPool describes the backend pool of the
                           load balancer.
@@ -1773,6 +1799,18 @@ spec:
                     description: NodeOutboundLB is the configuration for the node
                       outbound load balancer.
                     properties:
+                      availabilityZones:
+                        description: |-
+                          AvailabilityZones is a list of availability zones for the load balancer.
+                          When specified for an internal load balancer, the frontend IP configuration
+                          will be zone-redundant across the specified zones.
+                          For public load balancers, this should be set on the associated public IP addresses instead.
+                        items:
+                          pattern: ^[1-3]$
+                          type: string
+                        maxItems: 3
+                        type: array
+                        x-kubernetes-list-type: set
                       backendPool:
                         description: BackendPool describes the backend pool of the
                           load balancer.
@@ -2425,7 +2463,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
     service.beta.openshift.io/inject-cabundle: "true"
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
@@ -3411,7 +3449,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
     service.beta.openshift.io/inject-cabundle: "true"
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
@@ -3686,6 +3724,8 @@ spec:
                         description: |-
                           DisableVMBootstrapExtension specifies whether the VM bootstrap extension should be disabled on the virtual machine.
                           Use this setting if you want to disable only the bootstrapping extension and not all extensions.
+                          If unset, CAPZ treats this as true during reconciliation, meaning the bootstrap extension is not installed on new VMs.
+                          Set to false to opt back in to the bootstrap extension.
                         type: boolean
                       dnsServers:
                         description: DNSServers adds a list of DNS Server IP addresses
@@ -4225,7 +4265,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
     service.beta.openshift.io/inject-cabundle: "true"
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
@@ -4487,7 +4527,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
     service.beta.openshift.io/inject-cabundle: "true"
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
@@ -4868,6 +4908,14 @@ spec:
                         - storageAccountType
                         type: object
                     type: object
+                  disableVMBootstrapExtension:
+                    description: |-
+                      DisableVMBootstrapExtension specifies whether the VM bootstrap extension should be disabled on the virtual machine scale set.
+                      Use this setting if you want to disable only the bootstrapping extension and not all extensions.
+                      If unset, CAPZ treats this as true during reconciliation, meaning the bootstrap extension is not installed on new VMSSes.
+                      Set to false to opt back in to the bootstrap extension. Changing this field on an existing AzureMachinePool only takes
+                      effect on the next model-changing update of the underlying VMSS (e.g. image, identity, zones, or SKU change).
+                    type: boolean
                   image:
                     description: |-
                       Image is used to provide details of an image to use during VM creation.
@@ -5675,7 +5723,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -6426,7 +6474,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -6520,7 +6568,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -7561,7 +7609,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
     service.beta.openshift.io/inject-cabundle: "true"
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
@@ -7843,7 +7891,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -7914,7 +7962,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -8819,7 +8867,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -9444,7 +9492,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -9653,7 +9701,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -9776,7 +9824,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -10011,7 +10059,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -10144,7 +10192,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -10349,7 +10397,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -10605,6 +10653,7 @@ rules:
   - containerservice.azure.com
   resources:
   - fleetsmembers
+  - maintenanceconfigurations
   - managedclusters
   - managedclustersagentpools
   verbs:
@@ -10619,6 +10668,7 @@ rules:
   - containerservice.azure.com
   resources:
   - fleetsmembers/status
+  - maintenanceconfigurations/status
   - managedclusters/status
   - managedclustersagentpools/status
   verbs:
@@ -10981,30 +11031,6 @@ webhooks:
     service:
       name: capz-webhook-service
       namespace: openshift-cluster-api
-      path: /mutate-infrastructure-cluster-x-k8s-io-v1beta1-azuremachinepool
-  failurePolicy: Fail
-  name: default.azuremachinepool.infrastructure.cluster.x-k8s.io
-  namespaceSelector:
-    matchLabels:
-      kubernetes.io/metadata.name: openshift-cluster-api
-  rules:
-  - apiGroups:
-    - infrastructure.cluster.x-k8s.io
-    apiVersions:
-    - v1beta1
-    operations:
-    - CREATE
-    - UPDATE
-    resources:
-    - azuremachinepools
-  sideEffects: None
-- admissionReviewVersions:
-  - v1
-  - v1beta1
-  clientConfig:
-    service:
-      name: capz-webhook-service
-      namespace: openshift-cluster-api
       path: /mutate-infrastructure-cluster-x-k8s-io-v1beta1-azurecluster
   failurePolicy: Fail
   matchPolicy: Equivalent
@@ -11072,6 +11098,30 @@ webhooks:
     - UPDATE
     resources:
     - azuremachines
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: capz-webhook-service
+      namespace: openshift-cluster-api
+      path: /mutate-infrastructure-cluster-x-k8s-io-v1beta1-azuremachinepool
+  failurePolicy: Fail
+  name: default.azuremachinepool.infrastructure.cluster.x-k8s.io
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: openshift-cluster-api
+  rules:
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    apiVersions:
+    - v1beta1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - azuremachinepools
   sideEffects: None
 - admissionReviewVersions:
   - v1
@@ -11228,30 +11278,6 @@ webhooks:
     - UPDATE
     resources:
     - azuremachinepoolmachines
-  sideEffects: None
-- admissionReviewVersions:
-  - v1
-  - v1beta1
-  clientConfig:
-    service:
-      name: capz-webhook-service
-      namespace: openshift-cluster-api
-      path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-azuremachinepool
-  failurePolicy: Fail
-  name: validation.azuremachinepool.infrastructure.cluster.x-k8s.io
-  namespaceSelector:
-    matchLabels:
-      kubernetes.io/metadata.name: openshift-cluster-api
-  rules:
-  - apiGroups:
-    - infrastructure.cluster.x-k8s.io
-    apiVersions:
-    - v1beta1
-    operations:
-    - CREATE
-    - UPDATE
-    resources:
-    - azuremachinepools
   sideEffects: None
 - admissionReviewVersions:
   - v1
@@ -11421,6 +11447,30 @@ webhooks:
     - UPDATE
     resources:
     - azuremachines
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: capz-webhook-service
+      namespace: openshift-cluster-api
+      path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-azuremachinepool
+  failurePolicy: Fail
+  name: validation.azuremachinepool.infrastructure.cluster.x-k8s.io
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: openshift-cluster-api
+  rules:
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    apiVersions:
+    - v1beta1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - azuremachinepools
   sideEffects: None
 - admissionReviewVersions:
   - v1

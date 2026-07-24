@@ -923,6 +923,15 @@ var _ = Describe("Workload cluster creation", func() {
 					}
 				})
 			})
+
+			By("Verifying AKS maintenance configurations", func() {
+				AKSMaintenanceConfigurationSpec(ctx, func() AKSMaintenanceConfigurationSpecInput {
+					return AKSMaintenanceConfigurationSpecInput{
+						Cluster:       result.Cluster,
+						WaitForUpdate: e2eConfig.GetIntervals(specName, "wait-machine-pool-nodes"),
+					}
+				})
+			})
 		})
 	})
 
@@ -1050,7 +1059,7 @@ var _ = Describe("Workload cluster creation", func() {
 			clusterName = getClusterName(clusterNamePrefix, "cc")
 
 			// Init rke2 CP and bootstrap providers
-			rke2Version := "v0.21.1"
+			rke2Version := "v0.24.3"
 			initInput := clusterctl.InitInput{
 				// pass reference to the management cluster hosting this test
 				KubeconfigPath: bootstrapClusterProxy.GetKubeconfigPath(),
@@ -1075,7 +1084,7 @@ var _ = Describe("Workload cluster creation", func() {
 			//
 			// If that issue is resolved then we can remove this workaround.
 			objects, err := yaml.ToUnstructured([]byte(`
-apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
 kind: RKE2ControlPlaneTemplate
 metadata:
   name: dry-run
@@ -1085,7 +1094,7 @@ spec:
     spec:
       rolloutStrategy: {}
 ---
-apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
 kind: RKE2ConfigTemplate
 metadata:
   name: dry-run
@@ -1464,7 +1473,7 @@ spec:
 
 	// KubeRay tests deploy the KubeRay operator and verify Ray workloads run on a CAPZ cluster.
 	// These correspond to the RayCluster and RayJob E2E test cases from the KubeRay buildkite CI.
-	Context("Creating a cluster and deploying KubeRay [OPTIONAL]", func() {
+	Context("Creating an AKS cluster and deploying KubeRay [KubeRay]", func() {
 		It("Creates a RayCluster and verifies it becomes ready", func() {
 			clusterName = getClusterName(clusterNamePrefix, "kuberay")
 			kubernetesVersion, err := GetAKSKubernetesVersion(ctx, e2eConfig, AKSKubernetesVersion)
@@ -1514,6 +1523,95 @@ spec:
 				withControlPlaneWaiters(clusterctl.ControlPlaneWaiters{
 					WaitForControlPlaneInitialized:   WaitForAKSControlPlaneInitialized,
 					WaitForControlPlaneMachinesReady: WaitForAKSControlPlaneReady,
+				}),
+			), result)
+
+			By("Running the KubeRay RayJob spec", func() {
+				KubeRayJobSpec(ctx, func() KubeRayJobSpecInput {
+					return KubeRayJobSpecInput{
+						BootstrapClusterProxy: bootstrapClusterProxy,
+						Namespace:             namespace,
+						ClusterName:           clusterName,
+						SkipCleanup:           skipCleanup,
+					}
+				})
+			})
+
+			By("PASSED!")
+		})
+	})
+
+	// KubeRay tests on a self-managed VM-based cluster.
+	Context("Creating a self-managed cluster and deploying KubeRay [KubeRay]", func() {
+		It("Creates a RayCluster and verifies it becomes ready", func() {
+			clusterName = getClusterName(clusterNamePrefix, "vm-kuberay")
+			kubernetesVersion, err := resolveCIVersion("latest")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(os.Setenv("CI_VERSION", kubernetesVersion)).To(Succeed())
+			Expect(os.Setenv("CLOUD_PROVIDER_AZURE_LABEL", "azure-ci")).To(Succeed())
+
+			clusterctl.ApplyClusterTemplateAndWait(ctx, createApplyClusterTemplateInput(
+				specName,
+				withFlavor("ci-version"),
+				withNamespace(namespace.Name),
+				withClusterName(clusterName),
+				withKubernetesVersion(kubernetesVersion),
+				withControlPlaneMachineCount(1),
+				withWorkerMachineCount(1),
+				withControlPlaneWaiters(clusterctl.ControlPlaneWaiters{
+					WaitForControlPlaneInitialized: EnsureControlPlaneInitialized,
+				}),
+				withPostMachinesProvisioned(func() {
+					EnsureDaemonsets(ctx, func() DaemonsetsSpecInput {
+						return DaemonsetsSpecInput{
+							BootstrapClusterProxy: bootstrapClusterProxy,
+							Namespace:             namespace,
+							ClusterName:           clusterName,
+						}
+					})
+				}),
+			), result)
+
+			By("Running the KubeRay RayCluster spec", func() {
+				KubeRayClusterSpec(ctx, func() KubeRayClusterSpecInput {
+					return KubeRayClusterSpecInput{
+						BootstrapClusterProxy: bootstrapClusterProxy,
+						Namespace:             namespace,
+						ClusterName:           clusterName,
+						SkipCleanup:           skipCleanup,
+					}
+				})
+			})
+
+			By("PASSED!")
+		})
+
+		It("Creates a RayJob and verifies it completes successfully", func() {
+			clusterName = getClusterName(clusterNamePrefix, "vm-rayjob")
+			kubernetesVersion, err := resolveCIVersion("latest")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(os.Setenv("CI_VERSION", kubernetesVersion)).To(Succeed())
+			Expect(os.Setenv("CLOUD_PROVIDER_AZURE_LABEL", "azure-ci")).To(Succeed())
+
+			clusterctl.ApplyClusterTemplateAndWait(ctx, createApplyClusterTemplateInput(
+				specName,
+				withFlavor("ci-version"),
+				withNamespace(namespace.Name),
+				withClusterName(clusterName),
+				withKubernetesVersion(kubernetesVersion),
+				withControlPlaneMachineCount(1),
+				withWorkerMachineCount(1),
+				withControlPlaneWaiters(clusterctl.ControlPlaneWaiters{
+					WaitForControlPlaneInitialized: EnsureControlPlaneInitialized,
+				}),
+				withPostMachinesProvisioned(func() {
+					EnsureDaemonsets(ctx, func() DaemonsetsSpecInput {
+						return DaemonsetsSpecInput{
+							BootstrapClusterProxy: bootstrapClusterProxy,
+							Namespace:             namespace,
+							ClusterName:           clusterName,
+						}
+					})
 				}),
 			), result)
 

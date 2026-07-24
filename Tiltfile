@@ -22,15 +22,15 @@ settings = {
     "deploy_cert_manager": True,
     "preload_images_for_kind": True,
     "kind_cluster_name": "capz",
-    "capi_version": "v1.12.7",
-    "caaph_version": "v0.6.1",
+    "capi_version": "v1.13.3",
+    "caaph_version": "v0.6.2",
     "cert_manager_version": "v1.20.2",
-    "kubernetes_version": "v1.33.6",
+    "kubernetes_version": "v1.35.4",
     "aks_kubernetes_version": "v1.30.2",
     "flatcar_version": "3374.2.1",
     "azure_location": "eastus",
     "control_plane_machine_count": "1",
-    "az_control_plane_machine_type": "Standard_B2s",
+    "az_control_plane_machine_type": "Standard_D2s_v3",
     "worker_machine_count": "2",
     "az_node_machine_type": "Standard_B2s",
     "cluster_class_name": "default",
@@ -538,7 +538,6 @@ def waitforsystem():
     local(kubectl_cmd + " wait --for=condition=ready --timeout=300s pod --all -n capi-system")
 
 def peer_vnets():
-    # TODO: check for az cli to be installed in local
     peering_cmd = '''
     echo "--------Peering VNETs--------";
     az network vnet wait --resource-group ${AKS_RESOURCE_GROUP} --name ${AKS_MGMT_VNET_NAME} --created --timeout 180;

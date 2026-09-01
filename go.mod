@@ -40,7 +40,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.34.0
 	go.opentelemetry.io/otel/trace v1.34.0
 	go.uber.org/mock v0.4.0
-	golang.org/x/crypto v0.32.0
+	golang.org/x/crypto v0.33.0
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
 	golang.org/x/mod v0.21.0
 	golang.org/x/text v0.22.0
@@ -232,3 +232,5 @@ replace (
 replace google.golang.org/grpc => github.com/openshift-sustaining/grpc-go v1.71.3-sec.1
 
 replace golang.org/x/crypto => github.com/openshift-sustaining/crypto v0.33.0-sec.4
+
+replace golang.org/x/net => github.com/openshift-sustaining/net v0.35.0-sec.3

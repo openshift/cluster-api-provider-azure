@@ -110,8 +110,8 @@ func (acr *AzureClusterReconciler) SetupWithManager(ctx context.Context, mgr ctr
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=list;
 // +kubebuilder:rbac:groups=resources.azure.com,resources=resourcegroups,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=resources.azure.com,resources=resourcegroups/status,verbs=get;list;watch
-// +kubebuilder:rbac:groups=network.azure.com,resources=natgateways;bastionhosts;privateendpoints;virtualnetworks;virtualnetworkssubnets,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=network.azure.com,resources=natgateways/status;bastionhosts/status;privateendpoints/status;virtualnetworks/status;virtualnetworkssubnets/status,verbs=get;list;watch
+// +kubebuilder:rbac:groups=network.azure.com,resources=natgateways;bastionhosts;privateendpoints;privatelinkservices;virtualnetworks;virtualnetworkssubnets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=network.azure.com,resources=natgateways/status;bastionhosts/status;privateendpoints/status;privatelinkservices/status;virtualnetworks/status;virtualnetworkssubnets/status,verbs=get;list;watch
 
 // Reconcile idempotently gets, creates, and updates a cluster.
 func (acr *AzureClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
@@ -132,7 +132,7 @@ func (acr *AzureClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	err := acr.Get(ctx, req.NamespacedName, azureCluster)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			acr.Recorder.Eventf(azureCluster, corev1.EventTypeNormal, "AzureClusterObjectNotFound", err.Error())
+			acr.Recorder.Event(azureCluster, corev1.EventTypeNormal, "AzureClusterObjectNotFound", err.Error())
 			log.Info("object was not found")
 			return reconcile.Result{}, nil
 		}
@@ -162,7 +162,7 @@ func (acr *AzureClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	})
 	if err != nil {
 		err = errors.Wrap(err, "failed to create scope")
-		acr.Recorder.Eventf(azureCluster, corev1.EventTypeWarning, "CreateClusterScopeFailed", err.Error())
+		acr.Recorder.Event(azureCluster, corev1.EventTypeWarning, "CreateClusterScopeFailed", err.Error())
 		return reconcile.Result{}, err
 	}
 
@@ -226,7 +226,7 @@ func (acr *AzureClusterReconciler) reconcileNormal(ctx context.Context, clusterS
 		var reconcileError azure.ReconcileError
 		if errors.As(err, &reconcileError) {
 			if reconcileError.IsTerminal() {
-				acr.Recorder.Eventf(clusterScope.AzureCluster, corev1.EventTypeWarning, "ReconcileError", errors.Wrapf(err, "failed to reconcile AzureCluster").Error())
+				acr.Recorder.Event(clusterScope.AzureCluster, corev1.EventTypeWarning, "ReconcileError", errors.Wrapf(err, "failed to reconcile AzureCluster").Error())
 				log.Error(err, "failed to reconcile AzureCluster", "name", clusterScope.ClusterName())
 				v1beta1conditions.MarkFalse(azureCluster, infrav1.NetworkInfrastructureReadyCondition, infrav1.FailedReason, clusterv1beta1.ConditionSeverityError, "")
 				return reconcile.Result{}, nil

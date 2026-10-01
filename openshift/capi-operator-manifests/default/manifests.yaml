@@ -2,7 +2,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.21.0
     service.beta.openshift.io/inject-cabundle: "true"
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
@@ -706,6 +706,15 @@ spec:
                   - providerID
                   type: object
                 type: array
+              virtualMachineScaleSetID:
+                description: |-
+                  VirtualMachineScaleSetID specifies the VMSS Flex resource id that the virtual machine should be
+                  created in.
+                  The field input must be a valid Azure resource ID for a Virtual Machine Scale Set resource, for example
+                  '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/virtualMachineScaleSets/{vmssName}'.
+                  The referenced Virtual Machine Scale Set must already exist and use Flexible orchestration mode.
+                  It is optional but may not be changed once set.
+                type: string
               vmExtensions:
                 description: VMExtensions specifies a list of extensions to be added
                   to the virtual machine.
@@ -912,7 +921,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.21.0
     service.beta.openshift.io/inject-cabundle: "true"
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
@@ -1693,6 +1702,71 @@ spec:
                         type: integer
                       name:
                         type: string
+                      privateLinks:
+                        description: |-
+                          PrivateLinks to the load balancer (max 8 private links).
+                          Only supported on the API server load balancer.
+                        items:
+                          description: PrivateLink configures an Azure private link.
+                          properties:
+                            allowedSubscriptions:
+                              description: AllowedSubscriptions is a list of subscriptions
+                                from which the private link can be accessed.
+                              items:
+                                type: string
+                              type: array
+                            autoApprovedSubscriptions:
+                              description: |-
+                                AutoApprovedSubscriptions is a list of subscription for which the connections to private link are automatically
+                                approved.
+                              items:
+                                type: string
+                              type: array
+                            enableProxyProtocol:
+                              description: EnableProxyProtocol indicates whether the
+                                private link service is enabled for proxy protocol
+                                or not.
+                              type: boolean
+                            lbFrontendIPConfigNames:
+                              description: |-
+                                LBFrontendIPConfigNames are the names of the load balancer FrontendIP to which the private link will forward
+                                requests. The specified frontend IP configs must have the private IP set.
+                              items:
+                                type: string
+                              type: array
+                            name:
+                              description: Name of the private link.
+                              type: string
+                            natIPConfigurations:
+                              description: NATIPConfigurations specify up to 8 NAT
+                                IP configurations for the private link.
+                              items:
+                                description: PrivateLinkNATIPConfiguration specifies
+                                  NAT IP configuration for the private link.
+                                properties:
+                                  allocationMethod:
+                                    description: 'AllocationMethod specifies how the
+                                      private link NAT IPs are allocated: "Static"
+                                      or "Dynamic".'
+                                    enum:
+                                    - Static
+                                    - Dynamic
+                                    type: string
+                                  privateIPAddress:
+                                    type: string
+                                  subnet:
+                                    description: Subnet from which the IP is allocated.
+                                    type: string
+                                required:
+                                - allocationMethod
+                                - subnet
+                                type: object
+                              type: array
+                          required:
+                          - lbFrontendIPConfigNames
+                          - natIPConfigurations
+                          type: object
+                        type: array
                       sku:
                         description: SKU defines an Azure load balancer SKU.
                         type: string
@@ -1788,6 +1862,71 @@ spec:
                         type: integer
                       name:
                         type: string
+                      privateLinks:
+                        description: |-
+                          PrivateLinks to the load balancer (max 8 private links).
+                          Only supported on the API server load balancer.
+                        items:
+                          description: PrivateLink configures an Azure private link.
+                          properties:
+                            allowedSubscriptions:
+                              description: AllowedSubscriptions is a list of subscriptions
+                                from which the private link can be accessed.
+                              items:
+                                type: string
+                              type: array
+                            autoApprovedSubscriptions:
+                              description: |-
+                                AutoApprovedSubscriptions is a list of subscription for which the connections to private link are automatically
+                                approved.
+                              items:
+                                type: string
+                              type: array
+                            enableProxyProtocol:
+                              description: EnableProxyProtocol indicates whether the
+                                private link service is enabled for proxy protocol
+                                or not.
+                              type: boolean
+                            lbFrontendIPConfigNames:
+                              description: |-
+                                LBFrontendIPConfigNames are the names of the load balancer FrontendIP to which the private link will forward
+                                requests. The specified frontend IP configs must have the private IP set.
+                              items:
+                                type: string
+                              type: array
+                            name:
+                              description: Name of the private link.
+                              type: string
+                            natIPConfigurations:
+                              description: NATIPConfigurations specify up to 8 NAT
+                                IP configurations for the private link.
+                              items:
+                                description: PrivateLinkNATIPConfiguration specifies
+                                  NAT IP configuration for the private link.
+                                properties:
+                                  allocationMethod:
+                                    description: 'AllocationMethod specifies how the
+                                      private link NAT IPs are allocated: "Static"
+                                      or "Dynamic".'
+                                    enum:
+                                    - Static
+                                    - Dynamic
+                                    type: string
+                                  privateIPAddress:
+                                    type: string
+                                  subnet:
+                                    description: Subnet from which the IP is allocated.
+                                    type: string
+                                required:
+                                - allocationMethod
+                                - subnet
+                                type: object
+                              type: array
+                          required:
+                          - lbFrontendIPConfigNames
+                          - natIPConfigurations
+                          type: object
+                        type: array
                       sku:
                         description: SKU defines an Azure load balancer SKU.
                         type: string
@@ -1882,6 +2021,71 @@ spec:
                         type: integer
                       name:
                         type: string
+                      privateLinks:
+                        description: |-
+                          PrivateLinks to the load balancer (max 8 private links).
+                          Only supported on the API server load balancer.
+                        items:
+                          description: PrivateLink configures an Azure private link.
+                          properties:
+                            allowedSubscriptions:
+                              description: AllowedSubscriptions is a list of subscriptions
+                                from which the private link can be accessed.
+                              items:
+                                type: string
+                              type: array
+                            autoApprovedSubscriptions:
+                              description: |-
+                                AutoApprovedSubscriptions is a list of subscription for which the connections to private link are automatically
+                                approved.
+                              items:
+                                type: string
+                              type: array
+                            enableProxyProtocol:
+                              description: EnableProxyProtocol indicates whether the
+                                private link service is enabled for proxy protocol
+                                or not.
+                              type: boolean
+                            lbFrontendIPConfigNames:
+                              description: |-
+                                LBFrontendIPConfigNames are the names of the load balancer FrontendIP to which the private link will forward
+                                requests. The specified frontend IP configs must have the private IP set.
+                              items:
+                                type: string
+                              type: array
+                            name:
+                              description: Name of the private link.
+                              type: string
+                            natIPConfigurations:
+                              description: NATIPConfigurations specify up to 8 NAT
+                                IP configurations for the private link.
+                              items:
+                                description: PrivateLinkNATIPConfiguration specifies
+                                  NAT IP configuration for the private link.
+                                properties:
+                                  allocationMethod:
+                                    description: 'AllocationMethod specifies how the
+                                      private link NAT IPs are allocated: "Static"
+                                      or "Dynamic".'
+                                    enum:
+                                    - Static
+                                    - Dynamic
+                                    type: string
+                                  privateIPAddress:
+                                    type: string
+                                  subnet:
+                                    description: Subnet from which the IP is allocated.
+                                    type: string
+                                required:
+                                - allocationMethod
+                                - subnet
+                                type: object
+                              type: array
+                          required:
+                          - lbFrontendIPConfigNames
+                          - natIPConfigurations
+                          type: object
+                        type: array
                       sku:
                         description: SKU defines an Azure load balancer SKU.
                         type: string
@@ -2463,7 +2667,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.21.0
     service.beta.openshift.io/inject-cabundle: "true"
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
@@ -3449,7 +3653,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.21.0
     service.beta.openshift.io/inject-cabundle: "true"
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
@@ -4167,6 +4371,15 @@ spec:
                           - providerID
                           type: object
                         type: array
+                      virtualMachineScaleSetID:
+                        description: |-
+                          VirtualMachineScaleSetID specifies the VMSS Flex resource id that the virtual machine should be
+                          created in.
+                          The field input must be a valid Azure resource ID for a Virtual Machine Scale Set resource, for example
+                          '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/virtualMachineScaleSets/{vmssName}'.
+                          The referenced Virtual Machine Scale Set must already exist and use Flexible orchestration mode.
+                          It is optional but may not be changed once set.
+                        type: string
                       vmExtensions:
                         description: VMExtensions specifies a list of extensions to
                           be added to the virtual machine.
@@ -4265,7 +4478,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.21.0
     service.beta.openshift.io/inject-cabundle: "true"
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
@@ -4527,7 +4740,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.21.0
     service.beta.openshift.io/inject-cabundle: "true"
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
@@ -5660,6 +5873,14 @@ spec:
                   - latestModelApplied
                   type: object
                 type: array
+              lastReconciledReplicas:
+                description: |-
+                  LastReconciledReplicas is the desired replica count that was most recently reconciled onto the
+                  VMSS. It is used to tell an explicit scale-down (the desired count dropped below this value)
+                  apart from a rollout, where the desired count is unchanged and the extra instances come from
+                  surge capacity. Those two states are otherwise indistinguishable from the instance list alone.
+                format: int32
+                type: integer
               longRunningOperationStates:
                 description: |-
                   LongRunningOperationStates saves the state for Azure long-running operations so they can be continued on the
@@ -5723,7 +5944,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -6474,7 +6695,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -6568,7 +6789,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -7609,7 +7830,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.21.0
     service.beta.openshift.io/inject-cabundle: "true"
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
@@ -7891,7 +8112,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -7962,7 +8183,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -8867,7 +9088,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -9492,7 +9713,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -9701,7 +9922,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -9824,7 +10045,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -10059,7 +10280,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -10192,7 +10413,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -10397,7 +10618,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
     cluster.x-k8s.io/v1beta1: v1beta1
@@ -10767,6 +10988,7 @@ rules:
   - bastionhosts
   - natgateways
   - privateendpoints
+  - privatelinkservices
   - virtualnetworks
   - virtualnetworkssubnets
   verbs:
@@ -10783,6 +11005,7 @@ rules:
   - bastionhosts/status
   - natgateways/status
   - privateendpoints/status
+  - privatelinkservices/status
   - virtualnetworks/status
   - virtualnetworkssubnets/status
   verbs:
@@ -10820,6 +11043,41 @@ metadata:
   labels:
     cluster.x-k8s.io/provider: infrastructure-azure
   name: capz-manager-role
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    cluster.x-k8s.io/provider: infrastructure-azure
+  name: capz-kubeadm-bootstrap-managed-control-plane-reader-role
+rules:
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - azuremanagedcontrolplanes
+  - azureasomanagedcontrolplanes
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    cluster.x-k8s.io/provider: infrastructure-azure
+  name: capz-kubeadm-bootstrap-managed-control-plane-reader-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: capz-kubeadm-bootstrap-managed-control-plane-reader-role
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: Group
+  name: system:serviceaccounts:capi-kubeadm-bootstrap-system
+- kind: ServiceAccount
+  name: capi-kubeadm-bootstrap-manager
+  namespace: system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

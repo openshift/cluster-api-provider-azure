@@ -3,6 +3,9 @@ kind: Kustomization
 resources:
 - ../capz
 
+components:
+- ../aso
+
 replacements:
 - source:
     fieldPath: spec.template.spec.containers.[name=manager].image

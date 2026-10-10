@@ -652,6 +652,95 @@ func TestMachinePoolScope_NeedsRequeue(t *testing.T) {
 	}
 }
 
+func TestMachinePoolScope_RolloutInProgress(t *testing.T) {
+	var (
+		latestImage = infrav1.Image{ID: ptr.To("latest-image")}
+		oldImage    = infrav1.Image{ID: ptr.To("old-image")}
+	)
+
+	cases := []struct {
+		Name                   string
+		VMSSState              *azure.VMSS
+		DesiredReplicas        int32
+		LastReconciledReplicas *int32
+		Expected               bool
+	}{
+		{
+			Name:            "no rollout when the VMSS state is unknown",
+			VMSSState:       nil,
+			DesiredReplicas: 2,
+			Expected:        false,
+		},
+		{
+			Name: "no rollout when every instance is already on the latest model",
+			VMSSState: &azure.VMSS{
+				Image: latestImage,
+				Instances: []azure.VMSSVM{
+					{Name: "instance1", Image: latestImage},
+					{Name: "instance2", Image: latestImage},
+				},
+			},
+			DesiredReplicas: 2,
+			Expected:        false,
+		},
+		{
+			Name: "rollout when instances are still on an older model and the replica count is unchanged",
+			VMSSState: &azure.VMSS{
+				Image: latestImage,
+				Instances: []azure.VMSSVM{
+					{Name: "instance1", Image: oldImage},
+					{Name: "instance2", Image: oldImage},
+					{Name: "instance3", Image: latestImage},
+				},
+			},
+			DesiredReplicas:        2,
+			LastReconciledReplicas: ptr.To[int32](2),
+			Expected:               true,
+		},
+		{
+			Name: "no rollout when the replica count was explicitly lowered, even with mixed models",
+			VMSSState: &azure.VMSS{
+				Image: latestImage,
+				Instances: []azure.VMSSVM{
+					{Name: "instance1", Image: oldImage},
+					{Name: "instance2", Image: oldImage},
+					{Name: "instance3", Image: latestImage},
+				},
+			},
+			DesiredReplicas:        2,
+			LastReconciledReplicas: ptr.To[int32](3),
+			Expected:               false,
+		},
+		{
+			Name: "rollout when instances are on an older model and nothing has been reconciled yet",
+			VMSSState: &azure.VMSS{
+				Image: latestImage,
+				Instances: []azure.VMSSVM{
+					{Name: "instance1", Image: oldImage},
+				},
+			},
+			DesiredReplicas: 1,
+			Expected:        true,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.Name, func(t *testing.T) {
+			g := NewWithT(t)
+			s := &MachinePoolScope{
+				vmssState: c.VMSSState,
+				MachinePool: &clusterv1.MachinePool{
+					Spec: clusterv1.MachinePoolSpec{Replicas: ptr.To(c.DesiredReplicas)},
+				},
+				AzureMachinePool: &infrav1exp.AzureMachinePool{
+					Status: infrav1exp.AzureMachinePoolStatus{LastReconciledReplicas: c.LastReconciledReplicas},
+				},
+			}
+			g.Expect(s.RolloutInProgress()).To(Equal(c.Expected))
+		})
+	}
+}
+
 func TestMachinePoolScope_updateReplicasAndProviderIDs(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = clusterv1.AddToScheme(scheme)
@@ -1496,6 +1585,59 @@ func TestMachinePoolScope_applyAzureMachinePoolMachines(t *testing.T) {
 			},
 		},
 		{
+			// Regression test for the LatestModelApplied refresh. The AzureMachinePoolMachine reconciler may
+			// not have run since the VMSS model changed, leaving Status.LatestModelApplied stale. The scope
+			// must refresh it from live VMSS state before selecting machines to delete. Without the refresh
+			// the unready surge replacement ("ampm3") is misclassified as an old-model machine, counts as
+			// excess capacity, and is deleted while it is still booting.
+			Name: "refreshes stale LatestModelApplied from live VMSS state before selecting machines to delete",
+			Setup: func(mp *clusterv1.MachinePool, amp *infrav1exp.AzureMachinePool, vmssState *azure.VMSS, cb *fake.ClientBuilder) {
+				mp.Spec.Replicas = ptr.To[int32](2)
+
+				latestImage := infrav1.Image{ID: ptr.To("latest-model")}
+				oldImage := infrav1.Image{ID: ptr.To("old-model")}
+
+				// ampm1 already runs the latest model, but its status has not been reconciled since the change.
+				mpm1, ampm1 := getAzureMachinePoolMachineWithOwnerMachine(1)
+				ampm1.Status.LatestModelApplied = false
+				// ampm2 genuinely runs the old model and is the instance being replaced.
+				mpm2, ampm2 := getAzureMachinePoolMachineWithOwnerMachine(2)
+				ampm2.Status.LatestModelApplied = false
+				// ampm3 is the surge replacement: latest model, still booting, status not yet reconciled.
+				mpm3, ampm3 := getAzureMachinePoolMachineWithOwnerMachine(3)
+				ampm3.Status.LatestModelApplied = false
+				ampm3.Status.Ready = false
+
+				cb.WithObjects(&mpm1, &ampm1, &mpm2, &ampm2, &mpm3, &ampm3)
+
+				vmssState.Image = latestImage
+				vmssState.Instances = []azure.VMSSVM{
+					{
+						ID:    "/subscriptions/123/resourceGroups/my-rg/providers/Microsoft.Compute/virtualMachineScaleSets/my-vmss/virtualMachines/1",
+						Name:  "ampm1",
+						Image: latestImage,
+					},
+					{
+						ID:    "/subscriptions/123/resourceGroups/my-rg/providers/Microsoft.Compute/virtualMachineScaleSets/my-vmss/virtualMachines/2",
+						Name:  "ampm2",
+						Image: oldImage,
+					},
+					{
+						ID:    "/subscriptions/123/resourceGroups/my-rg/providers/Microsoft.Compute/virtualMachineScaleSets/my-vmss/virtualMachines/3",
+						Name:  "ampm3",
+						Image: latestImage,
+					},
+				}
+			},
+			Verify: func(g *WithT, amp *infrav1exp.AzureMachinePool, c client.Client, err error) {
+				g.Expect(err).NotTo(HaveOccurred())
+				list := clusterv1.MachineList{}
+				g.Expect(c.List(ctx, &list)).NotTo(HaveOccurred())
+				// The replacement is protected, so nothing is deleted while it comes up.
+				g.Expect(list.Items).Should(HaveLen(3))
+			},
+		},
+		{
 			Name: "if MachinePool is not externally managed, and Machines have delete machine annotation, and overProvisionCount > 0, delete machines with deleteMachine annotation first",
 			Setup: func(mp *clusterv1.MachinePool, amp *infrav1exp.AzureMachinePool, vmssState *azure.VMSS, cb *fake.ClientBuilder) {
 				mp.Spec.Replicas = ptr.To[int32](2)
@@ -1895,9 +2037,13 @@ func TestMachinePoolScope_setProvisioningStateAndConditions(t *testing.T) {
 			ProvisioningState: infrav1.Deleting,
 		},
 		{
-			Name:  "if provisioning state is set to Failed, MachinePool ready state is not adjusted, and scale set running condition is set to Failed",
-			Setup: func(mp *clusterv1.MachinePool, amp *infrav1exp.AzureMachinePool, cb *fake.ClientBuilder) {},
+			Name: "if provisioning state is set to Failed, MachinePool is NotReady and scale set running condition is set to Failed",
+			Setup: func(mp *clusterv1.MachinePool, amp *infrav1exp.AzureMachinePool, cb *fake.ClientBuilder) {
+				// A previously-ready MachinePool (e.g. a stalled scale-up) must be marked NotReady when it fails.
+				amp.Status.Ready = true
+			},
 			Verify: func(g *WithT, amp *infrav1exp.AzureMachinePool, c client.Client) {
+				g.Expect(amp.Status.Ready).To(BeFalse())
 				condition := v1beta1conditions.Get(amp, infrav1.ScaleSetRunningCondition)
 				g.Expect(condition.Status).To(Equal(corev1.ConditionFalse))
 				g.Expect(condition.Reason).To(Equal(infrav1.ScaleSetProvisionFailedReason))
@@ -1905,9 +2051,41 @@ func TestMachinePoolScope_setProvisioningStateAndConditions(t *testing.T) {
 			ProvisioningState: infrav1.Failed,
 		},
 		{
-			Name:  "if provisioning state is set to something not explicitly handled, MachinePool ready state is not adjusted, and scale set running condition is set to the ProvisioningState",
-			Setup: func(mp *clusterv1.MachinePool, amp *infrav1exp.AzureMachinePool, cb *fake.ClientBuilder) {},
+			Name: "if provisioning state is set to Canceled, MachinePool is NotReady and scale set running condition is set to the ProvisioningState",
+			Setup: func(mp *clusterv1.MachinePool, amp *infrav1exp.AzureMachinePool, cb *fake.ClientBuilder) {
+				// A previously-ready MachinePool (e.g. an aborted scale operation reporting Canceled) must be marked NotReady.
+				amp.Status.Ready = true
+			},
 			Verify: func(g *WithT, amp *infrav1exp.AzureMachinePool, c client.Client) {
+				g.Expect(amp.Status.Ready).To(BeFalse())
+				condition := v1beta1conditions.Get(amp, infrav1.ScaleSetRunningCondition)
+				g.Expect(condition.Status).To(Equal(corev1.ConditionFalse))
+				g.Expect(condition.Reason).To(Equal(string(infrav1.Canceled)))
+			},
+			ProvisioningState: infrav1.Canceled,
+		},
+		{
+			Name: "if provisioning state is set to Deleted, MachinePool is NotReady and scale set running condition is set to the ProvisioningState",
+			Setup: func(mp *clusterv1.MachinePool, amp *infrav1exp.AzureMachinePool, cb *fake.ClientBuilder) {
+				amp.Status.Ready = true
+			},
+			Verify: func(g *WithT, amp *infrav1exp.AzureMachinePool, c client.Client) {
+				g.Expect(amp.Status.Ready).To(BeFalse())
+				condition := v1beta1conditions.Get(amp, infrav1.ScaleSetRunningCondition)
+				g.Expect(condition.Status).To(Equal(corev1.ConditionFalse))
+				g.Expect(condition.Reason).To(Equal(string(infrav1.Deleted)))
+			},
+			ProvisioningState: infrav1.Deleted,
+		},
+		{
+			Name: "if provisioning state is set to Migrating, MachinePool Ready status is left unchanged and scale set running condition is set to the ProvisioningState",
+			Setup: func(mp *clusterv1.MachinePool, amp *infrav1exp.AzureMachinePool, cb *fake.ClientBuilder) {
+				// Migrating is not a terminal state; a previously-ready MachinePool must stay Ready so CAPI
+				// keeps updating spec.providerIDList instead of returning early (see #5537).
+				amp.Status.Ready = true
+			},
+			Verify: func(g *WithT, amp *infrav1exp.AzureMachinePool, c client.Client) {
+				g.Expect(amp.Status.Ready).To(BeTrue())
 				condition := v1beta1conditions.Get(amp, infrav1.ScaleSetRunningCondition)
 				g.Expect(condition.Status).To(Equal(corev1.ConditionFalse))
 				g.Expect(condition.Reason).To(Equal(string(infrav1.Migrating)))

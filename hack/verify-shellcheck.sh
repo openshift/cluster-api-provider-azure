@@ -60,7 +60,7 @@ cd "${CAPZ_ROOT}"
 # - Anything git-ignored - No need to lint untracked files.
 # - ./_* - No need to lint output directories.
 # - ./.git/* - Ignore anything in the git object store.
-# - ./vendor* - Vendored code should be fixed upstream instead.
+# - */vendor/* - Vendored code should be fixed upstream instead.
 # - ./third_party/*, but re-include ./third_party/forked/*  - only code we
 #    forked should be linted and fixed.
 all_shell_scripts=()
@@ -70,7 +70,7 @@ done < <(find . -name "*.sh" \
   -not \( \
     -path ./_\*      -o \
     -path ./.git\*   -o \
-    -path ./vendor\* -o \
+    -path '*/vendor/*' -o \
     \( -path ./third_party\* -a -not -path ./third_party/forked\* \) \
   \))
 

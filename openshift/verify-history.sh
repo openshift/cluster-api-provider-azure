@@ -19,7 +19,7 @@
 check_base="${PULL_BASE_SHA:-HEAD^}"
 check_sha="${PULL_PULL_SHA:-HEAD}"
 
-read -d '' help_message << EOF
+read -r -d '' help_message << EOF
 commit messages should look like one of:
 UPSTREAM: <carry>: message  (commits that should be carried indefinitely)
 UPSTREAM: <drop>: message   (commits that should be dropped on the next upstream rebase)

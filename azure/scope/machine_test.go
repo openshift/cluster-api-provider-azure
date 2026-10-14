@@ -17,6 +17,7 @@ limitations under the License.
 package scope
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
@@ -25,13 +26,18 @@ import (
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	"go.uber.org/mock/gomock"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/component-base/featuregate"
 	featuregatetesting "k8s.io/component-base/featuregate/testing"
 	"k8s.io/utils/ptr"
 	clusterv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	v1beta1conditions "sigs.k8s.io/cluster-api/util/deprecated/v1beta1/conditions"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-azure/azure"
@@ -45,7 +51,68 @@ import (
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/virtualmachineimages"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/vmextensions"
 	"sigs.k8s.io/cluster-api-provider-azure/feature"
+	"sigs.k8s.io/cluster-api-provider-azure/util/reconciler"
 )
+
+func TestMachineScope_ReapplyConditionSummary(t *testing.T) {
+	t.Parallel()
+	future := &infrav1.Future{Type: infrav1.PutFuture, ServiceName: "virtualmachine-reapply", Name: "test-vm", ResourceGroup: "test-group"}
+	testcases := []struct {
+		name     string
+		err      error
+		reason   string
+		severity clusterv1beta1.ConditionSeverity
+	}{
+		{name: "pending mocked Reapply persists false summarized Ready with legacy boolean unchanged", err: azure.WithTransientError(azure.NewOperationNotDoneError(future), reconciler.DefaultReconcilerRequeue), reason: infrav1.CreatingReason, severity: clusterv1beta1.ConditionSeverityInfo},
+		{name: "terminal mocked Reapply persists false summarized Ready with legacy boolean unchanged", err: errors.New("failed to reapply VM"), reason: infrav1.FailedReason, severity: clusterv1beta1.ConditionSeverityError},
+		{name: "malformed future persists false summarized Ready with legacy boolean unchanged", err: errors.New("could not decode reapply future data"), reason: infrav1.FailedReason, severity: clusterv1beta1.ConditionSeverityError},
+		{name: "post-reapply GET error persists false summarized Ready with legacy boolean unchanged", err: azure.WithTransientError(errors.New("failed to get VM after reapply"), reconciler.DefaultReconcilerRequeue), reason: infrav1.FailedReason, severity: clusterv1beta1.ConditionSeverityError},
+		{name: "completed mocked Reapply and refetch restore summarized Ready", err: nil},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			scheme := runtime.NewScheme()
+			g.Expect(infrav1.AddToScheme(scheme)).To(Succeed())
+			machine := &infrav1.AzureMachine{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-vm", Namespace: "default"},
+				Status:     infrav1.AzureMachineStatus{Ready: true},
+			}
+			for _, condition := range []clusterv1beta1.ConditionType{infrav1.VMRunningCondition, infrav1.DisksReadyCondition} {
+				if tc.err == nil {
+					v1beta1conditions.MarkFalse(machine, condition, infrav1.CreatingReason, clusterv1beta1.ConditionSeverityInfo, "mock recovery pending")
+				} else {
+					v1beta1conditions.MarkTrue(machine, condition)
+				}
+			}
+			v1beta1conditions.SetSummary(machine)
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(machine).WithObjects(machine).Build()
+			persisted := &infrav1.AzureMachine{}
+			g.Expect(fakeClient.Get(t.Context(), client.ObjectKeyFromObject(machine), persisted)).To(Succeed())
+			machineScope, err := NewMachineScope(MachineScopeParams{Client: fakeClient, Machine: &clusterv1.Machine{}, AzureMachine: persisted})
+			g.Expect(err).NotTo(HaveOccurred())
+			for _, condition := range []clusterv1beta1.ConditionType{infrav1.VMRunningCondition, infrav1.DisksReadyCondition} {
+				machineScope.UpdatePutStatus(condition, "virtualmachine", tc.err)
+			}
+			g.Expect(machineScope.Close(t.Context())).To(Succeed())
+			refetched := &infrav1.AzureMachine{}
+			g.Expect(fakeClient.Get(t.Context(), client.ObjectKeyFromObject(machine), refetched)).To(Succeed())
+			for _, conditionType := range []clusterv1beta1.ConditionType{infrav1.VMRunningCondition, infrav1.DisksReadyCondition, clusterv1beta1.ReadyCondition} {
+				condition := v1beta1conditions.Get(refetched, conditionType)
+				g.Expect(condition).NotTo(BeNil())
+				if tc.err == nil {
+					g.Expect(condition.Status).To(Equal(corev1.ConditionTrue))
+				} else {
+					g.Expect(condition.Status).To(Equal(corev1.ConditionFalse))
+					g.Expect(condition.Reason).To(Equal(tc.reason))
+					g.Expect(condition.Severity).To(Equal(tc.severity))
+				}
+			}
+			g.Expect(refetched.Status.Ready).To(BeTrue())
+		})
+	}
+}
 
 func TestMachineScope_Name(t *testing.T) {
 	tests := []struct {

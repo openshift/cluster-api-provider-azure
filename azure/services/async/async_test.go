@@ -20,12 +20,14 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -40,6 +42,26 @@ import (
 	gomockinternal "sigs.k8s.io/cluster-api-provider-azure/internal/test/matchers/gomock"
 	"sigs.k8s.io/cluster-api-provider-azure/util/reconciler"
 )
+
+func TestGetRetryAfterFromError(t *testing.T) {
+	t.Parallel()
+	testcases := []struct {
+		name string
+		err  error
+		want time.Duration
+	}{
+		{name: "non SDK error defaults", err: errors.New("mock failure"), want: reconciler.DefaultReconcilerRequeue},
+		{name: "missing response defaults", err: &azcore.ResponseError{}, want: reconciler.DefaultReconcilerRequeue},
+		{name: "invalid header defaults", err: &azcore.ResponseError{RawResponse: &http.Response{Header: http.Header{"Retry-After": []string{"invalid"}}}}, want: reconciler.DefaultReconcilerRequeue},
+		{name: "wrapped SDK error honors Retry-After", err: fmt.Errorf("mock GET: %w", &azcore.ResponseError{RawResponse: &http.Response{Header: http.Header{"Retry-After": []string{"30"}}}}), want: 30 * time.Second},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			NewWithT(t).Expect(GetRetryAfterFromError(tc.err)).To(Equal(tc.want))
+		})
+	}
+}
 
 func TestServiceCreateOrUpdateResource(t *testing.T) {
 	testcases := []struct {

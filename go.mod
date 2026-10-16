@@ -42,7 +42,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.37.0
 	go.opentelemetry.io/otel/trace v1.37.0
 	go.uber.org/mock v0.5.0
-	golang.org/x/crypto v0.40.0
+	golang.org/x/crypto v0.52.0
 	golang.org/x/exp v0.0.0-20241009180824-f66d83c29e7c
 	golang.org/x/mod v0.26.0
 	golang.org/x/text v0.28.0

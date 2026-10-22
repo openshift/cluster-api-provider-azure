@@ -11163,6 +11163,7 @@ spec:
   template:
     metadata:
       annotations:
+        capi-operator.openshift.io/inject-proxy: manager
         kubectl.kubernetes.io/default-container: manager
         openshift.io/required-scc: restricted-v2
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'

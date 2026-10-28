@@ -452,7 +452,7 @@ func TestReconcileVM(t *testing.T) {
 				Reconciler:       asyncMock,
 			}
 
-			err := s.Reconcile(context.TODO())
+			err := s.Reconcile(t.Context())
 			if tc.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(strings.ReplaceAll(err.Error(), "\n", "")).To(MatchRegexp(tc.expectedError))
@@ -528,7 +528,7 @@ func TestDeleteVM(t *testing.T) {
 				Reconciler: asyncMock,
 			}
 
-			err := s.Delete(context.TODO())
+			err := s.Delete(t.Context())
 			if tc.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.expectedError))
@@ -637,7 +637,7 @@ func TestCheckUserAssignedIdentities(t *testing.T) {
 				identitiesGetter: identitiesMock,
 			}
 
-			err := s.checkUserAssignedIdentities(context.TODO(), tc.specIdentities, tc.actualIdentities)
+			err := s.checkUserAssignedIdentities(t.Context(), tc.specIdentities, tc.actualIdentities)
 			if tc.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.expectedError))

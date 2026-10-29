@@ -134,7 +134,7 @@ func TestAllowedNamespaces(t *testing.T) {
 			initObjects := []runtime.Object{tc.identity, fakeNamespace}
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initObjects...).Build()
 
-			actual := IsClusterNamespaceAllowed(context.TODO(), fakeClient, tc.identity.Spec.AllowedNamespaces, tc.clusterNamespace)
+			actual := IsClusterNamespaceAllowed(t.Context(), fakeClient, tc.identity.Spec.AllowedNamespaces, tc.clusterNamespace)
 			g.Expect(actual).To(Equal(tc.expected))
 		})
 	}
@@ -438,26 +438,7 @@ func TestGetTokenCredential(t *testing.T) {
 					UserAssignedIdentityCredentialsCloudType: "public",
 				},
 			},
-			cacheExpect: func(cache *mock_azure.MockCredentialCache) {
-				ctx := context.Background()
-				credsPath := "../../test/setup/credentials.json" //nolint:gosec
-				clientOptions := azcore.ClientOptions{
-					Cloud: cloud.Configuration{
-						ActiveDirectoryAuthorityHost: "https://login.microsoftonline.com/",
-						Services: map[cloud.ServiceName]cloud.ServiceConfiguration{
-							cloud.ResourceManager: {
-								Audience: "https://management.core.windows.net/",
-								Endpoint: "https://management.azure.com",
-							},
-						},
-					},
-				}
-				cache.EXPECT().GetOrStoreUserAssignedManagedIdentityCredentials(ctx, credsPath, gomock.Cond(func(opts azcore.ClientOptions) bool {
-					return opts.Cloud.ActiveDirectoryAuthorityHost == clientOptions.Cloud.ActiveDirectoryAuthorityHost &&
-						opts.Cloud.Services[cloud.ResourceManager].Audience == clientOptions.Cloud.Services[cloud.ResourceManager].Audience &&
-						opts.Cloud.Services[cloud.ResourceManager].Endpoint == clientOptions.Cloud.Services[cloud.ResourceManager].Endpoint
-				}), gomock.Any())
-			},
+			cacheExpect: expectUserAssignedIdentityCredentialCache,
 		},
 	}
 
@@ -481,12 +462,33 @@ func TestGetTokenCredential(t *testing.T) {
 			cache := mock_azure.NewMockCredentialCache(mockCtrl)
 			tt.cacheExpect(cache)
 
-			provider, err := NewAzureCredentialsProvider(context.Background(), cache, fakeClient, tt.cluster.Spec.IdentityRef, "")
+			provider, err := NewAzureCredentialsProvider(t.Context(), cache, fakeClient, tt.cluster.Spec.IdentityRef, "")
 			g.Expect(err).NotTo(HaveOccurred())
-			_, err = provider.GetTokenCredential(context.Background(), "", tt.ActiveDirectoryAuthorityHost, "")
+			_, err = provider.GetTokenCredential(t.Context(), "", tt.ActiveDirectoryAuthorityHost, "")
 			g.Expect(err).NotTo(HaveOccurred())
 		})
 	}
+}
+
+func expectUserAssignedIdentityCredentialCache(cache *mock_azure.MockCredentialCache) {
+	ctx := context.Background()
+	credsPath := "../../test/setup/credentials.json" //nolint:gosec
+	clientOptions := azcore.ClientOptions{
+		Cloud: cloud.Configuration{
+			ActiveDirectoryAuthorityHost: "https://login.microsoftonline.com/",
+			Services: map[cloud.ServiceName]cloud.ServiceConfiguration{
+				cloud.ResourceManager: {
+					Audience: "https://management.core.windows.net/",
+					Endpoint: "https://management.azure.com",
+				},
+			},
+		},
+	}
+	cache.EXPECT().GetOrStoreUserAssignedManagedIdentityCredentials(ctx, credsPath, gomock.Cond(func(opts azcore.ClientOptions) bool {
+		return opts.Cloud.ActiveDirectoryAuthorityHost == clientOptions.Cloud.ActiveDirectoryAuthorityHost &&
+			opts.Cloud.Services[cloud.ResourceManager].Audience == clientOptions.Cloud.Services[cloud.ResourceManager].Audience &&
+			opts.Cloud.Services[cloud.ResourceManager].Endpoint == clientOptions.Cloud.Services[cloud.ResourceManager].Endpoint
+	}), gomock.Any())
 }
 
 func TestParseCloudType(t *testing.T) {

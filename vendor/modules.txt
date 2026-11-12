@@ -106,8 +106,8 @@ github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal
 # github.com/Azure/azure-sdk-for-go/sdk/tracing/azotel v0.4.0
 ## explicit; go 1.19
 github.com/Azure/azure-sdk-for-go/sdk/tracing/azotel
-# github.com/Azure/azure-service-operator/v2 v2.19.0
-## explicit; go 1.25.7
+# github.com/Azure/azure-service-operator/v2 v2.20.0
+## explicit; go 1.26.0
 github.com/Azure/azure-service-operator/v2/api/containerservice/v1api20240901
 github.com/Azure/azure-service-operator/v2/api/containerservice/v1api20240901/arm
 github.com/Azure/azure-service-operator/v2/api/containerservice/v1api20240901/storage
@@ -546,7 +546,7 @@ github.com/olekukonko/tablewriter/pkg/twwarp
 github.com/olekukonko/tablewriter/pkg/twwidth
 github.com/olekukonko/tablewriter/renderer
 github.com/olekukonko/tablewriter/tw
-# github.com/onsi/ginkgo/v2 v2.33.0
+# github.com/onsi/ginkgo/v2 v2.33.1
 ## explicit; go 1.25.0
 github.com/onsi/ginkgo/v2
 github.com/onsi/ginkgo/v2/config
@@ -613,7 +613,7 @@ github.com/pkg/browser
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
-# github.com/pkg/sftp v1.13.11
+# github.com/pkg/sftp v1.13.12
 ## explicit; go 1.25.0
 github.com/pkg/sftp
 github.com/pkg/sftp/internal/encoding/ssh/filexfer
@@ -825,7 +825,6 @@ golang.org/x/crypto/ssh
 golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
 # golang.org/x/exp v0.0.0-20251219203646-944ab1f22d93
 ## explicit; go 1.24.0
-golang.org/x/exp/constraints
 golang.org/x/exp/maps
 golang.org/x/exp/slices
 # golang.org/x/mod v0.42.0
@@ -1854,7 +1853,7 @@ sigs.k8s.io/cloud-provider-azure/pkg/azclient/virtualnetworklinkclient/mock_virt
 # sigs.k8s.io/cloud-provider-azure/pkg/azclient/configloader v0.8.4
 ## explicit; go 1.24.6
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/configloader
-# sigs.k8s.io/cluster-api v1.14.2
+# sigs.k8s.io/cluster-api v1.14.3
 ## explicit; go 1.26.0
 sigs.k8s.io/cluster-api/cmd/clusterctl/api/v1alpha3
 sigs.k8s.io/cluster-api/cmd/clusterctl/client

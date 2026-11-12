@@ -1,6 +1,6 @@
 attributes:
   type: infrastructure
-  version: release-1.27
+  version: v1.28.1
 installOrder: 20
 name: cluster-api-provider-azure
 ocpPlatform: Azure

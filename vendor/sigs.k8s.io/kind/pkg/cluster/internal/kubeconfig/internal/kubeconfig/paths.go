@@ -22,7 +22,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"k8s.io/apimachinery/pkg/util/sets"
+	"sigs.k8s.io/kind/pkg/internal/sets"
 )
 
 const kubeconfigEnv = "KUBECONFIG"
@@ -31,7 +31,7 @@ const kubeconfigEnv = "KUBECONFIG"
 paths returns the list of paths to be considered for kubeconfig files
 where explicitPath is the value of --kubeconfig
 
-Logic based on kubectl
+# Logic based on kubectl
 
 https://kubernetes.io/docs/reference/generated/kubectl/kubectl-commands
 
@@ -74,7 +74,7 @@ func pathForMerge(explicitPath string, getEnv func(string) string) string {
 
 func fileExists(filename string) bool {
 	info, err := os.Stat(filename)
-	if os.IsNotExist(err) {
+	if err != nil {
 		return false
 	}
 	return !info.IsDir()

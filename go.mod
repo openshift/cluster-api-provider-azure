@@ -2,7 +2,7 @@ module sigs.k8s.io/cluster-api-provider-azure
 
 go 1.26.0
 
-toolchain go1.26.9
+toolchain go1.26.10
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3
@@ -19,7 +19,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcehealth/armresourcehealth v1.4.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/tracing/azotel v0.4.0
-	github.com/Azure/azure-service-operator/v2 v2.19.0
+	github.com/Azure/azure-service-operator/v2 v2.20.0
 	github.com/Azure/msi-dataplane v0.4.3
 	github.com/asaskevich/govalidator/v11 v11.0.2-0.20250122183457-e11347878e23
 	github.com/blang/semver v3.5.1+incompatible
@@ -29,10 +29,10 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/hashicorp/golang-lru v1.0.2
-	github.com/onsi/ginkgo/v2 v2.33.0
+	github.com/onsi/ginkgo/v2 v2.33.1
 	github.com/onsi/gomega v1.44.0
 	github.com/pkg/errors v0.9.1
-	github.com/pkg/sftp v1.13.11
+	github.com/pkg/sftp v1.13.12
 	github.com/prometheus/client_golang v1.24.1
 	github.com/spf13/pflag v1.0.10
 	go.opentelemetry.io/otel v1.47.0
@@ -56,7 +56,7 @@ require (
 	k8s.io/kubectl v0.36.2
 	k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2
 	sigs.k8s.io/cloud-provider-azure v1.34.3
-	sigs.k8s.io/cluster-api v1.14.2
+	sigs.k8s.io/cluster-api v1.14.3
 	sigs.k8s.io/cluster-api/api v1.14.3
 	sigs.k8s.io/cluster-api/test v1.14.3
 	sigs.k8s.io/controller-runtime v0.24.1

@@ -11181,6 +11181,7 @@ spec:
         - --v=0
         - --tls-min-version=${TLS_MIN_VERSION}
         - --tls-cipher-suites=${TLS_CIPHER_SUITES}
+        - --tls-curve-preferences=${TLS_CURVE_PREFERENCES}
         env:
         - name: AZURE_SUBSCRIPTION_ID
           valueFrom:

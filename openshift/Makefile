@@ -4,6 +4,9 @@ TOOLS_DIR := tools
 include provider-version.mk
 
 MANIFESTS_GEN := go run ./vendor/github.com/openshift/cluster-capi-operator/manifests-gen/
+# manifests-gen resets container resource requests after running kustomize, so
+# ocp-manifests applies capi-operator-manifests-overrides to its output.
+KUSTOMIZE_BUILD := go run ./kustomize-build
 
 .PHONY: verify
 verify: verify-ocp-manifests
@@ -29,3 +32,4 @@ ocp-manifests: ## Builds openshift specific manifests
 		--self-image-ref registry.ci.openshift.org/openshift:azure-cluster-api-controllers \
 		--platform Azure \
 		--protect-cluster-resource azurecluster
+	cd tools && $(KUSTOMIZE_BUILD) ../capi-operator-manifests-overrides ../capi-operator-manifests/default/manifests.yaml

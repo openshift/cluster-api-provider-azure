@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	certmangerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
@@ -74,11 +75,21 @@ func processObjects(objs []client.Object, opts cmdlineOptions) ([]client.Object,
 		case "apps":
 			switch getKind(obj) {
 			case "Deployment":
-				deploy, err := customizeDeployment(obj)
+				deploy, err := customizeDeployment(obj, opts.preserveRequests)
 				if err != nil {
 					return nil, fmt.Errorf("failed to customize deployment %q: %w", obj.GetName(), err)
 				}
 				obj = deploy
+			}
+
+		case "rbac.authorization.k8s.io":
+			switch getKind(obj) {
+			case "ClusterRole":
+				var err error
+				obj, err = handleAggregateClusterRole(obj)
+				if err != nil {
+					return nil, err
+				}
 			}
 
 		case "cert-manager.io":
@@ -176,7 +187,7 @@ const (
 	proxyInjectAnnotation = capiOperatorDomain + "/inject-proxy"
 )
 
-func customizeDeployment(obj client.Object) (client.Object, error) {
+func customizeDeployment(obj client.Object, preserveRequests bool) (client.Object, error) {
 	deployment := &appsv1.Deployment{}
 	mustConvert(obj, deployment)
 
@@ -203,11 +214,7 @@ func customizeDeployment(obj client.Object) (client.Object, error) {
 
 	for i := range deployment.Spec.Template.Spec.Containers {
 		container := &deployment.Spec.Template.Spec.Containers[i]
-		// Add resource requests
-		container.Resources.Requests = corev1.ResourceList{
-			corev1.ResourceCPU:    resource.MustParse("10m"),
-			corev1.ResourceMemory: resource.MustParse("50Mi"),
-		}
+		container.Resources.Requests = resourceRequests(container.Resources.Requests, preserveRequests)
 		// Remove any existing resource limits. See: https://github.com/openshift/enhancements/blob/master/CONVENTIONS.md#resources-and-limits
 		container.Resources.Limits = corev1.ResourceList{}
 
@@ -225,6 +232,26 @@ func customizeDeployment(obj client.Object) (client.Object, error) {
 	}
 
 	return deployment, nil
+}
+
+// resourceRequests returns the default CPU and memory requests. When
+// preserveExisting is set, requests declared in the input manifest take
+// precedence and only missing defaults are added.
+func resourceRequests(existing corev1.ResourceList, preserveExisting bool) corev1.ResourceList {
+	requests := corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("10m"),
+		corev1.ResourceMemory: resource.MustParse("50Mi"),
+	}
+
+	if !preserveExisting {
+		return requests
+	}
+
+	for name, quantity := range existing {
+		requests[name] = quantity
+	}
+
+	return requests
 }
 
 func replaceCertManagerAnnotations(obj client.Object) {
@@ -326,6 +353,36 @@ func stripStatus(obj client.Object) client.Object {
 	}
 	delete(unstructuredObj, "status")
 	return &unstructured.Unstructured{Object: unstructuredObj}
+}
+
+// handleAggregateClusterRole suppresses the rules field on aggregate
+// ClusterRoles (those with a non-empty aggregationRule). The Kubernetes
+// aggregation controller overwrites rules on these objects, so emitting
+// them creates a tight reconciliation loop with boxcutter.
+func handleAggregateClusterRole(obj client.Object) (client.Object, error) {
+	u, ok := obj.(*unstructured.Unstructured)
+	if !ok {
+		return obj, nil
+	}
+
+	aggRule, found, _ := unstructured.NestedMap(u.Object, "aggregationRule")
+	if !found || len(aggRule) == 0 {
+		return obj, nil
+	}
+
+	rules, rulesFound, _ := unstructured.NestedSlice(u.Object, "rules")
+	if !rulesFound {
+		return obj, nil
+	}
+
+	if len(rules) > 0 {
+		return nil, fmt.Errorf("ClusterRole %q has both aggregationRule and non-empty rules: the contents of rules will be overwritten by the aggregation controller", obj.GetName())
+	}
+
+	fmt.Fprintf(os.Stderr, "WARNING: ClusterRole %q has aggregationRule with empty rules; suppressing rules field\n", obj.GetName())
+	delete(u.Object, "rules")
+
+	return obj, nil
 }
 
 func setTypeMetadataFromScheme(obj client.Object, version string) {

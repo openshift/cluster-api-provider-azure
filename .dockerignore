@@ -1,0 +1,16 @@
+# Ignore everything
+**
+
+# Allow only these
+!/api/**
+!/azure/**
+!/controllers/**
+!/exp/**
+!/feature/**
+!/internal/**
+!/pkg/**
+!/version/**
+!/util/**
+!/main.go
+!/go.mod
+!/go.sum
